@@ -4,22 +4,22 @@ A scene in space of a space ship traversing from camera top left towards a rotat
 mkdir space-scene && cd space-scene && git init && npm init -y && npm install express && mkdir -p public api && touch vercel.json public/index.html public/style.css public/script.js api/state.js api/update.js .gitignore && cat > README.md << 'EOF'
 # Space Scene Project
 
-## Overview
-A 3D web app with:
-- Wireframe rotating Earth-like sphere
-- Simple space plane flying in from top-left
+## Goal
+Public 3D one-page app:
+- Wireframe rotating Earth sphere
+- Simple space plane flies in from top-left
 - Starfield background
-- API to control Earth's rotation speed and direction
+- API to change Earth rotation speed + direction
 
-Target: Quick preview on Vercel.
+## Current Target
+Vercel deploy (fast preview via GitHub). Later optional migrate to vandromeda.com.
 
-## Tech Stack
-- Frontend: HTML/CSS/JS + Three.js (CDN)
-- Backend: Express (API endpoints)
-- Deployment: Vercel (GitHub auto-deploy)
+## Tech
+- Frontend: HTML/CSS/JS + Three.js CDN
+- Backend: Express API (serverless on Vercel)
 - State: In-memory object
 
-## Project Structure
+## Structure
 space-scene/
 ├── api/
 │   ├── state.js     # GET /api/state
@@ -27,29 +27,31 @@ space-scene/
 ├── public/
 │   ├── index.html
 │   ├── style.css
-│   └── script.js    # Three.js scene + polling API
-├── vercel.json      # Optional routing config
+│   └── script.js    # Three.js + polling
+├── vercel.json
 ├── package.json
 ├── .gitignore
 └── README.md
 
-## Local Setup (already done by this script)
-npm install express
-# Test locally later with vercel dev or node server
+## API
+GET /api/state → { "speed": 0.01, "direction": "cw" }
+POST /api/update → { "speed": number, "direction": "cw"|"ccw" }
 
-## API Endpoints
-- GET /api/state → { "speed": 0.01, "direction": "cw" }
-- POST /api/update → body { "speed": number, "direction": "cw"|"ccw" }
+## Multi-AI CLI Strategy
+Use multiple AI coding agents via CLI for planning, code generation, reviews:
+- Grok CLI (npm i -g @superagent/grok-cli) – xAI models
+- Claude Code (npm i -g @anthropic-ai/claude-code)
+- Gemini CLI (gemini cli install or similar)
+- Aider (pip install aider-chat) – multi-model pair programmer
+- GitHub Copilot CLI (gh copilot)
+- Ollama (curl -fsSL https://ollama.com/install.sh | sh) – local models
 
-## Deployment to Vercel
-1. Create empty GitHub repo (e.g. space-scene)
-2. git remote add origin <your-repo-url>
-3. git add . && git commit -m "init" && git push -u origin main
-4. Go to vercel.com → Import GitHub repo → Deploy
+Run each in separate terminals on same task, combine best outputs.
 
-## Next Steps
-- Implement api/state.js and api/update.js first
-- Then build the Three.js scene in public/script.js
+## Deploy
+1. GitHub repo → push code
+2. vercel.com → Import repo → auto-deploy
 
 EOF
-echo "node_modules/" > .gitignore && echo "Project created. Push to GitHub and import to Vercel when ready."
+echo "node_modules/" > .gitignore
+echo "Project scaffold done with multi-AI plan included. Next: install CLIs or code api/state.js?"
