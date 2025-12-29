@@ -1,82 +1,108 @@
-cat > README.md << 'EOF'
-# Space Scene Project
+# Space Scene Project — FULL DETAILED PLAN RESTORED (One Block)
 
-## Goal
-Public 3D one-page app:
-- Wireframe rotating Earth sphere
-- Simple space plane flies in from top-left
-- Starfield background
-- API to change Earth rotation speed + direction
+**Goal**  
+Public 3D web app:  
+- Wireframe Earth sphere rotating in space (speed + direction controllable via API)  
+- Simple space plane flying in from top-left of camera view  
+- Starfield background  
+- Three.js client-side  
 
-## Current Target
-Vercel deploy via GitHub (repo: space-scene already created)
+**API**  
+- GET /api/state → { "speed": number, "direction": "cw"|"ccw" }  
+- POST /api/update → JSON body { "speed": number, "direction": "cw"|"ccw" }  
+- Frontend polls /api/state every few seconds to update animation  
+- In-memory state (no DB for prototype)  
 
-## Tech
-- Frontend: HTML/CSS/JS + Three.js CDN
-- Backend: Express API (serverless on Vercel)
-- State: In-memory object
+**Deploy**  
+Vercel first (GitHub repo `space-scene`). Later optional vandromeda.com (restore SSH key, Cloudflare DNS, separate server, existing DB/API if persistence needed).
 
-## Structure
-space-scene/
-├── api/
-│   ├── state.js     # GET /api/state
-│   └── update.js    # POST /api/update
-├── public/
-│   ├── index.html
-│   ├── style.css
-│   └── script.js    # Three.js + polling
-├── Dockerfile
-├── vercel.json
-├── package.json
-├── .gitignore
-└── README.md
+**Dev Environment**  
+Ubuntu latest host. VS Code on host. Docker container for isolation. VS Code Remote-Containers attaches to container. All AI CLI work inside container.
 
-## API
-GET /api/state → { "speed": 0.01, "direction": "cw" }
-POST /api/update → { "speed": number, "direction": "cw"|"ccw" }
+**API Keys**  
+.env file in project root. npm install dotenv. .gitignore includes .env.
 
-## Development Environment (Ubuntu latest)
-- Editor: VS Code installed with extensions
-  sudo snap install --classic code
-  code --install-extension ms-vscode-remote.remote-containers
-  code --install-extension ms-azuretools.vscode-docker
-  code --install-extension ms-vscode.live-server
-  code --install-extension esbenp.prettier-vscode
-  code --install-extension dbaeumer.vscode-eslint
-  code --install-extension ms-vscode.vscode-typescript-next
-  code --install-extension aerokaido.three-js-snippets
-  code --install-extension frenco.vscode-vercel
-  code --install-extension github.copilot
-  code --install-extension github.copilot-chat
+**Multi-AI CLI Agents & Orchestration**  
+Use all available agentic CLIs in parallel terminals inside container for planning, code generation, reviews. Combine best outputs. Aider as main orchestrator (model switching). CrewAI/AutoGen for advanced coordination (role-based or conversational agents).
 
-- Security: Docker dev container for all AI CLI work
-  sudo apt install docker.io -y
-  sudo usermod -aG docker $USER  # logout/login
-  docker build -t space-dev .
-  docker run -it -v $(pwd):/app space-dev
-  Inside container: attach VS Code via Remote-Containers extension
+**Tools**  
+- Grok CLI (@superagent/grok-cli or current)  
+- Claude Code CLI  
+- Gemini CLI  
+- Aider  
+- Codex CLI (OpenAI)  
+- Ollama (local models)  
+- GitHub Copilot CLI  
+- CrewAI & AutoGen (Python)  
 
-## Multi-AI CLI Strategy (run inside Docker container only)
-- Grok CLI: npm i -g @superagent/grok-cli
-- Claude Code: pip install claude-code
-- Aider: pip install aider-chat
-- Ollama: curl -fsSL https://ollama.com/install.sh | sh
-- GitHub Copilot CLI: gh extension install github/gh-copilot
+**Three.js Animation**  
+Manual requestAnimationFrame loop + THREE.Clock.getDelta() for frame-rate independent rotation. Plane fly-in manual or GSAP CDN. Stars PointsMaterial with random positions.
 
-Use multiple agents in parallel terminals for code ideas/reviews.
+**Project Structure**  
+space-scene/  
+├── api/state.js  
+├── api/update.js  
+├── public/index.html  
+├── public/style.css  
+├── public/script.js  
+├── Dockerfile  
+├── vercel.json  
+├── .env  
+├── package.json  
+├── .gitignore  
 
-## Dockerfile (basic)
-FROM ubuntu:24.10
-RUN apt update && apt install -y curl git nodejs npm python3 python3-pip
-WORKDIR /app
-COPY . /app
-CMD ["bash"]
+**Full Setup Steps**
 
-## Deploy
-Push to GitHub → vercel.com import → auto-deploy
+**Host**  
+sudo apt update && sudo apt upgrade -y  
+sudo apt install docker.io git curl -y  
+sudo usermod -aG docker $USER  # logout/login  
 
-## Status
-Plan complete. Ready when you are to start coding.
+sudo snap install --classic code  
 
-EOF
-echo "README.md updated with VS Code + extensions, Docker isolation, multi-AI CLIs, and everything else."
+code --install-extension ms-vscode-remote.remote-containers  
+code --install-extension ms-azuretools.vscode-docker  
+code --install-extension ms-vscode.live-server  
+code --install-extension esbenp.prettier-vscode  
+code --install-extension dbaeumer.vscode-eslint  
+code --install-extension ms-vscode.vscode-typescript-next  
+code --install-extension aerokaido.three-js-snippets  
+code --install-extension frenco.vscode-vercel  
+code --install-extension github.copilot  
+code --install-extension github.copilot-chat  
+
+git clone https://github.com/YOURUSERNAME/space-scene.git  
+cd space-scene  
+npm init -y  
+npm install express dotenv  
+mkdir -p public api  
+touch public/index.html public/style.css public/script.js api/state.js api/update.js vercel.json .gitignore .env  
+echo "node_modules/\n.env" > .gitignore  
+echo "OPENAI_API_KEY=\nANTHROPIC_API_KEY=\nXAI_API_KEY=\nGOOGLE_API_KEY=" > .env  
+
+cat > Dockerfile << 'EOF'  
+FROM ubuntu:24.10  
+RUN apt update && apt install -y curl git nodejs npm python3 python3-pip gh  
+RUN npm install -g vercel  
+WORKDIR /app  
+COPY . /app  
+CMD ["bash"]  
+EOF  
+
+docker build -t space-dev .  
+docker run -it -v $(pwd):/app space-dev  
+
+**Inside Container**  
+npm install  
+pip install aider-chat crewai autogen  
+curl -fsSL https://ollama.com/install.sh | sh  
+ollama pull llama3  
+gh extension install github/gh-copilot  
+npm install -g @superagent/grok-cli  
+
+**Attach VS Code**  
+code . → Remote-Containers → Attach to Running Container → space-dev  
+
+**Workflow**  
+Multiple terminals in attached VS Code. Run parallel AI CLIs on same task/files. Combine code. Backend first, then Three.js. Test vercel dev. git push → Vercel live.
+
