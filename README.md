@@ -1,7 +1,4 @@
-# space-scene
-A scene in space of a space ship traversing from camera top left towards a rotating globe
-
-mkdir space-scene && cd space-scene && git init && npm init -y && npm install express && mkdir -p public api && touch vercel.json public/index.html public/style.css public/script.js api/state.js api/update.js .gitignore && cat > README.md << 'EOF'
+cat > README.md << 'EOF'
 # Space Scene Project
 
 ## Goal
@@ -12,7 +9,7 @@ Public 3D one-page app:
 - API to change Earth rotation speed + direction
 
 ## Current Target
-Vercel deploy (fast preview via GitHub). Later optional migrate to vandromeda.com.
+Vercel deploy via GitHub (repo: space-scene already created)
 
 ## Tech
 - Frontend: HTML/CSS/JS + Three.js CDN
@@ -28,6 +25,7 @@ space-scene/
 │   ├── index.html
 │   ├── style.css
 │   └── script.js    # Three.js + polling
+├── Dockerfile
 ├── vercel.json
 ├── package.json
 ├── .gitignore
@@ -37,21 +35,48 @@ space-scene/
 GET /api/state → { "speed": 0.01, "direction": "cw" }
 POST /api/update → { "speed": number, "direction": "cw"|"ccw" }
 
-## Multi-AI CLI Strategy
-Use multiple AI coding agents via CLI for planning, code generation, reviews:
-- Grok CLI (npm i -g @superagent/grok-cli) – xAI models
-- Claude Code (npm i -g @anthropic-ai/claude-code)
-- Gemini CLI (gemini cli install or similar)
-- Aider (pip install aider-chat) – multi-model pair programmer
-- GitHub Copilot CLI (gh copilot)
-- Ollama (curl -fsSL https://ollama.com/install.sh | sh) – local models
+## Development Environment (Ubuntu latest)
+- Editor: VS Code installed with extensions
+  sudo snap install --classic code
+  code --install-extension ms-vscode-remote.remote-containers
+  code --install-extension ms-azuretools.vscode-docker
+  code --install-extension ms-vscode.live-server
+  code --install-extension esbenp.prettier-vscode
+  code --install-extension dbaeumer.vscode-eslint
+  code --install-extension ms-vscode.vscode-typescript-next
+  code --install-extension aerokaido.three-js-snippets
+  code --install-extension frenco.vscode-vercel
+  code --install-extension github.copilot
+  code --install-extension github.copilot-chat
 
-Run each in separate terminals on same task, combine best outputs.
+- Security: Docker dev container for all AI CLI work
+  sudo apt install docker.io -y
+  sudo usermod -aG docker $USER  # logout/login
+  docker build -t space-dev .
+  docker run -it -v $(pwd):/app space-dev
+  Inside container: attach VS Code via Remote-Containers extension
+
+## Multi-AI CLI Strategy (run inside Docker container only)
+- Grok CLI: npm i -g @superagent/grok-cli
+- Claude Code: pip install claude-code
+- Aider: pip install aider-chat
+- Ollama: curl -fsSL https://ollama.com/install.sh | sh
+- GitHub Copilot CLI: gh extension install github/gh-copilot
+
+Use multiple agents in parallel terminals for code ideas/reviews.
+
+## Dockerfile (basic)
+FROM ubuntu:24.10
+RUN apt update && apt install -y curl git nodejs npm python3 python3-pip
+WORKDIR /app
+COPY . /app
+CMD ["bash"]
 
 ## Deploy
-1. GitHub repo → push code
-2. vercel.com → Import repo → auto-deploy
+Push to GitHub → vercel.com import → auto-deploy
+
+## Status
+Plan complete. Ready when you are to start coding.
 
 EOF
-echo "node_modules/" > .gitignore
-echo "Project scaffold done with multi-AI plan included. Next: install CLIs or code api/state.js?"
+echo "README.md updated with VS Code + extensions, Docker isolation, multi-AI CLIs, and everything else."
