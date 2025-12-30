@@ -211,12 +211,17 @@ const earthMaterial = new THREE.ShaderMaterial({
             // Day side: maintain good contrast but avoid over-brightening
             vec3 litDay = dayColor.rgb * (0.25 + 0.75 * max(0.0, sunIntensity));
 
-            // Night side: make surface nearly black, amplify city lights non-linearly
-            vec3 nightLights = pow(nightColor.rgb, vec3(1.6)) * 6.0;
-            vec3 litNight = dayColor.rgb * 0.0005 + nightLights;
+            // Night side: remove faint blue bleed, keep only bright city lights
+            float nightLum = dot(nightColor.rgb, vec3(0.333));
+            float lightMask = smoothstep(0.03, 0.18, nightLum); // threshold to pick out city lights
+            vec3 nightLights = pow(nightColor.rgb, vec3(1.6)) * 6.0 * lightMask;
+            vec3 litNight = dayColor.rgb * 0.0002 + nightLights;
 
-            // Blend: night (0) -> litNight, day (1) -> litDay
-            vec3 finalColor = mix(litNight, litDay, dayAmount);
+            // Boost day illumination for stronger contrast
+            vec3 boostedDay = litDay * (1.05 + 0.9 * max(0.0, sunIntensity));
+
+            // Blend: night (0) -> litNight, day (1) -> boostedDay
+            vec3 finalColor = mix(litNight, boostedDay, dayAmount);
 
             gl_FragColor = vec4(finalColor, 1.0);
         }
@@ -231,7 +236,7 @@ const cloudGeometry = new THREE.SphereGeometry(2.03, 64, 64);
 const cloudMaterial = new THREE.MeshPhongMaterial({
     map: cloudTexture,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.6,
     depthWrite: false
 });
 const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
@@ -242,7 +247,7 @@ const atmosphereGeometry = new THREE.SphereGeometry(2.1, 64, 64);
 const atmosphereMaterial = new THREE.MeshPhongMaterial({
     color: 0x0088ff,
     transparent: true,
-    opacity: 0.12,
+    opacity: 0.06,
     side: THREE.BackSide
 });
 const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
