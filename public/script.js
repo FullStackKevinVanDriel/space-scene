@@ -245,25 +245,11 @@ const atmosphereMaterial = new THREE.MeshPhongMaterial({
 const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 scene.add(atmosphere);
 
-// Space nebula skybox using CubeTextureLoader
-// Using a purple/blue nebula cubemap
-const skyboxLoader = new THREE.CubeTextureLoader();
-const skyboxUrls = [
-    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/right.png',
-    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/left.png',
-    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/top.png',
-    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/bottom.png',
-    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/front.png',
-    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/back.png'
-];
-
-// Try to load skybox, fallback to dark color with stars
-skyboxLoader.load(skyboxUrls, (cubeTexture) => {
-    scene.background = cubeTexture;
-    scene.environment = cubeTexture;
-}, undefined, (err) => {
-    console.warn('Skybox failed, using fallback');
-    scene.background = new THREE.Color(0x000510);
+// Space skybox using equirectangular milky way star map (hosted locally)
+const spaceTexture = textureLoader.load('skybox/stars.jpg', (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = texture;
+    scene.environment = texture;
 });
 
 // Starfield for additional depth
