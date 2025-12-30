@@ -284,17 +284,61 @@ function createSpaceShip() {
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x666677, metalness: 0.8, roughness: 0.2 });
     const interiorMat = new THREE.MeshStandardMaterial({ color: 0x333340, metalness: 0.3, roughness: 0.6 });
 
-    // Sleek tapered fuselage using Cylinder (narrow nose to wider rear)
-    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.45, 4.0, 32, 1, true), hullMat);
+    // Organic fuselage using LatheGeometry for a photographed, crafted look
+    const profile = [];
+    // profile from nose to rear (x: radius, y: length)
+    profile.push(new THREE.Vector2(0.02, -2.8));
+    profile.push(new THREE.Vector2(0.18, -2.6));
+    profile.push(new THREE.Vector2(0.26, -1.8));
+    profile.push(new THREE.Vector2(0.38, -0.6));
+    profile.push(new THREE.Vector2(0.44, 0.25));
+    profile.push(new THREE.Vector2(0.40, 1.2));
+    profile.push(new THREE.Vector2(0.28, 1.8));
+    profile.push(new THREE.Vector2(0.18, 2.0));
+    const lathe = new THREE.LatheGeometry(profile, 64);
+    const fuselage = new THREE.Mesh(lathe, hullMat);
     fuselage.rotation.x = Math.PI / 2;
-    fuselage.position.z = -1.0;
+    fuselage.position.z = -0.8;
+    fuselage.castShadow = true;
+    fuselage.receiveShadow = true;
     ship.add(fuselage);
 
-    // Nose cone
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 32), hullMat);
-    nose.rotation.x = -Math.PI / 2;
+    // Sculpted nose cap blended onto lathe profile (slightly glossy)
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 20), hullMat);
+    nose.scale.set(1.0, 0.8, 1.0);
     nose.position.z = -3.0;
     ship.add(nose);
+
+    // Add subtle panel seams: thin strips slightly above hull
+    function addPanelStrip(offsetZ, length, yaw, mat) {
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(length, 0.01, 0.06), mat);
+        strip.position.set(0, 0.02, offsetZ);
+        strip.rotation.y = yaw;
+        strip.castShadow = false;
+        strip.receiveShadow = false;
+        ship.add(strip);
+    }
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0x1e1f22, metalness: 0.6, roughness: 0.45 });
+    addPanelStrip(-1.2, 1.8, 0.02, panelMat);
+    addPanelStrip(-0.2, 2.2, -0.04, panelMat);
+
+    // Dorsal spine for structural detail
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 1.6), frameMat);
+    spine.position.set(0, 0.12, -0.2);
+    spine.rotation.x = 0.02;
+    ship.add(spine);
+
+    // Small forward winglets and camera/sensor array
+    const wingletLeft = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.02, 0.14), hullMat);
+    wingletLeft.position.set(-0.9, 0.04, -1.0);
+    wingletLeft.rotation.set(0.05, 0.15, -0.06);
+    ship.add(wingletLeft);
+    const wingletRight = wingletLeft.clone(); wingletRight.position.x = 0.9; wingletRight.rotation.z = 0.06; ship.add(wingletRight);
+
+    // Antennae / sensor mast
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.45, 6), frameMat);
+    mast.position.set(0, 0.35, -1.6);
+    ship.add(mast);
 
     // Cockpit interior - pilot seat and controls (visible through glass)
     const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.06), interiorMat);
