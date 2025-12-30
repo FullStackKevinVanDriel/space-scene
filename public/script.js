@@ -345,9 +345,32 @@ spaceShip.position.set(
     Math.sin(orbitAngle) * orbitRadius
 );
 
+// Camera control variables
+const cameraTarget = new THREE.Vector3(0, 0, 0); // The point the camera looks at
+const zoomSpeed = 0.002;
+const rotationSpeed = 0.005;
+const panSpeed = 0.003;
+
 // Position camera
 camera.position.set(4, 4, 12);
-camera.lookAt(0, 0, 0);
+camera.lookAt(cameraTarget);
+
+// Mouse input state
+const mouseState = {
+    isLeftDown: false,
+    isRightDown: false,
+    isMiddleDown: false,
+    prevX: 0,
+    prevY: 0,
+};
+
+// Touch input state
+const touchState = {
+    pointers: [],
+    prevPosition: null,
+    prevMidpoint: null,
+    prevDistance: null,
+};
 
 // === UI CONTROLS ===
 function createControlUI() {
@@ -467,6 +490,171 @@ function createControlUI() {
 }
 
 createControlUI();
+
+// === MOUSE CONTROLS (Standard: left=orbit, right=pan, scroll=zoom) ===
+renderer.domElement.addEventListener('mousedown', (event) => {
+    if (event.button === 0) mouseState.isLeftDown = true;
+    if (event.button === 1) mouseState.isMiddleDown = true;
+    if (event.button === 2) mouseState.isRightDown = true;
+    mouseState.prevX = event.clientX;
+    mouseState.prevY = event.clientY;
+});
+
+window.addEventListener('mouseup', (event) => {
+    if (event.button === 0) mouseState.isLeftDown = false;
+    if (event.button === 1) mouseState.isMiddleDown = false;
+    if (event.button === 2) mouseState.isRightDown = false;
+});
+
+renderer.domElement.addEventListener('mousemove', (event) => {
+    const deltaX = event.clientX - mouseState.prevX;
+    const deltaY = event.clientY - mouseState.prevY;
+    mouseState.prevX = event.clientX;
+    mouseState.prevY = event.clientY;
+
+    // Left-click drag: Orbit around target
+    if (mouseState.isLeftDown) {
+        const spherical = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(cameraTarget)
+        );
+        spherical.theta -= deltaX * rotationSpeed;
+        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+
+        const newPos = new THREE.Vector3().setFromSpherical(spherical);
+        camera.position.copy(cameraTarget).add(newPos);
+        camera.lookAt(cameraTarget);
+    }
+
+    // Right-click or middle-click drag: Pan
+    if (mouseState.isRightDown || mouseState.isMiddleDown) {
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
+
+        const panX = -deltaX * panSpeed;
+        const panY = deltaY * panSpeed;
+
+        camera.position.addScaledVector(cameraRight, panX);
+        camera.position.addScaledVector(cameraUp, panY);
+        cameraTarget.addScaledVector(cameraRight, panX);
+        cameraTarget.addScaledVector(cameraUp, panY);
+    }
+});
+
+// Scroll wheel: Zoom
+renderer.domElement.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const zoomAmount = event.deltaY * zoomSpeed;
+
+    // Move camera toward/away from target
+    const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+    const distance = camera.position.distanceTo(cameraTarget);
+    const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
+
+    camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+}, { passive: false });
+
+// Disable context menu on canvas
+renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
+
+// === TOUCH CONTROLS (Standard: 1-finger=orbit, 2-finger=pan+zoom) ===
+renderer.domElement.addEventListener('touchstart', (event) => {
+    event.preventDefault();
+    touchState.pointers = Array.from(event.touches);
+
+    if (touchState.pointers.length === 1) {
+        touchState.prevPosition = {
+            x: touchState.pointers[0].clientX,
+            y: touchState.pointers[0].clientY,
+        };
+    } else if (touchState.pointers.length === 2) {
+        const t1 = touchState.pointers[0];
+        const t2 = touchState.pointers[1];
+        touchState.prevMidpoint = {
+            x: (t1.clientX + t2.clientX) / 2,
+            y: (t1.clientY + t2.clientY) / 2,
+        };
+        touchState.prevDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    }
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchmove', (event) => {
+    event.preventDefault();
+    const touches = Array.from(event.touches);
+
+    // One finger: Orbit
+    if (touches.length === 1 && touchState.prevPosition) {
+        const deltaX = touches[0].clientX - touchState.prevPosition.x;
+        const deltaY = touches[0].clientY - touchState.prevPosition.y;
+
+        const spherical = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(cameraTarget)
+        );
+        spherical.theta -= deltaX * rotationSpeed;
+        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+
+        const newPos = new THREE.Vector3().setFromSpherical(spherical);
+        camera.position.copy(cameraTarget).add(newPos);
+        camera.lookAt(cameraTarget);
+
+        touchState.prevPosition = { x: touches[0].clientX, y: touches[0].clientY };
+    }
+
+    // Two fingers: Pan + Zoom
+    if (touches.length === 2 && touchState.prevMidpoint) {
+        const t1 = touches[0];
+        const t2 = touches[1];
+
+        const midpoint = {
+            x: (t1.clientX + t2.clientX) / 2,
+            y: (t1.clientY + t2.clientY) / 2,
+        };
+        const distance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+        // Pan
+        const panDeltaX = midpoint.x - touchState.prevMidpoint.x;
+        const panDeltaY = midpoint.y - touchState.prevMidpoint.y;
+
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
+
+        camera.position.addScaledVector(cameraRight, -panDeltaX * panSpeed);
+        camera.position.addScaledVector(cameraUp, panDeltaY * panSpeed);
+        cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
+        cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
+
+        // Zoom (pinch)
+        const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 0.5;
+        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+        const currentDist = camera.position.distanceTo(cameraTarget);
+        const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
+        camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+
+        touchState.prevMidpoint = midpoint;
+        touchState.prevDistance = distance;
+    }
+
+    touchState.pointers = touches;
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchend', (event) => {
+    touchState.pointers = Array.from(event.touches);
+    if (touchState.pointers.length === 0) {
+        touchState.prevPosition = null;
+        touchState.prevMidpoint = null;
+        touchState.prevDistance = null;
+    } else if (touchState.pointers.length === 1) {
+        touchState.prevPosition = {
+            x: touchState.pointers[0].clientX,
+            y: touchState.pointers[0].clientY,
+        };
+        touchState.prevMidpoint = null;
+        touchState.prevDistance = null;
+    }
+});
 
 // Handle resize
 window.addEventListener('resize', () => {
