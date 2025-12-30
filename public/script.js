@@ -150,126 +150,231 @@ function createStarfield() {
 
 const starfield = createStarfield();
 
-// Create realistic starship with cockpit at front
+// Create sci-fi starship
 function createSpaceShip() {
     const shipGroup = new THREE.Group();
 
-    // Materials that reflect light
+    // Sci-fi materials
     const hullMaterial = new THREE.MeshPhongMaterial({
-        color: 0x888888,
-        shininess: 60,
-        specular: 0x444444
+        color: 0x2a2a35,
+        shininess: 80,
+        specular: 0x555566
     });
-    const darkHullMaterial = new THREE.MeshPhongMaterial({
-        color: 0x555555,
+    const darkMaterial = new THREE.MeshPhongMaterial({
+        color: 0x1a1a22,
         shininess: 40,
-        specular: 0x333333
+        specular: 0x333344
     });
     const accentMaterial = new THREE.MeshPhongMaterial({
-        color: 0xaaaaaa,
-        shininess: 80,
-        specular: 0x666666
-    });
-    const windowMaterial = new THREE.MeshPhongMaterial({
-        color: 0x66ccff,
+        color: 0x445566,
         shininess: 100,
+        specular: 0x88aacc
+    });
+    const glowMaterial = new THREE.MeshPhongMaterial({
+        color: 0x00aaff,
+        emissive: 0x0066aa,
+        emissiveIntensity: 0.6,
+        shininess: 100
+    });
+    const cockpitMaterial = new THREE.MeshPhongMaterial({
+        color: 0x88ddff,
+        emissive: 0x2288aa,
+        emissiveIntensity: 0.4,
+        shininess: 120,
         specular: 0xffffff,
-        emissive: 0x224466,
-        emissiveIntensity: 0.3
+        transparent: true,
+        opacity: 0.9
     });
 
-    // Main hull - sleek elongated body (oriented so nose is at -Z, thrusters at +Z)
-    const hullGeometry = new THREE.CylinderGeometry(0.3, 0.5, 2.0, 12);
-    const hull = new THREE.Mesh(hullGeometry, hullMaterial);
-    hull.rotation.x = Math.PI / 2;
-    shipGroup.add(hull);
+    // === MAIN FUSELAGE ===
+    // Primary hull - angular sci-fi shape
+    const mainHullShape = new THREE.Shape();
+    mainHullShape.moveTo(0, 0.25);
+    mainHullShape.lineTo(0.35, 0.15);
+    mainHullShape.lineTo(0.4, -0.1);
+    mainHullShape.lineTo(0.2, -0.25);
+    mainHullShape.lineTo(-0.2, -0.25);
+    mainHullShape.lineTo(-0.4, -0.1);
+    mainHullShape.lineTo(-0.35, 0.15);
+    mainHullShape.closePath();
 
-    // Nose cone (at front, -Z direction)
-    const noseGeometry = new THREE.ConeGeometry(0.3, 0.8, 12);
+    const extrudeSettings = { depth: 2.5, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05 };
+    const mainHullGeometry = new THREE.ExtrudeGeometry(mainHullShape, extrudeSettings);
+    const mainHull = new THREE.Mesh(mainHullGeometry, hullMaterial);
+    mainHull.rotation.x = Math.PI / 2;
+    mainHull.position.set(0, 0, -1.25);
+    shipGroup.add(mainHull);
+
+    // === NOSE SECTION ===
+    // Pointed nose cone
+    const noseGeometry = new THREE.ConeGeometry(0.28, 1.2, 6);
     const nose = new THREE.Mesh(noseGeometry, accentMaterial);
     nose.rotation.x = -Math.PI / 2;
-    nose.position.set(0, 0, -1.4);
+    nose.rotation.z = Math.PI / 6;
+    nose.position.set(0, 0.05, -1.85);
     shipGroup.add(nose);
 
-    // Cockpit window (at front, on top of nose area)
-    const cockpitGeometry = new THREE.SphereGeometry(0.2, 12, 12);
-    const cockpit = new THREE.Mesh(cockpitGeometry, windowMaterial);
-    cockpit.position.set(0, 0.28, -0.7);
-    cockpit.scale.set(1.2, 0.6, 1.5);
+    // Nose accent ridge
+    const noseRidgeGeometry = new THREE.BoxGeometry(0.08, 0.12, 0.8);
+    const noseRidge = new THREE.Mesh(noseRidgeGeometry, glowMaterial);
+    noseRidge.position.set(0, 0.2, -1.6);
+    shipGroup.add(noseRidge);
+
+    // === COCKPIT ===
+    const cockpitGeometry = new THREE.SphereGeometry(0.22, 16, 16);
+    const cockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
+    cockpit.position.set(0, 0.28, -1.0);
+    cockpit.scale.set(1.3, 0.7, 1.8);
     shipGroup.add(cockpit);
 
-    // Wing struts
-    const wingGeometry = new THREE.BoxGeometry(2.4, 0.06, 0.5);
-    const wings = new THREE.Mesh(wingGeometry, darkHullMaterial);
-    wings.position.set(0, 0, 0.2);
-    shipGroup.add(wings);
+    // Cockpit frame
+    const frameGeometry = new THREE.TorusGeometry(0.2, 0.03, 8, 16);
+    const frame = new THREE.Mesh(frameGeometry, darkMaterial);
+    frame.position.set(0, 0.28, -0.85);
+    frame.rotation.x = Math.PI / 2;
+    frame.scale.set(1.3, 1, 0.7);
+    shipGroup.add(frame);
 
-    // Wing tips
-    const wingTipGeometry = new THREE.BoxGeometry(0.4, 0.1, 0.7);
-    const leftWingTip = new THREE.Mesh(wingTipGeometry, accentMaterial);
-    leftWingTip.position.set(-1.2, 0, 0.3);
-    shipGroup.add(leftWingTip);
+    // === WINGS ===
+    // Main swept wings
+    const wingShape = new THREE.Shape();
+    wingShape.moveTo(0, 0);
+    wingShape.lineTo(1.8, -0.3);
+    wingShape.lineTo(2.0, -0.2);
+    wingShape.lineTo(1.6, 0.1);
+    wingShape.lineTo(0, 0.15);
+    wingShape.closePath();
 
-    const rightWingTip = new THREE.Mesh(wingTipGeometry, accentMaterial);
-    rightWingTip.position.set(1.2, 0, 0.3);
-    shipGroup.add(rightWingTip);
+    const wingExtrudeSettings = { depth: 0.06, bevelEnabled: false };
+    const wingGeometry = new THREE.ExtrudeGeometry(wingShape, wingExtrudeSettings);
 
-    // Engine nacelles (at rear)
-    const nacelleGeometry = new THREE.CylinderGeometry(0.15, 0.2, 1.0, 8);
+    const leftWing = new THREE.Mesh(wingGeometry, hullMaterial);
+    leftWing.position.set(-0.3, 0, 0.3);
+    leftWing.rotation.y = Math.PI;
+    leftWing.rotation.z = 0.05;
+    shipGroup.add(leftWing);
 
-    const leftNacelle = new THREE.Mesh(nacelleGeometry, darkHullMaterial);
+    const rightWing = new THREE.Mesh(wingGeometry, hullMaterial);
+    rightWing.position.set(0.3, 0, 0.3);
+    rightWing.rotation.z = -0.05;
+    shipGroup.add(rightWing);
+
+    // Wing glow strips
+    const wingGlowGeometry = new THREE.BoxGeometry(1.2, 0.04, 0.06);
+    const leftWingGlow = new THREE.Mesh(wingGlowGeometry, glowMaterial);
+    leftWingGlow.position.set(-1.0, 0.02, 0.2);
+    leftWingGlow.rotation.y = 0.15;
+    shipGroup.add(leftWingGlow);
+
+    const rightWingGlow = new THREE.Mesh(wingGlowGeometry, glowMaterial);
+    rightWingGlow.position.set(1.0, 0.02, 0.2);
+    rightWingGlow.rotation.y = -0.15;
+    shipGroup.add(rightWingGlow);
+
+    // === ENGINE SECTION ===
+    // Main engine block
+    const engineGeometry = new THREE.BoxGeometry(0.9, 0.4, 0.7);
+    const engine = new THREE.Mesh(engineGeometry, darkMaterial);
+    engine.position.set(0, -0.05, 1.0);
+    shipGroup.add(engine);
+
+    // Engine nacelles (large)
+    const nacelleGeometry = new THREE.CylinderGeometry(0.18, 0.22, 1.4, 12);
+
+    const leftNacelle = new THREE.Mesh(nacelleGeometry, hullMaterial);
     leftNacelle.rotation.x = Math.PI / 2;
-    leftNacelle.position.set(-0.6, -0.1, 0.9);
+    leftNacelle.position.set(-0.55, -0.08, 0.9);
     shipGroup.add(leftNacelle);
 
-    const rightNacelle = new THREE.Mesh(nacelleGeometry, darkHullMaterial);
+    const rightNacelle = new THREE.Mesh(nacelleGeometry, hullMaterial);
     rightNacelle.rotation.x = Math.PI / 2;
-    rightNacelle.position.set(0.6, -0.1, 0.9);
+    rightNacelle.position.set(0.55, -0.08, 0.9);
     shipGroup.add(rightNacelle);
 
-    // Engine block (rear)
-    const engineBlockGeometry = new THREE.BoxGeometry(0.7, 0.35, 0.5);
-    const engineBlock = new THREE.Mesh(engineBlockGeometry, darkHullMaterial);
-    engineBlock.position.set(0, 0, 1.15);
-    shipGroup.add(engineBlock);
+    // Nacelle intake rings
+    const intakeGeometry = new THREE.TorusGeometry(0.2, 0.04, 8, 16);
+    const leftIntake = new THREE.Mesh(intakeGeometry, glowMaterial);
+    leftIntake.position.set(-0.55, -0.08, 0.2);
+    shipGroup.add(leftIntake);
 
-    // Main thrusters (at rear, +Z direction) - emissive for glow
-    const thrustMaterial = new THREE.MeshBasicMaterial({ color: 0xffdd00 });
+    const rightIntake = new THREE.Mesh(intakeGeometry, glowMaterial);
+    rightIntake.position.set(0.55, -0.08, 0.2);
+    shipGroup.add(rightIntake);
 
-    const thrustGeometry = new THREE.ConeGeometry(0.1, 0.6, 8);
+    // === THRUSTERS (Blue methane flames) ===
+    const thrustCoreMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const thrustOuterMaterial = new THREE.MeshBasicMaterial({
+        color: 0x00ccff,
+        transparent: true,
+        opacity: 0.8
+    });
 
-    const thrust1 = new THREE.Mesh(thrustGeometry, thrustMaterial);
-    thrust1.rotation.x = -Math.PI / 2;
-    thrust1.position.set(-0.2, 0, 1.5);
+    // Main engine thrusters (3)
+    function createThruster(x, y, z, scale = 1) {
+        const group = new THREE.Group();
+
+        // Inner white-hot core
+        const coreGeometry = new THREE.ConeGeometry(0.06 * scale, 0.4 * scale, 8);
+        const core = new THREE.Mesh(coreGeometry, thrustCoreMaterial);
+        core.rotation.x = -Math.PI / 2;
+        group.add(core);
+
+        // Outer blue flame
+        const outerGeometry = new THREE.ConeGeometry(0.12 * scale, 0.7 * scale, 8);
+        const outer = new THREE.Mesh(outerGeometry, thrustOuterMaterial);
+        outer.rotation.x = -Math.PI / 2;
+        outer.position.z = 0.1 * scale;
+        group.add(outer);
+
+        group.position.set(x, y, z);
+        group.name = 'thruster';
+        return group;
+    }
+
+    const thrust1 = createThruster(-0.25, -0.05, 1.45, 1);
     thrust1.name = 'mainThrust';
     shipGroup.add(thrust1);
 
-    const thrust2 = new THREE.Mesh(thrustGeometry, thrustMaterial);
-    thrust2.rotation.x = -Math.PI / 2;
-    thrust2.position.set(0, 0, 1.5);
+    const thrust2 = createThruster(0, -0.05, 1.45, 1.1);
     thrust2.name = 'mainThrust2';
     shipGroup.add(thrust2);
 
-    const thrust3 = new THREE.Mesh(thrustGeometry, thrustMaterial);
-    thrust3.rotation.x = -Math.PI / 2;
-    thrust3.position.set(0.2, 0, 1.5);
+    const thrust3 = createThruster(0.25, -0.05, 1.45, 1);
     thrust3.name = 'mainThrust3';
     shipGroup.add(thrust3);
 
     // Nacelle thrusters
-    const nacelleThrustGeometry = new THREE.ConeGeometry(0.08, 0.5, 6);
-
-    const leftNacelleThrust = new THREE.Mesh(nacelleThrustGeometry, thrustMaterial);
-    leftNacelleThrust.rotation.x = -Math.PI / 2;
-    leftNacelleThrust.position.set(-0.6, -0.1, 1.5);
+    const leftNacelleThrust = createThruster(-0.55, -0.08, 1.65, 0.9);
     leftNacelleThrust.name = 'leftNacelleThrust';
     shipGroup.add(leftNacelleThrust);
 
-    const rightNacelleThrust = new THREE.Mesh(nacelleThrustGeometry, thrustMaterial);
-    rightNacelleThrust.rotation.x = -Math.PI / 2;
-    rightNacelleThrust.position.set(0.6, -0.1, 1.5);
+    const rightNacelleThrust = createThruster(0.55, -0.08, 1.65, 0.9);
     rightNacelleThrust.name = 'rightNacelleThrust';
     shipGroup.add(rightNacelleThrust);
+
+    // === DETAIL ELEMENTS ===
+    // Antenna array
+    const antennaGeometry = new THREE.CylinderGeometry(0.01, 0.01, 0.4, 6);
+    const antenna = new THREE.Mesh(antennaGeometry, accentMaterial);
+    antenna.position.set(0, 0.4, -0.5);
+    antenna.rotation.z = -0.2;
+    shipGroup.add(antenna);
+
+    // Sensor dome
+    const sensorGeometry = new THREE.SphereGeometry(0.08, 12, 12);
+    const sensor = new THREE.Mesh(sensorGeometry, glowMaterial);
+    sensor.position.set(0, -0.28, -0.3);
+    shipGroup.add(sensor);
+
+    // Hull panel lines (decorative)
+    const panelGeometry = new THREE.BoxGeometry(0.02, 0.02, 1.5);
+    const panel1 = new THREE.Mesh(panelGeometry, darkMaterial);
+    panel1.position.set(0.25, 0.18, 0);
+    shipGroup.add(panel1);
+
+    const panel2 = new THREE.Mesh(panelGeometry, darkMaterial);
+    panel2.position.set(-0.25, 0.18, 0);
+    shipGroup.add(panel2);
 
     return shipGroup;
 }
@@ -282,24 +387,57 @@ const orbitRadius = 4.5;
 const orbitSpeed = 0.25;
 const orbitY = 1.5;
 
-// Entry animation - ship comes from top-right, behind Earth, then orbits left to right
-const entryStartAngle = Math.PI * 1.25; // Start orbit from back-right
+// === SMOOTH ORBITAL ENTRY ===
+// Calculate entry angle and tangent point for seamless transition
+const entryStartAngle = Math.PI * 1.5; // Enter from the back
 
-// Initial position (top-right of screen, behind Earth)
-let shipStartX = 10;
-let shipStartY = 8;
-let shipStartZ = -15; // Behind Earth (negative Z)
+// Calculate the tangent point and approach vector for smooth entry
+// Ship approaches tangentially to the orbit circle
+const tangentPoint = {
+    x: Math.cos(entryStartAngle) * orbitRadius,
+    y: orbitY,
+    z: Math.sin(entryStartAngle) * orbitRadius
+};
 
-// Target position - entry point on orbit circle
-const shipTargetX = Math.cos(entryStartAngle) * orbitRadius;
-const shipTargetY = orbitY;
-const shipTargetZ = Math.sin(entryStartAngle) * orbitRadius;
+// Tangent direction at entry point (for clockwise orbit)
+const tangentDir = {
+    x: Math.sin(entryStartAngle),
+    z: -Math.cos(entryStartAngle)
+};
+
+// Start position - extend back along the tangent line from entry point
+const approachDistance = 25;
+const shipStartX = tangentPoint.x - tangentDir.x * approachDistance + 8; // Offset to top-right
+const shipStartY = tangentPoint.y + 6; // Higher up
+const shipStartZ = tangentPoint.z - tangentDir.z * approachDistance;
+
+// Control point for Bezier curve (for smooth arc into orbit)
+const controlPoint = {
+    x: tangentPoint.x - tangentDir.x * 8,
+    y: tangentPoint.y + 3,
+    z: tangentPoint.z - tangentDir.z * 8
+};
+
+// Target is the tangent point on the orbit
+const shipTargetX = tangentPoint.x;
+const shipTargetY = tangentPoint.y;
+const shipTargetZ = tangentPoint.z;
 
 // Ship animation state
 let shipProgress = 0;
-const shipSpeed = 0.1;
+const shipSpeed = 0.08;
 let orbitStartTime = 0;
 let hasEnteredOrbit = false;
+
+// Quadratic Bezier interpolation for smooth curved entry
+function bezierPoint(t, p0, p1, p2) {
+    const mt = 1 - t;
+    return mt * mt * p0 + 2 * mt * t * p1 + t * t * p2;
+}
+
+function bezierTangent(t, p0, p1, p2) {
+    return 2 * (1 - t) * (p1 - p0) + 2 * t * (p2 - p1);
+}
 
 spaceShip.position.set(shipStartX, shipStartY, shipStartZ);
 
@@ -447,30 +585,31 @@ function animate() {
 
     // Animate space ship
     if (shipProgress < 1) {
-        // Entry phase
+        // Entry phase - smooth Bezier curve approach
         shipProgress += shipSpeed * delta;
         if (shipProgress > 1) shipProgress = 1;
 
-        // Smooth easing
-        const easeProgress = 1 - Math.pow(1 - shipProgress, 3);
+        // Smooth easing for the parameter
+        const t = 1 - Math.pow(1 - shipProgress, 2);
 
-        const newX = shipStartX + (shipTargetX - shipStartX) * easeProgress;
-        const newY = shipStartY + (shipTargetY - shipStartY) * easeProgress;
-        const newZ = shipStartZ + (shipTargetZ - shipStartZ) * easeProgress;
+        // Calculate position along Bezier curve
+        const newX = bezierPoint(t, shipStartX, controlPoint.x, shipTargetX);
+        const newY = bezierPoint(t, shipStartY, controlPoint.y, shipTargetY);
+        const newZ = bezierPoint(t, shipStartZ, controlPoint.z, shipTargetZ);
 
         spaceShip.position.set(newX, newY, newZ);
 
-        // Ship faces direction of travel (nose forward, thrusters behind)
-        const travelDir = new THREE.Vector3(
-            shipTargetX - shipStartX,
-            shipTargetY - shipStartY,
-            shipTargetZ - shipStartZ
-        ).normalize();
+        // Calculate tangent of Bezier curve for smooth orientation
+        const tanX = bezierTangent(t, shipStartX, controlPoint.x, shipTargetX);
+        const tanY = bezierTangent(t, shipStartY, controlPoint.y, shipTargetY);
+        const tanZ = bezierTangent(t, shipStartZ, controlPoint.z, shipTargetZ);
+
+        const travelDir = new THREE.Vector3(tanX, tanY, tanZ).normalize();
 
         // Look in direction of travel, then flip so thrusters trail behind
         const lookTarget = spaceShip.position.clone().add(travelDir);
         spaceShip.lookAt(lookTarget);
-        spaceShip.rotateY(Math.PI); // Flip 180° so nose leads and thrusters trail
+        spaceShip.rotateY(Math.PI);
 
         if (shipProgress >= 1 && !hasEnteredOrbit) {
             orbitStartTime = elapsed;
@@ -479,33 +618,37 @@ function animate() {
     } else {
         // Orbit phase - clockwise (left to right from camera view)
         const orbitElapsed = elapsed - orbitStartTime;
-        const angle = entryStartAngle - orbitElapsed * orbitSpeed; // Subtract for clockwise
+        const angle = entryStartAngle - orbitElapsed * orbitSpeed;
 
         spaceShip.position.x = Math.cos(angle) * orbitRadius;
         spaceShip.position.z = Math.sin(angle) * orbitRadius;
         spaceShip.position.y = orbitY;
 
-        // Tangent direction for clockwise orbit: tangent = (sin(angle), 0, -cos(angle))
+        // Tangent direction for clockwise orbit
         const tangentX = Math.sin(angle);
         const tangentZ = -Math.cos(angle);
 
-        // Point nose in direction of travel, then flip so thrusters trail behind
+        // Point nose in direction of travel
         const forwardPoint = new THREE.Vector3(
             spaceShip.position.x + tangentX,
             spaceShip.position.y,
             spaceShip.position.z + tangentZ
         );
         spaceShip.lookAt(forwardPoint);
-        spaceShip.rotateY(Math.PI); // Flip 180° so nose leads and thrusters trail
+        spaceShip.rotateY(Math.PI);
     }
 
-    // Animate thrust flames
+    // Animate thrust flames (new thruster groups)
     const thrusters = ['mainThrust', 'mainThrust2', 'mainThrust3', 'leftNacelleThrust', 'rightNacelleThrust'];
     thrusters.forEach(name => {
-        const thrust = spaceShip.getObjectByName(name);
-        if (thrust) {
-            const flicker = 0.7 + Math.random() * 0.5;
-            thrust.scale.set(flicker, 0.7 + Math.random() * 0.6, flicker);
+        const thrustGroup = spaceShip.getObjectByName(name);
+        if (thrustGroup && thrustGroup.children) {
+            // Animate each part of the thruster
+            thrustGroup.children.forEach((child, i) => {
+                const flicker = 0.7 + Math.random() * 0.5;
+                const lengthFlicker = 0.8 + Math.random() * 0.4;
+                child.scale.set(flicker, flicker, lengthFlicker);
+            });
         }
     });
 
