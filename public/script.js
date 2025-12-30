@@ -198,6 +198,19 @@ function createStarfield() {
 
 const starfield = createStarfield();
 
+// --- Sun (visible) and night lights texture ---
+const SUN_COLOR = 0xfff2d6;
+const sunGeom = new THREE.SphereGeometry(1.2, 32, 32);
+const sunMat = new THREE.MeshBasicMaterial({ color: SUN_COLOR, emissive: SUN_COLOR, emissiveIntensity: 1.5 });
+const sunMesh = new THREE.Mesh(sunGeom, sunMat);
+sunMesh.scale.set(2.5, 2.5, 2.5);
+sunMesh.position.copy(directionalLight.position);
+// Attach sun to the starfield so it rotates with the stars
+starfield.add(sunMesh);
+
+const NIGHT_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-night.jpg';
+const nightTexture = textureLoader.load(NIGHT_TEXTURE_URL, updateLoadingProgress, undefined, onTextureError);
+
 // === SPACESHIP - Sleek sci-fi fighter design ===
 function createSpaceShip() {
     const ship = new THREE.Group();
@@ -996,6 +1009,17 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
+
+    // Keep sun light and earth shader in sync with the visible sun (sun is child of starfield)
+    if (sunMesh) {
+        const sunWorldPos = new THREE.Vector3();
+        sunMesh.getWorldPosition(sunWorldPos);
+        directionalLight.position.copy(sunWorldPos);
+        // Update shader uniform for day/night calculation
+        if (earthMaterial && earthMaterial.uniforms && earthMaterial.uniforms.lightDirection) {
+            earthMaterial.uniforms.lightDirection.value.copy(sunWorldPos).normalize();
+        }
+    }
 
     renderer.render(scene, camera);
 }
