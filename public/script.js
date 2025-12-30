@@ -495,67 +495,81 @@ function createControlUI() {
 
 createControlUI();
 
-// === MOUSE CONTROLS (Standard: left=orbit, right=pan, scroll=zoom) ===
-renderer.domElement.addEventListener('mousedown', (event) => {
-    if (event.button === 0) mouseState.isLeftDown = true;
-    if (event.button === 1) mouseState.isMiddleDown = true;
-    if (event.button === 2) mouseState.isRightDown = true;
-    mouseState.prevX = event.clientX;
-    mouseState.prevY = event.clientY;
+// === POINTER EVENTS UNIFIED INPUT ===
+// Use pointer events to handle mouse, touch, and stylus uniformly. Behavior:
+// - Single pointer: orbit (left-drag) by default. If Shift held => pan, Ctrl held => vertical drag zoom.
+// - Two pointers (touch): pan + pinch zoom.
+// - Right-button / middle-button drag still performs pan for mouse.
+
+const pointerState = {
+    pointers: new Map(), // pointerId -> {x,y, type, button}
+    prevSingle: null,
+    prevMidpoint: null,
+    prevDistance: null,
+};
+
+renderer.domElement.addEventListener('pointerdown', (ev) => {
+    ev.preventDefault();
+    renderer.domElement.setPointerCapture(ev.pointerId);
+    pointerState.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, type: ev.pointerType, button: ev.button, buttons: ev.buttons });
+    if (pointerState.pointers.size === 1) {
+        pointerState.prevSingle = { x: ev.clientX, y: ev.clientY };
+    } else if (pointerState.pointers.size === 2) {
+        const pts = Array.from(pointerState.pointers.values());
+        const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        pointerState.prevMidpoint = mid;
+        pointerState.prevDistance = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    }
 });
 
-window.addEventListener('mouseup', (event) => {
-    if (event.button === 0) mouseState.isLeftDown = false;
-    if (event.button === 1) mouseState.isMiddleDown = false;
-    if (event.button === 2) mouseState.isRightDown = false;
-});
+renderer.domElement.addEventListener('pointermove', (ev) => {
+    if (!pointerState.pointers.has(ev.pointerId) && ev.pointerType === 'mouse' && ev.buttons === 0) return;
+    const prev = pointerState.pointers.get(ev.pointerId);
+    const prevX = prev ? prev.x : ev.clientX;
+    const prevY = prev ? prev.y : ev.clientY;
+    const deltaX = ev.clientX - prevX;
+    const deltaY = ev.clientY - prevY;
 
-renderer.domElement.addEventListener('mousemove', (event) => {
-    const deltaX = event.clientX - mouseState.prevX;
-    const deltaY = event.clientY - mouseState.prevY;
-    mouseState.prevX = event.clientX;
-    mouseState.prevY = event.clientY;
+    pointerState.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, type: ev.pointerType, button: ev.button, buttons: ev.buttons });
 
-    // Left-click drag: Orbit around target
-    if (mouseState.isLeftDown) {
-        // If modifier keys are held while left-dragging, change behavior to match keyboard modifiers:
-        // Shift + left-drag => Pan, Ctrl + left-drag => Zoom (vertical drag), otherwise Orbit
-        if (event.shiftKey && !event.ctrlKey) {
+    // Two-pointer touch/pointer gesture: pan + pinch zoom
+    if (pointerState.pointers.size === 2) {
+        const pts = Array.from(pointerState.pointers.values());
+        const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+
+        if (pointerState.prevMidpoint) {
+            const panDeltaX = mid.x - pointerState.prevMidpoint.x;
+            const panDeltaY = mid.y - pointerState.prevMidpoint.y;
+
             const cameraDir = new THREE.Vector3();
             camera.getWorldDirection(cameraDir);
             const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
             const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
 
-            const panX = -deltaX * panSpeed;
-            const panY = deltaY * panSpeed;
-
-            camera.position.addScaledVector(cameraRight, panX);
-            camera.position.addScaledVector(cameraUp, panY);
-            cameraTarget.addScaledVector(cameraRight, panX);
-            cameraTarget.addScaledVector(cameraUp, panY);
-        } else if (event.ctrlKey && !event.shiftKey) {
-            // Vertical drag to zoom when Ctrl is held
-            const zoomAmount = deltaY * zoomSpeed * 4; // make drag zoom reasonably responsive
-            const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-            const distance = camera.position.distanceTo(cameraTarget);
-            const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
-            camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
-        } else {
-            // Orbit
-            const spherical = new THREE.Spherical().setFromVector3(
-                camera.position.clone().sub(cameraTarget)
-            );
-            spherical.theta -= deltaX * rotationSpeed;
-            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
-
-            const newPos = new THREE.Vector3().setFromSpherical(spherical);
-            camera.position.copy(cameraTarget).add(newPos);
-            camera.lookAt(cameraTarget);
+            camera.position.addScaledVector(cameraRight, -panDeltaX * panSpeed);
+            camera.position.addScaledVector(cameraUp, panDeltaY * panSpeed);
+            cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
+            cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
         }
+
+        if (pointerState.prevDistance != null) {
+            const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 0.5;
+            const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+            const currentDist = camera.position.distanceTo(cameraTarget);
+            const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
+            camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+        }
+
+        pointerState.prevMidpoint = mid;
+        pointerState.prevDistance = dist;
+        return;
     }
 
-    // Right-click or middle-click drag: Pan
-    if (mouseState.isRightDown || mouseState.isMiddleDown) {
+    // Single pointer handling (mouse or touch)
+    // Mouse with right or middle button: pan
+    if (ev.pointerType === 'mouse' && (ev.buttons & 2 || ev.buttons & 4)) {
+        // right (2) or middle (4)
         const cameraDir = new THREE.Vector3();
         camera.getWorldDirection(cameraDir);
         const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
@@ -568,16 +582,77 @@ renderer.domElement.addEventListener('mousemove', (event) => {
         camera.position.addScaledVector(cameraUp, panY);
         cameraTarget.addScaledVector(cameraRight, panX);
         cameraTarget.addScaledVector(cameraUp, panY);
+        return;
+    }
+
+    // For single-pointer left-drag or touch-drag, respect modifier keys on mouse events
+    // For touch pointers, modifiers won't be present; default to orbit.
+    const isShift = ev.shiftKey;
+    const isCtrl = ev.ctrlKey || ev.metaKey;
+
+    if (isShift && !isCtrl) {
+        // Pan
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
+
+        camera.position.addScaledVector(cameraRight, -deltaX * panSpeed);
+        camera.position.addScaledVector(cameraUp, deltaY * panSpeed);
+        cameraTarget.addScaledVector(cameraRight, -deltaX * panSpeed);
+        cameraTarget.addScaledVector(cameraUp, deltaY * panSpeed);
+        return;
+    }
+
+    if (isCtrl && !isShift) {
+        // Vertical drag zoom
+        const zoomAmount = deltaY * zoomSpeed * 4;
+        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+        const distance = camera.position.distanceTo(cameraTarget);
+        const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
+        camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+        return;
+    }
+
+    // Orbit
+    if (pointerState.prevSingle) {
+        const spherical = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(cameraTarget)
+        );
+        spherical.theta -= deltaX * rotationSpeed;
+        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+
+        const newPos = new THREE.Vector3().setFromSpherical(spherical);
+        camera.position.copy(cameraTarget).add(newPos);
+        camera.lookAt(cameraTarget);
+        pointerState.prevSingle = { x: ev.clientX, y: ev.clientY };
     }
 });
 
-// Scroll wheel: Zoom
+renderer.domElement.addEventListener('pointerup', (ev) => {
+    renderer.domElement.releasePointerCapture(ev.pointerId);
+    pointerState.pointers.delete(ev.pointerId);
+    if (pointerState.pointers.size === 0) {
+        pointerState.prevSingle = null;
+        pointerState.prevMidpoint = null;
+        pointerState.prevDistance = null;
+    } else if (pointerState.pointers.size === 1) {
+        const remaining = Array.from(pointerState.pointers.values())[0];
+        pointerState.prevSingle = { x: remaining.x, y: remaining.y };
+        pointerState.prevMidpoint = null;
+        pointerState.prevDistance = null;
+    }
+});
+
+renderer.domElement.addEventListener('pointercancel', (ev) => {
+    renderer.domElement.releasePointerCapture(ev.pointerId);
+    pointerState.pointers.delete(ev.pointerId);
+});
+
+// Keep wheel handling and contextmenu prevention
 renderer.domElement.addEventListener('wheel', (event) => {
     event.preventDefault();
 
-    // Heuristic: many touchpads emit smooth, small wheel deltas (deltaMode===0 and small deltaY)
-    // Treat those as two-finger scroll (pan) by default. Physical mouse wheels (larger deltas)
-    // should perform zoom. Users can force zoom with Ctrl/Meta and force pan with Shift.
     const isSmallDelta = Math.abs(event.deltaY) < 50 && event.deltaMode === 0;
     const forceZoom = event.ctrlKey || event.metaKey;
     const forcePan = event.shiftKey;
@@ -607,106 +682,7 @@ renderer.domElement.addEventListener('wheel', (event) => {
     }
 }, { passive: false });
 
-// Disable context menu on canvas
 renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
-
-// === TOUCH CONTROLS (Standard: 1-finger=orbit, 2-finger=pan+zoom) ===
-renderer.domElement.addEventListener('touchstart', (event) => {
-    event.preventDefault();
-    touchState.pointers = Array.from(event.touches);
-
-    if (touchState.pointers.length === 1) {
-        touchState.prevPosition = {
-            x: touchState.pointers[0].clientX,
-            y: touchState.pointers[0].clientY,
-        };
-    } else if (touchState.pointers.length === 2) {
-        const t1 = touchState.pointers[0];
-        const t2 = touchState.pointers[1];
-        touchState.prevMidpoint = {
-            x: (t1.clientX + t2.clientX) / 2,
-            y: (t1.clientY + t2.clientY) / 2,
-        };
-        touchState.prevDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-    }
-}, { passive: false });
-
-renderer.domElement.addEventListener('touchmove', (event) => {
-    event.preventDefault();
-    const touches = Array.from(event.touches);
-
-    // One finger: Orbit
-    if (touches.length === 1 && touchState.prevPosition) {
-        const deltaX = touches[0].clientX - touchState.prevPosition.x;
-        const deltaY = touches[0].clientY - touchState.prevPosition.y;
-
-        const spherical = new THREE.Spherical().setFromVector3(
-            camera.position.clone().sub(cameraTarget)
-        );
-        spherical.theta -= deltaX * rotationSpeed;
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
-
-        const newPos = new THREE.Vector3().setFromSpherical(spherical);
-        camera.position.copy(cameraTarget).add(newPos);
-        camera.lookAt(cameraTarget);
-
-        touchState.prevPosition = { x: touches[0].clientX, y: touches[0].clientY };
-    }
-
-    // Two fingers: Pan + Zoom
-    if (touches.length === 2 && touchState.prevMidpoint) {
-        const t1 = touches[0];
-        const t2 = touches[1];
-
-        const midpoint = {
-            x: (t1.clientX + t2.clientX) / 2,
-            y: (t1.clientY + t2.clientY) / 2,
-        };
-        const distance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-
-        // Pan
-        const panDeltaX = midpoint.x - touchState.prevMidpoint.x;
-        const panDeltaY = midpoint.y - touchState.prevMidpoint.y;
-
-        const cameraDir = new THREE.Vector3();
-        camera.getWorldDirection(cameraDir);
-        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
-        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
-
-        camera.position.addScaledVector(cameraRight, -panDeltaX * panSpeed);
-        camera.position.addScaledVector(cameraUp, panDeltaY * panSpeed);
-        cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
-        cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
-
-        // Zoom (pinch)
-        const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 0.5;
-        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-        const currentDist = camera.position.distanceTo(cameraTarget);
-        const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
-        camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
-
-        touchState.prevMidpoint = midpoint;
-        touchState.prevDistance = distance;
-    }
-
-    touchState.pointers = touches;
-}, { passive: false });
-
-renderer.domElement.addEventListener('touchend', (event) => {
-    touchState.pointers = Array.from(event.touches);
-    if (touchState.pointers.length === 0) {
-        touchState.prevPosition = null;
-        touchState.prevMidpoint = null;
-        touchState.prevDistance = null;
-    } else if (touchState.pointers.length === 1) {
-        touchState.prevPosition = {
-            x: touchState.pointers[0].clientX,
-            y: touchState.pointers[0].clientY,
-        };
-        touchState.prevMidpoint = null;
-        touchState.prevDistance = null;
-    }
-});
 
 // === KEYBOARD CONTROLS ===
 window.addEventListener('keydown', (e) => {
