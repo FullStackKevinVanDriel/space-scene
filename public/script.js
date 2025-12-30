@@ -47,6 +47,7 @@ const EARTH_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/eart
 const EARTH_BUMP_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-topology.png';
 const EARTH_SPECULAR_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-water.png';
 const CLOUDS_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-clouds.png';
+const EARTH_NIGHT_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-night.jpg';
 
 // Loading indicator
 const loadingDiv = document.createElement('div');
@@ -69,7 +70,7 @@ loadingDiv.style.cssText = `
 document.body.appendChild(loadingDiv);
 
 let texturesLoaded = 0;
-const totalTextures = 4;
+const totalTextures = 5;
 
 function updateLoadingProgress() {
     texturesLoaded++;
@@ -91,6 +92,7 @@ const earthTexture = textureLoader.load(EARTH_TEXTURE_URL, updateLoadingProgress
 const earthBumpMap = textureLoader.load(EARTH_BUMP_URL, updateLoadingProgress, undefined, onTextureError);
 const earthSpecularMap = textureLoader.load(EARTH_SPECULAR_URL, updateLoadingProgress, undefined, onTextureError);
 const cloudTexture = textureLoader.load(CLOUDS_TEXTURE_URL, updateLoadingProgress, undefined, onTextureError);
+const earthNightTexture = textureLoader.load(EARTH_NIGHT_URL, updateLoadingProgress, undefined, onTextureError);
 
 // Create Earth
 const earthGeometry = new THREE.SphereGeometry(2, 128, 128);
@@ -100,7 +102,10 @@ const earthMaterial = new THREE.MeshPhongMaterial({
     bumpScale: 0.05,
     specularMap: earthSpecularMap,
     specular: new THREE.Color(0x333333),
-    shininess: 25
+    shininess: 25,
+    emissiveMap: earthNightTexture,
+    emissive: new THREE.Color(0xffff88),
+    emissiveIntensity: 1.5
 });
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 scene.add(earth);
