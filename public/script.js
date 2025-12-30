@@ -347,9 +347,10 @@ spaceShip.position.set(
 
 // Camera control variables
 const cameraTarget = new THREE.Vector3(0, 0, 0); // The point the camera looks at
-const zoomSpeed = 0.002;
+const zoomSpeed = 0.01; // Increased 5x for more dramatic zoom
 const rotationSpeed = 0.005;
 const panSpeed = 0.003;
+const keyRotationSpeed = 0.03; // For arrow keys
 
 // Position camera
 camera.position.set(4, 4, 12);
@@ -371,6 +372,9 @@ const touchState = {
     prevMidpoint: null,
     prevDistance: null,
 };
+
+// Keyboard state
+const keys = {};
 
 // === UI CONTROLS ===
 function createControlUI() {
@@ -656,6 +660,10 @@ renderer.domElement.addEventListener('touchend', (event) => {
     }
 });
 
+// === KEYBOARD CONTROLS ===
+window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
 // Handle resize
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -668,6 +676,33 @@ function animate() {
     requestAnimationFrame(animate);
 
     const delta = clock.getDelta();
+
+    // Arrow key controls (standard: arrows orbit, +/- zoom)
+    const spherical = new THREE.Spherical().setFromVector3(
+        camera.position.clone().sub(cameraTarget)
+    );
+
+    // Arrow keys: Orbit around target
+    if (keys['ArrowLeft']) spherical.theta += keyRotationSpeed;
+    if (keys['ArrowRight']) spherical.theta -= keyRotationSpeed;
+    if (keys['ArrowUp']) spherical.phi = Math.max(0.1, spherical.phi - keyRotationSpeed);
+    if (keys['ArrowDown']) spherical.phi = Math.min(Math.PI - 0.1, spherical.phi + keyRotationSpeed);
+
+    // +/= and -/_ keys: Zoom
+    if (keys['Equal'] || keys['NumpadAdd']) {
+        spherical.radius = Math.max(3, spherical.radius - 0.3);
+    }
+    if (keys['Minus'] || keys['NumpadSubtract']) {
+        spherical.radius = Math.min(50, spherical.radius + 0.3);
+    }
+
+    // Apply arrow key changes
+    if (keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown'] ||
+        keys['Equal'] || keys['NumpadAdd'] || keys['Minus'] || keys['NumpadSubtract']) {
+        const newPos = new THREE.Vector3().setFromSpherical(spherical);
+        camera.position.copy(cameraTarget).add(newPos);
+        camera.lookAt(cameraTarget);
+    }
 
     // Rotate Earth
     earth.rotation.y += planetRotationSpeed * planetRotationDirection * delta;
