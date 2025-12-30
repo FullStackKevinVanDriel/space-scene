@@ -28,6 +28,7 @@ scene.add(ambientLight);
 const directionalLight = new THREE.DirectionalLight(0xffffee, 1.5);
 directionalLight.position.set(10, 8, 5);
 scene.add(directionalLight);
+scene.add(directionalLight.target); // Required for target positioning to work
 
 // Add subtle fill light from opposite side
 const fillLight = new THREE.DirectionalLight(0x4466aa, 0.3);
@@ -70,7 +71,7 @@ loadingDiv.style.cssText = `
 document.body.appendChild(loadingDiv);
 
 let texturesLoaded = 0;
-const totalTextures = 5;
+const totalTextures = 6;
 
 function updateLoadingProgress() {
     texturesLoaded++;
