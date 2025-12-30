@@ -131,18 +131,18 @@ const earthMaterial = new THREE.ShaderMaterial({
             // Calculate how much this fragment faces the light
             float lightIntensity = dot(vNormal, lightDirection);
 
-            // Smooth transition at terminator (-0.1 to 0.2 range)
-            float dayNightMix = smoothstep(-0.1, 0.2, lightIntensity);
+            // Smooth transition at terminator (-0.2 to 0.1 range for sharper transition)
+            float dayNightMix = smoothstep(-0.2, 0.1, lightIntensity);
 
             // Sample textures
             vec4 dayColor = texture2D(dayTexture, vUv);
             vec4 nightColor = texture2D(nightTexture, vUv);
 
             // Day side: full color with lighting
-            vec3 litDay = dayColor.rgb * (0.3 + 0.7 * max(0.0, lightIntensity));
+            vec3 litDay = dayColor.rgb * (0.4 + 0.6 * max(0.0, lightIntensity));
 
-            // Night side: dark with city lights glowing
-            vec3 litNight = dayColor.rgb * 0.05 + nightColor.rgb * 1.5;
+            // Night side: very dark with bright city lights
+            vec3 litNight = dayColor.rgb * 0.01 + nightColor.rgb * 2.5;
 
             // Blend between day and night
             vec3 finalColor = mix(litNight, litDay, dayNightMix);
@@ -954,6 +954,13 @@ function animate() {
 
     earth.rotation.x = 0.2;
     clouds.rotation.x = 0.2;
+
+    // Update shader light direction based on Earth's rotation
+    // Light is fixed in world space, transform to Earth's local space
+    const worldLightDir = new THREE.Vector3(10, 8, 5).normalize();
+    const inverseRotation = new THREE.Matrix4().makeRotationFromEuler(earth.rotation).invert();
+    const localLightDir = worldLightDir.clone().applyMatrix4(inverseRotation);
+    earthMaterial.uniforms.lightDirection.value.copy(localLightDir);
     atmosphere.rotation.x = 0.2;
 
     // Ship orbit
