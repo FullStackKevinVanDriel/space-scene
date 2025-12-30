@@ -518,15 +518,40 @@ renderer.domElement.addEventListener('mousemove', (event) => {
 
     // Left-click drag: Orbit around target
     if (mouseState.isLeftDown) {
-        const spherical = new THREE.Spherical().setFromVector3(
-            camera.position.clone().sub(cameraTarget)
-        );
-        spherical.theta -= deltaX * rotationSpeed;
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+        // If modifier keys are held while left-dragging, change behavior to match keyboard modifiers:
+        // Shift + left-drag => Pan, Ctrl + left-drag => Zoom (vertical drag), otherwise Orbit
+        if (event.shiftKey && !event.ctrlKey) {
+            const cameraDir = new THREE.Vector3();
+            camera.getWorldDirection(cameraDir);
+            const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+            const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
 
-        const newPos = new THREE.Vector3().setFromSpherical(spherical);
-        camera.position.copy(cameraTarget).add(newPos);
-        camera.lookAt(cameraTarget);
+            const panX = -deltaX * panSpeed;
+            const panY = deltaY * panSpeed;
+
+            camera.position.addScaledVector(cameraRight, panX);
+            camera.position.addScaledVector(cameraUp, panY);
+            cameraTarget.addScaledVector(cameraRight, panX);
+            cameraTarget.addScaledVector(cameraUp, panY);
+        } else if (event.ctrlKey && !event.shiftKey) {
+            // Vertical drag to zoom when Ctrl is held
+            const zoomAmount = deltaY * zoomSpeed * 4; // make drag zoom reasonably responsive
+            const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+            const distance = camera.position.distanceTo(cameraTarget);
+            const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
+            camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+        } else {
+            // Orbit
+            const spherical = new THREE.Spherical().setFromVector3(
+                camera.position.clone().sub(cameraTarget)
+            );
+            spherical.theta -= deltaX * rotationSpeed;
+            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+
+            const newPos = new THREE.Vector3().setFromSpherical(spherical);
+            camera.position.copy(cameraTarget).add(newPos);
+            camera.lookAt(cameraTarget);
+        }
     }
 
     // Right-click or middle-click drag: Pan
@@ -549,14 +574,37 @@ renderer.domElement.addEventListener('mousemove', (event) => {
 // Scroll wheel: Zoom
 renderer.domElement.addEventListener('wheel', (event) => {
     event.preventDefault();
-    const zoomAmount = event.deltaY * zoomSpeed;
 
-    // Move camera toward/away from target
-    const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-    const distance = camera.position.distanceTo(cameraTarget);
-    const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
+    // Heuristic: many touchpads emit smooth, small wheel deltas (deltaMode===0 and small deltaY)
+    // Treat those as two-finger scroll (pan) by default. Physical mouse wheels (larger deltas)
+    // should perform zoom. Users can force zoom with Ctrl/Meta and force pan with Shift.
+    const isSmallDelta = Math.abs(event.deltaY) < 50 && event.deltaMode === 0;
+    const forceZoom = event.ctrlKey || event.metaKey;
+    const forcePan = event.shiftKey;
 
-    camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+    if (forcePan || (!forceZoom && isSmallDelta && !event.altKey)) {
+        // Pan (touchpad two-finger scroll)
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
+
+        const panX = -event.deltaX * panSpeed * 0.5;
+        const panY = event.deltaY * panSpeed * 0.5;
+
+        camera.position.addScaledVector(cameraRight, panX);
+        camera.position.addScaledVector(cameraUp, panY);
+        cameraTarget.addScaledVector(cameraRight, panX);
+        cameraTarget.addScaledVector(cameraUp, panY);
+    } else {
+        // Zoom (mouse wheel or Ctrl/Meta+gesture)
+        const zoomAmount = event.deltaY * zoomSpeed;
+        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+        const distance = camera.position.distanceTo(cameraTarget);
+        const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
+
+        camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+    }
 }, { passive: false });
 
 // Disable context menu on canvas
@@ -661,8 +709,20 @@ renderer.domElement.addEventListener('touchend', (event) => {
 });
 
 // === KEYBOARD CONTROLS ===
-window.addEventListener('keydown', (e) => { keys[e.code] = true; });
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+window.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
+    keys.shift = e.shiftKey;
+    keys.ctrl = e.ctrlKey || e.metaKey;
+    // Prevent browser scrolling with arrow keys
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+    }
+});
+window.addEventListener('keyup', (e) => {
+    keys[e.code] = false;
+    keys.shift = e.shiftKey;
+    keys.ctrl = e.ctrlKey || e.metaKey;
+});
 
 // Handle resize
 window.addEventListener('resize', () => {
@@ -677,28 +737,73 @@ function animate() {
 
     const delta = clock.getDelta();
 
-    // Arrow key controls (standard: arrows orbit, +/- zoom)
+    // Arrow key controls with modifiers
+    // Plain arrows: Orbit | Shift+arrows: Pan | Ctrl+arrows: Zoom
     const spherical = new THREE.Spherical().setFromVector3(
         camera.position.clone().sub(cameraTarget)
     );
+    let cameraChanged = false;
 
-    // Arrow keys: Orbit around target
-    if (keys['ArrowLeft']) spherical.theta += keyRotationSpeed;
-    if (keys['ArrowRight']) spherical.theta -= keyRotationSpeed;
-    if (keys['ArrowUp']) spherical.phi = Math.max(0.1, spherical.phi - keyRotationSpeed);
-    if (keys['ArrowDown']) spherical.phi = Math.min(Math.PI - 0.1, spherical.phi + keyRotationSpeed);
+    const hasArrow = keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown'];
 
-    // +/= and -/_ keys: Zoom
+    if (hasArrow && keys.shift && !keys.ctrl) {
+        // SHIFT + Arrows: Pan
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
+        const keyPanSpeed = 0.15;
+
+        if (keys['ArrowLeft']) {
+            camera.position.addScaledVector(cameraRight, -keyPanSpeed);
+            cameraTarget.addScaledVector(cameraRight, -keyPanSpeed);
+        }
+        if (keys['ArrowRight']) {
+            camera.position.addScaledVector(cameraRight, keyPanSpeed);
+            cameraTarget.addScaledVector(cameraRight, keyPanSpeed);
+        }
+        if (keys['ArrowUp']) {
+            camera.position.addScaledVector(cameraUp, keyPanSpeed);
+            cameraTarget.addScaledVector(cameraUp, keyPanSpeed);
+        }
+        if (keys['ArrowDown']) {
+            camera.position.addScaledVector(cameraUp, -keyPanSpeed);
+            cameraTarget.addScaledVector(cameraUp, -keyPanSpeed);
+        }
+        cameraChanged = true;
+    } else if (hasArrow && keys.ctrl && !keys.shift) {
+        // CTRL + Up/Down: Zoom
+        if (keys['ArrowUp']) {
+            spherical.radius = Math.max(3, spherical.radius - 0.3);
+            cameraChanged = true;
+        }
+        if (keys['ArrowDown']) {
+            spherical.radius = Math.min(50, spherical.radius + 0.3);
+            cameraChanged = true;
+        }
+        // CTRL + Left/Right: Also orbit (or could be something else)
+        if (keys['ArrowLeft']) { spherical.theta += keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowRight']) { spherical.theta -= keyRotationSpeed; cameraChanged = true; }
+    } else if (hasArrow) {
+        // Plain arrows: Orbit
+        if (keys['ArrowLeft']) { spherical.theta += keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowRight']) { spherical.theta -= keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowUp']) { spherical.phi = Math.max(0.1, spherical.phi - keyRotationSpeed); cameraChanged = true; }
+        if (keys['ArrowDown']) { spherical.phi = Math.min(Math.PI - 0.1, spherical.phi + keyRotationSpeed); cameraChanged = true; }
+    }
+
+    // +/= and -/_ keys: Zoom (always)
     if (keys['Equal'] || keys['NumpadAdd']) {
         spherical.radius = Math.max(3, spherical.radius - 0.3);
+        cameraChanged = true;
     }
     if (keys['Minus'] || keys['NumpadSubtract']) {
         spherical.radius = Math.min(50, spherical.radius + 0.3);
+        cameraChanged = true;
     }
 
-    // Apply arrow key changes
-    if (keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown'] ||
-        keys['Equal'] || keys['NumpadAdd'] || keys['Minus'] || keys['NumpadSubtract']) {
+    // Apply camera changes
+    if (cameraChanged) {
         const newPos = new THREE.Vector3().setFromSpherical(spherical);
         camera.position.copy(cameraTarget).add(newPos);
         camera.lookAt(cameraTarget);
