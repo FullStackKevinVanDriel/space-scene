@@ -94,19 +94,64 @@ const earthSpecularMap = textureLoader.load(EARTH_SPECULAR_URL, updateLoadingPro
 const cloudTexture = textureLoader.load(CLOUDS_TEXTURE_URL, updateLoadingProgress, undefined, onTextureError);
 const earthNightTexture = textureLoader.load(EARTH_NIGHT_URL, updateLoadingProgress, undefined, onTextureError);
 
-// Create Earth
+// Create Earth with custom day/night shader
 const earthGeometry = new THREE.SphereGeometry(2, 128, 128);
-const earthMaterial = new THREE.MeshPhongMaterial({
-    map: earthTexture,
-    bumpMap: earthBumpMap,
-    bumpScale: 0.05,
-    specularMap: earthSpecularMap,
-    specular: new THREE.Color(0x333333),
-    shininess: 25,
-    emissiveMap: earthNightTexture,
-    emissive: new THREE.Color(0xffff88),
-    emissiveIntensity: 1.5
+
+// Custom shader for day/night transition with city lights
+const earthMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+        dayTexture: { value: earthTexture },
+        nightTexture: { value: earthNightTexture },
+        bumpMap: { value: earthBumpMap },
+        bumpScale: { value: 0.05 },
+        lightDirection: { value: new THREE.Vector3(10, 8, 5).normalize() }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+
+        void main() {
+            vUv = uv;
+            vNormal = normalize(normalMatrix * normal);
+            vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D dayTexture;
+        uniform sampler2D nightTexture;
+        uniform vec3 lightDirection;
+
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+
+        void main() {
+            // Calculate how much this fragment faces the light
+            float lightIntensity = dot(vNormal, lightDirection);
+
+            // Smooth transition at terminator (-0.1 to 0.2 range)
+            float dayNightMix = smoothstep(-0.1, 0.2, lightIntensity);
+
+            // Sample textures
+            vec4 dayColor = texture2D(dayTexture, vUv);
+            vec4 nightColor = texture2D(nightTexture, vUv);
+
+            // Day side: full color with lighting
+            vec3 litDay = dayColor.rgb * (0.3 + 0.7 * max(0.0, lightIntensity));
+
+            // Night side: dark with city lights glowing
+            vec3 litNight = dayColor.rgb * 0.05 + nightColor.rgb * 1.5;
+
+            // Blend between day and night
+            vec3 finalColor = mix(litNight, litDay, dayNightMix);
+
+            gl_FragColor = vec4(finalColor, 1.0);
+        }
+    `
 });
+
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 scene.add(earth);
 
