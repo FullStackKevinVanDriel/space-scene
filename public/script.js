@@ -273,10 +273,11 @@ const starfield = createStarfield();
 function createSpaceShip() {
     const ship = new THREE.Group();
 
-    // Materials - use PBR for more realistic surface response
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0x23262b, metalness: 0.85, roughness: 0.25 });
+    // Materials - lighter hull colors for better visibility
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, metalness: 0.7, roughness: 0.3 });
     const accentMat = new THREE.MeshStandardMaterial({ color: 0x0aa8ff, emissive: 0x003355, emissiveIntensity: 0.8, metalness: 0.2, roughness: 0.1 });
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x111218, metalness: 0.9, roughness: 0.15 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x666677, metalness: 0.8, roughness: 0.2 });
+    const interiorMat = new THREE.MeshStandardMaterial({ color: 0x333340, metalness: 0.3, roughness: 0.6 });
 
     // Sleek tapered fuselage using Cylinder (narrow nose to wider rear)
     const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.45, 4.0, 32, 1, true), hullMat);
@@ -290,9 +291,48 @@ function createSpaceShip() {
     nose.position.z = -3.0;
     ship.add(nose);
 
-    // Cockpit: forward glass canopy with physical material
+    // Cockpit interior - pilot seat and controls (visible through glass)
+    const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.06), interiorMat);
+    seatBack.position.set(0, 0.12, -2.0);
+    ship.add(seatBack);
+    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.12), interiorMat);
+    seatBase.position.set(0, 0.02, -2.05);
+    ship.add(seatBase);
+    // Control panel
+    const consoleMat = new THREE.MeshStandardMaterial({ color: 0x222228, emissive: 0x001122, emissiveIntensity: 0.3 });
+    const console1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.08), consoleMat);
+    console1.position.set(0, 0.08, -2.35);
+    console1.rotation.x = -0.3;
+    ship.add(console1);
+    // Small indicator lights on console
+    const indicatorMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+    const ind1 = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), indicatorMat);
+    ind1.position.set(-0.04, 0.1, -2.33);
+    ship.add(ind1);
+    const ind2 = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff4400 }));
+    ind2.position.set(0.04, 0.1, -2.33);
+    ship.add(ind2);
+    // Pilot helmet/head shape
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.1, roughness: 0.4 }));
+    helmet.position.set(0, 0.22, -2.0);
+    helmet.scale.set(1, 1.1, 1);
+    ship.add(helmet);
+
+    // Cockpit: transparent glass canopy
     const canopyGeo = new THREE.SphereGeometry(0.32, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2);
-    const canopyMat = new THREE.MeshPhysicalMaterial({ color: 0x88ccff, transmission: 0.9, roughness: 0.05, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.0, reflectivity: 0.8, transparent: true, opacity: 0.95 });
+    const canopyMat = new THREE.MeshPhysicalMaterial({
+        color: 0xaaddff,
+        transmission: 0.95,
+        thickness: 0.1,
+        roughness: 0.02,
+        metalness: 0.0,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.0,
+        ior: 1.5,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.DoubleSide
+    });
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
     canopy.scale.set(1.0, 0.9, 1.6);
     canopy.position.set(0, 0.22, -2.2);
