@@ -266,6 +266,47 @@ function createStarfield() {
 
 const starfield = createStarfield();
 
+// --- Space skybox background (replaces Bridge demo skybox) ---
+// Load a space-themed cube texture and hide the generated starfield so
+// the scene shows a photographic nebula/space backdrop.
+const skyboxUrls = [
+    'https://threejs.org/examples/textures/cube/space/px.jpg',
+    'https://threejs.org/examples/textures/cube/space/nx.jpg',
+    'https://threejs.org/examples/textures/cube/space/py.jpg',
+    'https://threejs.org/examples/textures/cube/space/ny.jpg',
+    'https://threejs.org/examples/textures/cube/space/pz.jpg',
+    'https://threejs.org/examples/textures/cube/space/nz.jpg'
+];
+const skyLoader = new THREE.CubeTextureLoader();
+let spaceSky = null;
+skyLoader.load(
+    skyboxUrls,
+    (tex) => {
+        spaceSky = tex;
+        spaceSky.encoding = THREE.sRGBEncoding;
+        scene.background = spaceSky;
+        try { starfield.visible = false; } catch (e) {}
+        console.log('Space skybox loaded.');
+    },
+    undefined,
+    (err) => {
+        console.warn('Failed to load space skybox:', err);
+        // keep procedural starfield visible as a fallback
+    }
+);
+
+// --- Post-processing composer & bloom (if available) ---
+let composer = null;
+if (typeof THREE.EffectComposer !== 'undefined') {
+    composer = new THREE.EffectComposer(renderer);
+    const renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
+    bloomPass.threshold = 0.15;
+    bloomPass.strength = 1.1; // intensity
+    bloomPass.radius = 0.4;
+    composer.addPass(bloomPass);
+}
 // === SPACESHIP - Sleek sci-fi fighter design ===
 function createSpaceShip() {
     const ship = new THREE.Group();
@@ -374,6 +415,12 @@ function createSpaceShip() {
         opacity: 0.3,
         side: THREE.DoubleSide
     });
+    // Attach environment map (if loaded) for realistic reflections in the canopy
+    if (typeof envCube !== 'undefined' && envCube) {
+        canopyMat.envMap = envCube;
+        canopyMat.envMapIntensity = 1.6;
+        canopyMat.needsUpdate = true;
+    }
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
     canopy.scale.set(1.0, 0.9, 1.6);
     canopy.position.set(0, 0.22, -2.2);
@@ -455,10 +502,16 @@ function createSpaceShip() {
     const t4 = createThruster(-0.6, -0.08, 1.65, 0.85, 'thruster4'); ship.add(t4);
     const t5 = createThruster(0.6, -0.08, 1.65, 0.85, 'thruster5'); ship.add(t5);
 
-    // Nav lights
+    // Nav lights (with names for blinking animation)
     const navGeo = new THREE.SphereGeometry(0.03, 8, 8);
-    const navR = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xff4444 })); navR.position.set(-1.4,0.02,0.7); ship.add(navR);
-    const navG = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0x44ff88 })); navG.position.set(1.4,0.02,0.7); ship.add(navG);
+    const navR = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xff4444 }));
+    navR.position.set(-1.4, 0.02, 0.7);
+    navR.name = 'navLightRed';
+    ship.add(navR);
+    const navG = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0x44ff88 }));
+    navG.position.set(1.4, 0.02, 0.7);
+    navG.name = 'navLightGreen';
+    ship.add(navG);
 
     return ship;
 }
@@ -942,6 +995,8 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    updatePixelRatio();
+    if (composer) composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 // === ANIMATION LOOP ===
@@ -1064,10 +1119,27 @@ function animate() {
         }
     }
 
+    // Nav light blinking animation
+    const navRed = spaceShip.getObjectByName('navLightRed');
+    const navGreen = spaceShip.getObjectByName('navLightGreen');
+    if (navRed && navGreen) {
+        const time = clock.getElapsedTime();
+        // Red blinks every 1 second (on for 0.15s)
+        const redBlink = (time % 1.0) < 0.15 ? 1 : 0;
+        // Green blinks every 1.2 seconds, offset by 0.5s (on for 0.15s)
+        const greenBlink = ((time + 0.5) % 1.2) < 0.15 ? 1 : 0;
+        navRed.visible = redBlink === 1;
+        navGreen.visible = greenBlink === 1;
+    }
+
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
 
-    renderer.render(scene, camera);
+    if (composer) {
+        composer.render();
+    } else {
+        renderer.render(scene, camera);
+    }
 }
 
 animate();
