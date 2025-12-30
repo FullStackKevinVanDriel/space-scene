@@ -28,7 +28,6 @@ scene.add(ambientLight);
 const directionalLight = new THREE.DirectionalLight(0xffffee, 1.5);
 directionalLight.position.set(10, 8, 5);
 scene.add(directionalLight);
-scene.add(directionalLight.target); // Required for target positioning to work
 
 // Add subtle fill light from opposite side
 const fillLight = new THREE.DirectionalLight(0x4466aa, 0.3);
@@ -71,7 +70,7 @@ loadingDiv.style.cssText = `
 document.body.appendChild(loadingDiv);
 
 let texturesLoaded = 0;
-const totalTextures = 6;
+const totalTextures = 5;
 
 function updateLoadingProgress() {
     texturesLoaded++;
@@ -105,8 +104,7 @@ const earthMaterial = new THREE.ShaderMaterial({
         nightTexture: { value: earthNightTexture },
         bumpMap: { value: earthBumpMap },
         bumpScale: { value: 0.05 },
-        // sun position in world space (will be updated each frame)
-        sunPosition: { value: new THREE.Vector3(10, 8, 5) }
+        lightDirection: { value: new THREE.Vector3(10, 8, 5).normalize() }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -115,9 +113,7 @@ const earthMaterial = new THREE.ShaderMaterial({
 
         void main() {
             vUv = uv;
-            // Transform normal to world space
-            vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
-            // World position
+            vNormal = normalize(normalMatrix * normal);
             vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -125,20 +121,17 @@ const earthMaterial = new THREE.ShaderMaterial({
     fragmentShader: `
         uniform sampler2D dayTexture;
         uniform sampler2D nightTexture;
-        uniform vec3 sunPosition;
+        uniform vec3 lightDirection;
 
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vPosition;
 
         void main() {
-            // Light direction from fragment to sun (world space)
-            vec3 L = normalize(sunPosition - vPosition);
+            // Calculate how much this fragment faces the light
+            float lightIntensity = dot(vNormal, lightDirection);
 
-            // How much this fragment faces the light
-            float lightIntensity = dot(normalize(vNormal), L);
-
-            // Smooth transition at terminator
+            // Smooth transition at terminator (-0.2 to 0.1 range for sharper transition)
             float dayNightMix = smoothstep(-0.2, 0.1, lightIntensity);
 
             // Sample textures
@@ -204,19 +197,6 @@ function createStarfield() {
 }
 
 const starfield = createStarfield();
-
-// --- Sun (visible) and night lights texture ---
-const SUN_COLOR = 0xfff2d6;
-const sunGeom = new THREE.SphereGeometry(1.2, 32, 32);
-const sunMat = new THREE.MeshBasicMaterial({ color: SUN_COLOR, emissive: SUN_COLOR, emissiveIntensity: 1.5 });
-const sunMesh = new THREE.Mesh(sunGeom, sunMat);
-sunMesh.scale.set(2.5, 2.5, 2.5);
-sunMesh.position.copy(directionalLight.position);
-// Attach sun to the starfield so it rotates with the stars
-starfield.add(sunMesh);
-
-const NIGHT_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-night.jpg';
-const nightTexture = textureLoader.load(NIGHT_TEXTURE_URL, updateLoadingProgress, undefined, onTextureError);
 
 // === SPACESHIP - Sleek sci-fi fighter design ===
 function createSpaceShip() {
@@ -1016,20 +996,6 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
-
-    // Keep sun light and earth shader in sync with the visible sun (sun is child of starfield)
-    if (sunMesh) {
-        const sunWorldPos = new THREE.Vector3();
-        sunMesh.getWorldPosition(sunWorldPos);
-        directionalLight.position.copy(sunWorldPos);
-        // Ensure directional light points at the earth center
-        directionalLight.target.position.copy(cameraTarget);
-        directionalLight.target.updateMatrixWorld();
-        // Update shader uniform for day/night calculation
-        if (earthMaterial && earthMaterial.uniforms && earthMaterial.uniforms.sunPosition) {
-            earthMaterial.uniforms.sunPosition.value.copy(sunWorldPos);
-        }
-    }
 
     renderer.render(scene, camera);
 }
