@@ -104,7 +104,8 @@ const earthMaterial = new THREE.ShaderMaterial({
         nightTexture: { value: earthNightTexture },
         bumpMap: { value: earthBumpMap },
         bumpScale: { value: 0.05 },
-        lightDirection: { value: new THREE.Vector3(10, 8, 5).normalize() }
+        // sun position in world space (will be updated each frame)
+        sunPosition: { value: new THREE.Vector3(10, 8, 5) }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -113,7 +114,9 @@ const earthMaterial = new THREE.ShaderMaterial({
 
         void main() {
             vUv = uv;
-            vNormal = normalize(normalMatrix * normal);
+            // Transform normal to world space
+            vNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+            // World position
             vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -121,17 +124,20 @@ const earthMaterial = new THREE.ShaderMaterial({
     fragmentShader: `
         uniform sampler2D dayTexture;
         uniform sampler2D nightTexture;
-        uniform vec3 lightDirection;
+        uniform vec3 sunPosition;
 
         varying vec2 vUv;
         varying vec3 vNormal;
         varying vec3 vPosition;
 
         void main() {
-            // Calculate how much this fragment faces the light
-            float lightIntensity = dot(vNormal, lightDirection);
+            // Light direction from fragment to sun (world space)
+            vec3 L = normalize(sunPosition - vPosition);
 
-            // Smooth transition at terminator (-0.2 to 0.1 range for sharper transition)
+            // How much this fragment faces the light
+            float lightIntensity = dot(normalize(vNormal), L);
+
+            // Smooth transition at terminator
             float dayNightMix = smoothstep(-0.2, 0.1, lightIntensity);
 
             // Sample textures
@@ -1015,9 +1021,12 @@ function animate() {
         const sunWorldPos = new THREE.Vector3();
         sunMesh.getWorldPosition(sunWorldPos);
         directionalLight.position.copy(sunWorldPos);
+        // Ensure directional light points at the earth center
+        directionalLight.target.position.copy(cameraTarget);
+        directionalLight.target.updateMatrixWorld();
         // Update shader uniform for day/night calculation
-        if (earthMaterial && earthMaterial.uniforms && earthMaterial.uniforms.lightDirection) {
-            earthMaterial.uniforms.lightDirection.value.copy(sunWorldPos).normalize();
+        if (earthMaterial && earthMaterial.uniforms && earthMaterial.uniforms.sunPosition) {
+            earthMaterial.uniforms.sunPosition.value.copy(sunWorldPos);
         }
     }
 
