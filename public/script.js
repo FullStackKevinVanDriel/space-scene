@@ -201,20 +201,21 @@ const earthMaterial = new THREE.ShaderMaterial({
             float sunIntensity = dot(worldNormal, toSun);
 
             // Smooth transition at terminator (0 = night, 1 = day)
-            float dayAmount = smoothstep(-0.1, 0.2, sunIntensity);
+            // Push terminator toward the lit side for a darker night hemisphere
+            float dayAmount = smoothstep(-0.45, -0.02, sunIntensity);
 
             // Sample textures
             vec4 dayColor = texture2D(dayTexture, vUv);
             vec4 nightColor = texture2D(nightTexture, vUv);
 
-            // Day side: bright with sun lighting
-            vec3 litDay = dayColor.rgb * (0.5 + 0.5 * max(0.0, sunIntensity));
+            // Day side: maintain good contrast but avoid over-brightening
+            vec3 litDay = dayColor.rgb * (0.25 + 0.75 * max(0.0, sunIntensity));
 
-            // Night side: nearly black with bright glowing city lights
-            vec3 litNight = dayColor.rgb * 0.003 + nightColor.rgb * 3.0;
+            // Night side: make surface nearly black, amplify city lights non-linearly
+            vec3 nightLights = pow(nightColor.rgb, vec3(1.6)) * 6.0;
+            vec3 litNight = dayColor.rgb * 0.0005 + nightLights;
 
-            // Blend based on how much sun this fragment receives
-            // dayAmount=1 (facing sun) -> litDay, dayAmount=0 (night) -> litNight
+            // Blend: night (0) -> litNight, day (1) -> litDay
             vec3 finalColor = mix(litNight, litDay, dayAmount);
 
             gl_FragColor = vec4(finalColor, 1.0);
