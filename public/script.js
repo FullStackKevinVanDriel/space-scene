@@ -501,11 +501,33 @@ function createSpaceShip() {
     ship.add(createWing(false, true));  // Bottom left
     ship.add(createWing(false, false)); // Bottom right
 
-    // === ENGINES (4 engine pods like X-Wing) ===
+    // === ENGINES (4 engine pods with blue methane flames) ===
+    // Create flame texture for engine glow
+    function makeBlueFlameTexture() {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+        grad.addColorStop(0, 'rgba(220,240,255,1)');
+        grad.addColorStop(0.2, 'rgba(100,180,255,0.95)');
+        grad.addColorStop(0.5, 'rgba(30,100,220,0.7)');
+        grad.addColorStop(0.8, 'rgba(10,40,150,0.3)');
+        grad.addColorStop(1, 'rgba(0,10,60,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.needsUpdate = true;
+        return tex;
+    }
+    const blueFlameTexture = makeBlueFlameTexture();
+
     function createEngine(isTop, isLeft) {
         const engGroup = new THREE.Group();
         const xMult = isLeft ? -1 : 1;
         const yMult = isTop ? 1 : -1;
+        const engX = xMult * 0.55;
+        const engY = yMult * 0.15;
 
         // Engine nacelle
         const nacelle = new THREE.Mesh(
@@ -513,28 +535,66 @@ function createSpaceShip() {
             engineMat
         );
         nacelle.rotation.x = Math.PI / 2;
-        nacelle.position.set(xMult * 0.55, yMult * 0.15, 1.0);
+        nacelle.position.set(engX, engY, 1.0);
         engGroup.add(nacelle);
 
-        // Engine intake
+        // Engine intake ring
         const intake = new THREE.Mesh(
             new THREE.TorusGeometry(0.13, 0.025, 8, 16),
             darkHullMat
         );
-        intake.position.set(xMult * 0.55, yMult * 0.15, 0.35);
+        intake.position.set(engX, engY, 0.35);
         engGroup.add(intake);
 
-        // Engine glow (thruster)
-        const thrusterGeo = new THREE.CircleGeometry(0.1, 16);
-        const thrusterMat = new THREE.MeshBasicMaterial({
-            color: 0xff6644,
+        // Exhaust nozzle
+        const nozzle = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.08, 0.11, 0.15, 12),
+            new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.9, roughness: 0.2 })
+        );
+        nozzle.rotation.x = Math.PI / 2;
+        nozzle.position.set(engX, engY, 1.55);
+        engGroup.add(nozzle);
+
+        // Hot white core
+        const coreMat = new THREE.MeshBasicMaterial({ color: 0xeeffff });
+        const core = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), coreMat);
+        core.position.set(engX, engY, 1.62);
+        core.name = `engine_core_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
+        engGroup.add(core);
+
+        // Blue flame sprite (main glow)
+        const flameMat = new THREE.SpriteMaterial({
+            map: blueFlameTexture,
+            color: 0x88ccff,
+            blending: THREE.AdditiveBlending,
             transparent: true,
-            opacity: 0.9
+            depthWrite: false
         });
-        const thruster = new THREE.Mesh(thrusterGeo, thrusterMat);
-        thruster.position.set(xMult * 0.55, yMult * 0.15, 1.61);
-        thruster.name = `thruster_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
-        engGroup.add(thruster);
+        const flame = new THREE.Sprite(flameMat);
+        flame.scale.set(0.35, 0.5, 1);
+        flame.position.set(engX, engY, 1.85);
+        flame.name = `engine_flame_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
+        engGroup.add(flame);
+
+        // Outer glow sprite
+        const outerMat = new THREE.SpriteMaterial({
+            map: blueFlameTexture,
+            color: 0x4488ff,
+            blending: THREE.AdditiveBlending,
+            transparent: true,
+            opacity: 0.5,
+            depthWrite: false
+        });
+        const outer = new THREE.Sprite(outerMat);
+        outer.scale.set(0.5, 0.7, 1);
+        outer.position.set(engX, engY, 1.95);
+        outer.name = `engine_outer_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
+        engGroup.add(outer);
+
+        // Point light for glow
+        const engLight = new THREE.PointLight(0x4488ff, 0.5, 3, 2);
+        engLight.position.set(engX, engY, 1.7);
+        engGroup.add(engLight);
 
         return engGroup;
     }
@@ -597,6 +657,84 @@ function createSpaceShip() {
 
 const spaceShip = createSpaceShip();
 scene.add(spaceShip);
+
+// === LASER SYSTEM ===
+const laserBolts = [];
+const LASER_SPEED = 80;
+const LASER_MAX_DISTANCE = 150;
+
+// Create laser bolt geometry and material (reusable)
+const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 8);
+const laserMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+const laserGlowMat = new THREE.MeshBasicMaterial({
+    color: 0xff4400,
+    transparent: true,
+    opacity: 0.6
+});
+
+function fireLasers() {
+    // Get ship's forward direction (negative Z in local space)
+    const shipDirection = new THREE.Vector3(0, 0, -1);
+    shipDirection.applyQuaternion(spaceShip.quaternion);
+
+    // Cannon positions (4 wing tips)
+    const cannonOffsets = [
+        { x: -2.3, y: 0.08 },   // Top left
+        { x: 2.3, y: 0.08 },    // Top right
+        { x: -2.3, y: -0.08 },  // Bottom left
+        { x: 2.3, y: -0.08 }    // Bottom right
+    ];
+
+    cannonOffsets.forEach(offset => {
+        // Create laser bolt
+        const bolt = new THREE.Group();
+
+        // Core (bright red)
+        const core = new THREE.Mesh(laserGeo, laserMat);
+        core.rotation.x = Math.PI / 2;
+        bolt.add(core);
+
+        // Glow layer
+        const glow = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.04, 0.04, 0.9, 8),
+            laserGlowMat
+        );
+        glow.rotation.x = Math.PI / 2;
+        bolt.add(glow);
+
+        // Point light for illumination
+        const light = new THREE.PointLight(0xff3300, 0.8, 2);
+        bolt.add(light);
+
+        // Position at cannon tip in world space
+        const localPos = new THREE.Vector3(offset.x, offset.y, -1.15);
+        localPos.applyQuaternion(spaceShip.quaternion);
+        bolt.position.copy(spaceShip.position).add(localPos);
+
+        // Store velocity and distance traveled
+        bolt.userData.velocity = shipDirection.clone().multiplyScalar(LASER_SPEED);
+        bolt.userData.distanceTraveled = 0;
+
+        // Orient bolt in direction of travel
+        bolt.lookAt(bolt.position.clone().add(shipDirection));
+
+        scene.add(bolt);
+        laserBolts.push(bolt);
+    });
+}
+
+// Spacebar listener for firing
+let canFire = true;
+const FIRE_COOLDOWN = 150; // ms between shots
+
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && canFire) {
+        e.preventDefault();
+        fireLasers();
+        canFire = false;
+        setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+    }
+});
 
 // === ORBIT PARAMETERS ===
 const orbitRadius = 4.5;
@@ -1219,6 +1357,53 @@ function animate() {
             cubeCamera.position.copy(spaceShip.position);
             cubeCamera.update(renderer, scene);
             canopy.visible = true;
+        }
+    }
+
+    // === BLUE METHANE ENGINE FLAME ANIMATION ===
+    const flameTime = clock.getElapsedTime();
+    const enginePositions = ['top_left', 'top_right', 'bot_left', 'bot_right'];
+    enginePositions.forEach(pos => {
+        const flame = spaceShip.getObjectByName(`engine_flame_${pos}`);
+        const outer = spaceShip.getObjectByName(`engine_outer_${pos}`);
+        const core = spaceShip.getObjectByName(`engine_core_${pos}`);
+
+        if (flame && outer) {
+            // Flickering scale with multiple noise frequencies
+            const flicker1 = Math.sin(flameTime * 25 + pos.length) * 0.15;
+            const flicker2 = Math.sin(flameTime * 40 + pos.length * 2) * 0.08;
+            const flicker3 = Math.sin(flameTime * 15) * 0.1;
+            const baseScale = 1 + flicker1 + flicker2 + flicker3;
+
+            flame.scale.set(0.35 * baseScale, 0.5 * (1 + flicker1 * 1.5), 1);
+            outer.scale.set(0.5 * baseScale, 0.7 * (1 + flicker2 * 1.2), 1);
+
+            // Slight position jitter
+            const jitterZ = Math.sin(flameTime * 30 + pos.length * 3) * 0.02;
+            flame.position.z = 1.85 + jitterZ;
+            outer.position.z = 1.95 + jitterZ * 0.5;
+        }
+
+        if (core) {
+            // Core brightness flicker
+            const coreFlicker = 0.9 + Math.sin(flameTime * 50) * 0.1;
+            core.material.opacity = coreFlicker;
+        }
+    });
+
+    // === LASER BOLT ANIMATION ===
+    for (let i = laserBolts.length - 1; i >= 0; i--) {
+        const bolt = laserBolts[i];
+
+        // Move bolt
+        const movement = bolt.userData.velocity.clone().multiplyScalar(delta);
+        bolt.position.add(movement);
+        bolt.userData.distanceTraveled += movement.length();
+
+        // Remove if traveled too far
+        if (bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
+            scene.remove(bolt);
+            laserBolts.splice(i, 1);
         }
     }
 
