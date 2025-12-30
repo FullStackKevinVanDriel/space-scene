@@ -245,55 +245,42 @@ const atmosphereMaterial = new THREE.MeshPhongMaterial({
 const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 scene.add(atmosphere);
 
-// Starfield
+// Space skybox with nebula, galaxies, and stars
+// Using NASA/ESA deep space imagery as equirectangular panorama
+const spaceTextureUrl = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r152/examples/textures/2294472375_24a3b8ef46_o.jpg';
+
+// Load space panorama as background
+const spaceLoader = new THREE.TextureLoader();
+spaceLoader.load(spaceTextureUrl, (texture) => {
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    scene.background = texture;
+    scene.environment = texture; // Also use for reflections
+}, undefined, (err) => {
+    console.warn('Space skybox failed to load, using fallback color:', err);
+    scene.background = new THREE.Color(0x000011);
+});
+
+// Keep a subtle starfield layer for extra depth (fewer, dimmer stars)
 function createStarfield() {
-    const starCount = 3000;
+    const starCount = 800;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(starCount * 3);
 
     for (let i = 0; i < starCount * 3; i += 3) {
-        positions[i] = (Math.random() - 0.5) * 300;
-        positions[i + 1] = (Math.random() - 0.5) * 300;
-        positions[i + 2] = (Math.random() - 0.5) * 300;
+        positions[i] = (Math.random() - 0.5) * 400;
+        positions[i + 1] = (Math.random() - 0.5) * 400;
+        positions[i + 2] = (Math.random() - 0.5) * 400;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.08, sizeAttenuation: true });
+    const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, sizeAttenuation: true, transparent: true, opacity: 0.6 });
     const starfield = new THREE.Points(geometry, material);
     scene.add(starfield);
     return starfield;
 }
 
 const starfield = createStarfield();
-
-// --- Space skybox background (replaces Bridge demo skybox) ---
-// Load a space-themed cube texture and hide the generated starfield so
-// the scene shows a photographic nebula/space backdrop.
-const skyboxUrls = [
-    'https://threejs.org/examples/textures/cube/space/px.jpg',
-    'https://threejs.org/examples/textures/cube/space/nx.jpg',
-    'https://threejs.org/examples/textures/cube/space/py.jpg',
-    'https://threejs.org/examples/textures/cube/space/ny.jpg',
-    'https://threejs.org/examples/textures/cube/space/pz.jpg',
-    'https://threejs.org/examples/textures/cube/space/nz.jpg'
-];
-const skyLoader = new THREE.CubeTextureLoader();
-let spaceSky = null;
-skyLoader.load(
-    skyboxUrls,
-    (tex) => {
-        spaceSky = tex;
-        spaceSky.encoding = THREE.sRGBEncoding;
-        scene.background = spaceSky;
-        try { starfield.visible = false; } catch (e) {}
-        console.log('Space skybox loaded.');
-    },
-    undefined,
-    (err) => {
-        console.warn('Failed to load space skybox:', err);
-        // keep procedural starfield visible as a fallback
-    }
-);
 
 // --- Post-processing composer & bloom (if available) ---
 let composer = null;
@@ -415,12 +402,6 @@ function createSpaceShip() {
         opacity: 0.3,
         side: THREE.DoubleSide
     });
-    // Attach environment map (if loaded) for realistic reflections in the canopy
-    if (typeof envCube !== 'undefined' && envCube) {
-        canopyMat.envMap = envCube;
-        canopyMat.envMapIntensity = 1.6;
-        canopyMat.needsUpdate = true;
-    }
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
     canopy.scale.set(1.0, 0.9, 1.6);
     canopy.position.set(0, 0.22, -2.2);
