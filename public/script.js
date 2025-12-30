@@ -197,9 +197,8 @@ const earthMaterial = new THREE.ShaderMaterial({
             // World normal (re-normalize after interpolation)
             vec3 worldNormal = normalize(vWorldNormal);
 
-            // How much this fragment faces the sun (positive = facing sun)
-            // Negate because the normal/sun direction was inverted
-            float sunIntensity = -dot(worldNormal, toSun);
+            // How much this fragment faces the sun
+            float sunIntensity = dot(worldNormal, toSun);
 
             // Smooth transition at terminator (0 = night, 1 = day)
             float dayAmount = smoothstep(-0.1, 0.2, sunIntensity);
@@ -214,8 +213,9 @@ const earthMaterial = new THREE.ShaderMaterial({
             // Night side: nearly black with bright glowing city lights
             vec3 litNight = dayColor.rgb * 0.003 + nightColor.rgb * 3.0;
 
-            // Blend: dayAmount=1 means day, dayAmount=0 means night
-            vec3 finalColor = mix(litNight, litDay, dayAmount);
+            // Blend: dayAmount=1 means full day, dayAmount=0 means full night
+            // After negating sunIntensity, we need to swap the mix order
+            vec3 finalColor = mix(litDay, litNight, dayAmount);
 
             gl_FragColor = vec4(finalColor, 1.0);
         }
