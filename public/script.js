@@ -293,205 +293,304 @@ if (typeof THREE.EffectComposer !== 'undefined') {
     bloomPass.radius = 0.4;
     composer.addPass(bloomPass);
 }
-// === SPACESHIP - Sleek sci-fi fighter design ===
+// === SPACESHIP - X-Wing inspired Star Wars style fighter ===
+// CubeCamera for real-time reflections on canopy
+const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
+    format: THREE.RGBAFormat,
+    generateMipmaps: true,
+    minFilter: THREE.LinearMipmapLinearFilter
+});
+const cubeCamera = new THREE.CubeCamera(0.1, 100, cubeRenderTarget);
+scene.add(cubeCamera);
+
 function createSpaceShip() {
     const ship = new THREE.Group();
 
-    // Materials - lighter hull colors for better visibility
-    const hullMat = new THREE.MeshStandardMaterial({ color: 0xc8ccd0, metalness: 0.7, roughness: 0.3 });
-    const accentMat = new THREE.MeshStandardMaterial({ color: 0x0aa8ff, emissive: 0x003355, emissiveIntensity: 0.8, metalness: 0.2, roughness: 0.1 });
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x666677, metalness: 0.8, roughness: 0.2 });
-    const interiorMat = new THREE.MeshStandardMaterial({ color: 0x333340, metalness: 0.3, roughness: 0.6 });
+    // Materials - weathered military spacecraft look
+    const hullMat = new THREE.MeshStandardMaterial({
+        color: 0xd8d8d0,
+        metalness: 0.4,
+        roughness: 0.6
+    });
+    const darkHullMat = new THREE.MeshStandardMaterial({
+        color: 0x3a3a3a,
+        metalness: 0.5,
+        roughness: 0.5
+    });
+    const accentMat = new THREE.MeshStandardMaterial({
+        color: 0xcc3333,
+        metalness: 0.3,
+        roughness: 0.4
+    });
+    const engineMat = new THREE.MeshStandardMaterial({
+        color: 0x2a2a2a,
+        metalness: 0.7,
+        roughness: 0.3
+    });
+    const interiorMat = new THREE.MeshStandardMaterial({
+        color: 0x1a1a1a,
+        metalness: 0.2,
+        roughness: 0.8
+    });
 
-    // Organic fuselage using LatheGeometry for a photographed, crafted look
-    const profile = [];
-    // profile from nose to rear (x: radius, y: length)
-    profile.push(new THREE.Vector2(0.02, -2.8));
-    profile.push(new THREE.Vector2(0.18, -2.6));
-    profile.push(new THREE.Vector2(0.26, -1.8));
-    profile.push(new THREE.Vector2(0.38, -0.6));
-    profile.push(new THREE.Vector2(0.44, 0.25));
-    profile.push(new THREE.Vector2(0.40, 1.2));
-    profile.push(new THREE.Vector2(0.28, 1.8));
-    profile.push(new THREE.Vector2(0.18, 2.0));
-    const lathe = new THREE.LatheGeometry(profile, 64);
-    const fuselage = new THREE.Mesh(lathe, hullMat);
-    fuselage.rotation.x = Math.PI / 2;
-    fuselage.position.z = -0.8;
-    fuselage.castShadow = true;
-    fuselage.receiveShadow = true;
-    ship.add(fuselage);
-
-    // Sculpted nose cap blended onto lathe profile (slightly glossy)
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 20), hullMat);
-    nose.scale.set(1.0, 0.8, 1.0);
-    nose.position.z = -3.0;
+    // === MAIN FUSELAGE - Angular X-Wing style ===
+    // Nose cone - pointed
+    const noseGeo = new THREE.ConeGeometry(0.25, 1.2, 6);
+    const nose = new THREE.Mesh(noseGeo, hullMat);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.z = -2.8;
     ship.add(nose);
 
-    // Add subtle panel seams: thin strips slightly above hull
-    function addPanelStrip(offsetZ, length, yaw, mat) {
-        const strip = new THREE.Mesh(new THREE.BoxGeometry(length, 0.01, 0.06), mat);
-        strip.position.set(0, 0.02, offsetZ);
-        strip.rotation.y = yaw;
-        strip.castShadow = false;
-        strip.receiveShadow = false;
-        ship.add(strip);
-    }
-    const panelMat = new THREE.MeshStandardMaterial({ color: 0x1e1f22, metalness: 0.6, roughness: 0.45 });
-    addPanelStrip(-1.2, 1.8, 0.02, panelMat);
-    addPanelStrip(-0.2, 2.2, -0.04, panelMat);
+    // Main body - hexagonal cross-section
+    const bodyShape = new THREE.Shape();
+    bodyShape.moveTo(0, 0.35);
+    bodyShape.lineTo(0.3, 0.2);
+    bodyShape.lineTo(0.3, -0.15);
+    bodyShape.lineTo(0, -0.25);
+    bodyShape.lineTo(-0.3, -0.15);
+    bodyShape.lineTo(-0.3, 0.2);
+    bodyShape.closePath();
 
-    // Dorsal spine for structural detail
-    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, 1.6), frameMat);
-    spine.position.set(0, 0.12, -0.2);
-    spine.rotation.x = 0.02;
-    ship.add(spine);
+    const extrudeSettings = { depth: 3.5, bevelEnabled: false };
+    const bodyGeo = new THREE.ExtrudeGeometry(bodyShape, extrudeSettings);
+    const body = new THREE.Mesh(bodyGeo, hullMat);
+    body.rotation.x = Math.PI;
+    body.position.z = -2.2;
+    ship.add(body);
 
-    // Small forward winglets and camera/sensor array
-    const wingletLeft = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.02, 0.14), hullMat);
-    wingletLeft.position.set(-0.9, 0.04, -1.0);
-    wingletLeft.rotation.set(0.05, 0.15, -0.06);
-    ship.add(wingletLeft);
-    const wingletRight = wingletLeft.clone(); wingletRight.position.x = 0.9; wingletRight.rotation.z = 0.06; ship.add(wingletRight);
+    // Rear engine housing
+    const rearGeo = new THREE.CylinderGeometry(0.35, 0.4, 0.8, 8);
+    const rear = new THREE.Mesh(rearGeo, darkHullMat);
+    rear.rotation.x = Math.PI / 2;
+    rear.position.z = 1.7;
+    ship.add(rear);
 
-    // Antennae / sensor mast
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.45, 6), frameMat);
-    mast.position.set(0, 0.35, -1.6);
-    ship.add(mast);
+    // === COCKPIT INTERIOR ===
+    // Cockpit floor/base
+    const cockpitFloor = new THREE.Mesh(
+        new THREE.BoxGeometry(0.4, 0.05, 0.8),
+        interiorMat
+    );
+    cockpitFloor.position.set(0, -0.05, -1.8);
+    ship.add(cockpitFloor);
 
-    // Cockpit interior - pilot seat and controls (visible through glass)
-    const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.06), interiorMat);
-    seatBack.position.set(0, 0.12, -2.0);
-    ship.add(seatBack);
-    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.12), interiorMat);
-    seatBase.position.set(0, 0.02, -2.05);
+    // Pilot seat
+    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.25), interiorMat);
+    seatBase.position.set(0, 0.05, -1.7);
     ship.add(seatBase);
-    // Control panel
-    const consoleMat = new THREE.MeshStandardMaterial({ color: 0x222228, emissive: 0x001122, emissiveIntensity: 0.3 });
-    const console1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.08), consoleMat);
-    console1.position.set(0, 0.08, -2.35);
-    console1.rotation.x = -0.3;
-    ship.add(console1);
-    // Small indicator lights on console
-    const indicatorMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
-    const ind1 = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), indicatorMat);
-    ind1.position.set(-0.04, 0.1, -2.33);
-    ship.add(ind1);
-    const ind2 = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff4400 }));
-    ind2.position.set(0.04, 0.1, -2.33);
-    ship.add(ind2);
-    // Pilot helmet/head shape
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.1, roughness: 0.4 }));
-    helmet.position.set(0, 0.22, -2.0);
+    const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.35, 0.08), interiorMat);
+    seatBack.position.set(0, 0.22, -1.55);
+    seatBack.rotation.x = 0.15;
+    ship.add(seatBack);
+
+    // Pilot body (orange flight suit like Rebel pilot)
+    const pilotBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.08, 0.25, 8),
+        new THREE.MeshStandardMaterial({ color: 0xff6600, roughness: 0.8 })
+    );
+    pilotBody.position.set(0, 0.22, -1.7);
+    ship.add(pilotBody);
+
+    // Pilot helmet (white with visor)
+    const helmetMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.3, metalness: 0.1 });
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 12), helmetMat);
+    helmet.position.set(0, 0.42, -1.7);
     helmet.scale.set(1, 1.1, 1);
     ship.add(helmet);
+    // Visor
+    const visor = new THREE.Mesh(
+        new THREE.SphereGeometry(0.065, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.1 })
+    );
+    visor.position.set(0, 0.42, -1.65);
+    visor.rotation.x = Math.PI * 0.6;
+    ship.add(visor);
 
-    // Cockpit: transparent glass canopy
-    const canopyGeo = new THREE.SphereGeometry(0.32, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2);
+    // Control console
+    const console1 = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.15), interiorMat);
+    console1.position.set(0, 0.15, -2.1);
+    console1.rotation.x = -0.4;
+    ship.add(console1);
+
+    // Console screens (glowing)
+    const screenMat = new THREE.MeshBasicMaterial({ color: 0x00ff44 });
+    const screen1 = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.05), screenMat);
+    screen1.position.set(-0.08, 0.2, -2.05);
+    screen1.rotation.x = -0.4;
+    ship.add(screen1);
+    const screen2 = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.05), new THREE.MeshBasicMaterial({ color: 0xff8800 }));
+    screen2.position.set(0.08, 0.2, -2.05);
+    screen2.rotation.x = -0.4;
+    ship.add(screen2);
+
+    // Control sticks
+    const stickMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.15, 8), stickMat);
+    stick.position.set(0.12, 0.12, -1.9);
+    stick.rotation.z = -0.2;
+    ship.add(stick);
+
+    // === CANOPY - Reflective glass ===
+    const canopyGeo = new THREE.SphereGeometry(0.38, 32, 24, 0, Math.PI * 2, 0, Math.PI / 2);
     const canopyMat = new THREE.MeshPhysicalMaterial({
-        color: 0xaaddff,
-        transmission: 0.95,
-        thickness: 0.1,
-        roughness: 0.02,
-        metalness: 0.0,
+        color: 0x88aacc,
+        metalness: 0.1,
+        roughness: 0.05,
+        transmission: 0.7,
+        thickness: 0.5,
+        envMap: cubeRenderTarget.texture,
+        envMapIntensity: 1.5,
         clearcoat: 1.0,
-        clearcoatRoughness: 0.0,
-        ior: 1.5,
+        clearcoatRoughness: 0.02,
+        reflectivity: 1.0,
+        ior: 1.52,
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.85,
         side: THREE.DoubleSide
     });
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
-    canopy.scale.set(1.0, 0.9, 1.6);
-    canopy.position.set(0, 0.22, -2.2);
-    canopy.rotation.x = 0.05;
+    canopy.scale.set(0.9, 0.7, 1.4);
+    canopy.position.set(0, 0.32, -1.75);
     canopy.name = 'cockpitCanopy';
     ship.add(canopy);
 
-    // Cockpit frame
-    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.03, 8, 40, Math.PI), frameMat);
-    frame.rotation.x = Math.PI / 2;
-    frame.rotation.z = Math.PI / 2.1;
-    frame.position.set(0, 0.18, -2.0);
-    ship.add(frame);
+    // Canopy frame (metal strips)
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8, roughness: 0.3 });
+    const frameStrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.9), frameMat);
+    frameStrip.position.set(0, 0.52, -1.75);
+    ship.add(frameStrip);
 
-    // Wings - slim swept geometry
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.03, 0.65), hullMat);
-    wing.position.set(0, 0.02, 0.2);
-    wing.rotation.x = 0.02;
-    ship.add(wing);
+    // === S-FOILS (X-Wing style wings) ===
+    function createWing(isTop, isLeft) {
+        const wingGroup = new THREE.Group();
+        const xMult = isLeft ? -1 : 1;
+        const yMult = isTop ? 1 : -1;
 
-    // Vertical stabilizers
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.35), hullMat);
-    fin.position.set(-0.95, 0.25, 0.6);
-    fin.rotation.z = -0.25;
-    ship.add(fin);
-    const fin2 = fin.clone();
-    fin2.position.x = 0.95; fin2.rotation.z = 0.25;
-    ship.add(fin2);
+        // Main wing structure
+        const wingGeo = new THREE.BoxGeometry(2.2, 0.04, 0.35);
+        const wing = new THREE.Mesh(wingGeo, hullMat);
+        wing.position.set(xMult * 1.3, yMult * 0.08, 0.3);
+        wingGroup.add(wing);
 
-    // Engine nacelles and intakes
-    const nacelleGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.9, 24);
-    const leftNacelle = new THREE.Mesh(nacelleGeo, hullMat); leftNacelle.rotation.x = Math.PI / 2; leftNacelle.position.set(-0.6, -0.08, 1.0); ship.add(leftNacelle);
-    const rightNacelle = leftNacelle.clone(); rightNacelle.position.x = 0.6; ship.add(rightNacelle);
+        // Wing stripe (red accent)
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.045, 0.08), accentMat);
+        stripe.position.set(xMult * 1.0, yMult * 0.085, 0.3);
+        wingGroup.add(stripe);
 
-    // Create a radial gradient texture for flame glow (canvas)
-    function makeFlameTexture() {
-        const size = 128;
-        const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        const grad = ctx.createRadialGradient(size/2, size/2, 2, size/2, size/2, size/2);
-        grad.addColorStop(0, 'rgba(180,235,255,1)');
-        grad.addColorStop(0.4, 'rgba(0,170,255,0.9)');
-        grad.addColorStop(1, 'rgba(0,40,80,0)');
-        ctx.fillStyle = grad; ctx.fillRect(0,0,size,size);
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.needsUpdate = true;
-        return tex;
-    }
-    const flameTex = makeFlameTexture();
+        // Laser cannon at wing tip
+        const cannonGeo = new THREE.CylinderGeometry(0.04, 0.05, 1.8, 8);
+        const cannon = new THREE.Mesh(cannonGeo, darkHullMat);
+        cannon.rotation.x = Math.PI / 2;
+        cannon.position.set(xMult * 2.3, yMult * 0.08, -0.3);
+        wingGroup.add(cannon);
 
-    function createThruster(x, y, z, scale=1, name='') {
-        const g = new THREE.Group();
-        // inner cone for core
-        const core = new THREE.Mesh(new THREE.ConeGeometry(0.06*scale, 0.8*scale, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-        core.rotation.x = -Math.PI/2; core.position.z = 0.1*scale; core.scale.set(1,1,0.8); g.add(core);
+        // Cannon tip (glowing)
+        const cannonTip = new THREE.Mesh(
+            new THREE.SphereGeometry(0.035, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xff2200 })
+        );
+        cannonTip.position.set(xMult * 2.3, yMult * 0.08, -1.15);
+        cannonTip.name = isLeft ? 'cannonTipLeft' : 'cannonTipRight';
+        wingGroup.add(cannonTip);
 
-        // blue flame sprite glow
-        const spriteMat = new THREE.SpriteMaterial({ map: flameTex, color: 0x66ddff, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
-        const sprite = new THREE.Sprite(spriteMat);
-        sprite.scale.set(0.5*scale, 0.9*scale, 1.0);
-        sprite.position.set(0, 0, 0.25*scale);
-        g.add(sprite);
-
-        // small point light for emissive feel
-        const pl = new THREE.PointLight(0x66ccff, 0.6, 4*scale, 2);
-        pl.position.set(0,0,0.2*scale);
-        g.add(pl);
-
-        g.position.set(x,y,z);
-        if (name) g.name = name;
-        return g;
+        return wingGroup;
     }
 
-    // Add thrusters (names preserved so animation code still finds them)
-    const t1 = createThruster(-0.2, -0.05, 1.55, 1.0, 'thruster1'); ship.add(t1);
-    const t2 = createThruster(0, -0.05, 1.55, 1.15, 'thruster2'); ship.add(t2);
-    const t3 = createThruster(0.2, -0.05, 1.55, 1.0, 'thruster3'); ship.add(t3);
-    const t4 = createThruster(-0.6, -0.08, 1.65, 0.85, 'thruster4'); ship.add(t4);
-    const t5 = createThruster(0.6, -0.08, 1.65, 0.85, 'thruster5'); ship.add(t5);
+    ship.add(createWing(true, true));   // Top left
+    ship.add(createWing(true, false));  // Top right
+    ship.add(createWing(false, true));  // Bottom left
+    ship.add(createWing(false, false)); // Bottom right
 
-    // Nav lights (with names for blinking animation)
-    const navGeo = new THREE.SphereGeometry(0.03, 8, 8);
-    const navR = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xff4444 }));
-    navR.position.set(-1.4, 0.02, 0.7);
+    // === ENGINES (4 engine pods like X-Wing) ===
+    function createEngine(isTop, isLeft) {
+        const engGroup = new THREE.Group();
+        const xMult = isLeft ? -1 : 1;
+        const yMult = isTop ? 1 : -1;
+
+        // Engine nacelle
+        const nacelle = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.12, 0.15, 1.2, 12),
+            engineMat
+        );
+        nacelle.rotation.x = Math.PI / 2;
+        nacelle.position.set(xMult * 0.55, yMult * 0.15, 1.0);
+        engGroup.add(nacelle);
+
+        // Engine intake
+        const intake = new THREE.Mesh(
+            new THREE.TorusGeometry(0.13, 0.025, 8, 16),
+            darkHullMat
+        );
+        intake.position.set(xMult * 0.55, yMult * 0.15, 0.35);
+        engGroup.add(intake);
+
+        // Engine glow (thruster)
+        const thrusterGeo = new THREE.CircleGeometry(0.1, 16);
+        const thrusterMat = new THREE.MeshBasicMaterial({
+            color: 0xff6644,
+            transparent: true,
+            opacity: 0.9
+        });
+        const thruster = new THREE.Mesh(thrusterGeo, thrusterMat);
+        thruster.position.set(xMult * 0.55, yMult * 0.15, 1.61);
+        thruster.name = `thruster_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
+        engGroup.add(thruster);
+
+        return engGroup;
+    }
+
+    ship.add(createEngine(true, true));
+    ship.add(createEngine(true, false));
+    ship.add(createEngine(false, true));
+    ship.add(createEngine(false, false));
+
+    // === ASTROMECH DROID (R2 unit) ===
+    const droidBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.1, 0.2, 16),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
+    );
+    droidBody.position.set(0, 0.25, -0.8);
+    ship.add(droidBody);
+
+    const droidHead = new THREE.Mesh(
+        new THREE.SphereGeometry(0.1, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
+    );
+    droidHead.position.set(0, 0.35, -0.8);
+    ship.add(droidHead);
+
+    // Droid eye
+    const droidEye = new THREE.Mesh(
+        new THREE.SphereGeometry(0.03, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff0000 })
+    );
+    droidEye.position.set(0, 0.38, -0.72);
+    ship.add(droidEye);
+
+    // Blue panels on droid
+    const droidPanel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.12, 0.01),
+        new THREE.MeshStandardMaterial({ color: 0x0044aa })
+    );
+    droidPanel.position.set(0.07, 0.25, -0.71);
+    ship.add(droidPanel);
+
+    // === NAV LIGHTS ===
+    const navGeo = new THREE.SphereGeometry(0.025, 8, 8);
+    const navR = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    navR.position.set(-2.4, 0, 0.3);
     navR.name = 'navLightRed';
     ship.add(navR);
-    const navG = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0x44ff88 }));
-    navG.position.set(1.4, 0.02, 0.7);
+
+    const navG = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
+    navG.position.set(2.4, 0, 0.3);
     navG.name = 'navLightGreen';
     ship.add(navG);
+
+    // White tail light
+    const navW = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    navW.position.set(0, 0, 2.1);
+    ship.add(navW);
 
     return ship;
 }
@@ -1110,6 +1209,17 @@ function animate() {
         const greenBlink = ((time + 0.5) % 1.2) < 0.15 ? 1 : 0;
         navRed.visible = redBlink === 1;
         navGreen.visible = greenBlink === 1;
+    }
+
+    // Update CubeCamera for canopy reflections (every few frames for performance)
+    if (Math.floor(clock.getElapsedTime() * 10) % 3 === 0) {
+        const canopy = spaceShip.getObjectByName('cockpitCanopy');
+        if (canopy) {
+            canopy.visible = false; // Hide canopy while rendering cubemap
+            cubeCamera.position.copy(spaceShip.position);
+            cubeCamera.update(renderer, scene);
+            canopy.visible = true;
+        }
     }
 
     // Subtle starfield rotation
