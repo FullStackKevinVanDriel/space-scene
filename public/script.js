@@ -566,7 +566,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
         }
 
         if (pointerState.prevDistance != null) {
-            const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 0.5;
+            const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 3;
             const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
             const currentDist = camera.position.distanceTo(cameraTarget);
             const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
@@ -730,8 +730,8 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
         cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
 
-        // Zoom (pinch)
-        const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 0.5;
+        // Zoom (pinch) - 6x multiplier for responsive pinch
+        const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 3;
         const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
         const currentDist = camera.position.distanceTo(cameraTarget);
         const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
