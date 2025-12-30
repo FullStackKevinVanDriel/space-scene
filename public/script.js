@@ -567,9 +567,10 @@ function animate() {
             shipTargetZ - shipStartZ
         ).normalize();
 
-        // Look in direction of travel
+        // Look in direction of travel, then flip so thrusters trail behind
         const lookTarget = spaceShip.position.clone().add(travelDir);
         spaceShip.lookAt(lookTarget);
+        spaceShip.rotateY(Math.PI); // Flip 180° so nose leads and thrusters trail
 
         if (shipProgress >= 1 && !hasEnteredOrbit) {
             orbitStartTime = elapsed;
@@ -588,13 +589,14 @@ function animate() {
         const tangentX = Math.sin(angle);
         const tangentZ = -Math.cos(angle);
 
-        // Point nose in direction of travel
+        // Point nose in direction of travel, then flip so thrusters trail behind
         const forwardPoint = new THREE.Vector3(
             spaceShip.position.x + tangentX,
             spaceShip.position.y,
             spaceShip.position.z + tangentZ
         );
         spaceShip.lookAt(forwardPoint);
+        spaceShip.rotateY(Math.PI); // Flip 180° so nose leads and thrusters trail
     }
 
     // Animate thrust flames
