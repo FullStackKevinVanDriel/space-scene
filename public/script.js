@@ -207,8 +207,8 @@ const earthMaterial = new THREE.ShaderMaterial({
             // Day side: bright with sun lighting
             vec3 litDay = dayColor.rgb * (0.5 + 0.5 * max(0.0, sunIntensity));
 
-            // Night side: very dark with glowing city lights
-            vec3 litNight = dayColor.rgb * 0.02 + nightColor.rgb * 2.0;
+            // Night side: nearly black with bright glowing city lights
+            vec3 litNight = dayColor.rgb * 0.003 + nightColor.rgb * 3.0;
 
             // Blend between day and night
             vec3 finalColor = mix(litNight, litDay, dayNightMix);
