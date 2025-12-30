@@ -36,53 +36,45 @@ directionalLight.position.copy(SUN_POSITION);
 scene.add(directionalLight);
 scene.add(directionalLight.target);
 
-// Create glowing sun
+// Create glowing sun with smooth gradient halo
 function createSun() {
     const sunGroup = new THREE.Group();
 
-    // Core - bright hot center
-    const coreGeom = new THREE.SphereGeometry(3, 32, 32);
-    const coreMat = new THREE.MeshBasicMaterial({
-        color: 0xfffef0
-    });
+    // Blazing white core
+    const coreGeom = new THREE.SphereGeometry(3, 48, 48);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const core = new THREE.Mesh(coreGeom, coreMat);
     sunGroup.add(core);
 
-    // Inner glow layer
-    const glow1Geom = new THREE.SphereGeometry(3.5, 32, 32);
-    const glow1Mat = new THREE.MeshBasicMaterial({
-        color: 0xffee88,
-        transparent: true,
-        opacity: 0.6,
-        side: THREE.BackSide
-    });
-    const glow1 = new THREE.Mesh(glow1Geom, glow1Mat);
-    sunGroup.add(glow1);
+    // Many smooth glow layers for seamless gradient (no visible steps)
+    // Each layer slightly larger with decreasing opacity
+    const glowLayers = 24;
+    const minRadius = 3.2;
+    const maxRadius = 18;
+    const minOpacity = 0.005;
+    const maxOpacity = 0.12;
 
-    // Outer glow layer
-    const glow2Geom = new THREE.SphereGeometry(5, 32, 32);
-    const glow2Mat = new THREE.MeshBasicMaterial({
-        color: 0xffdd44,
-        transparent: true,
-        opacity: 0.3,
-        side: THREE.BackSide
-    });
-    const glow2 = new THREE.Mesh(glow2Geom, glow2Mat);
-    sunGroup.add(glow2);
+    for (let i = 0; i < glowLayers; i++) {
+        const t = i / (glowLayers - 1); // 0 to 1
+        // Exponential falloff for radius
+        const radius = minRadius + (maxRadius - minRadius) * Math.pow(t, 0.7);
+        // Smooth opacity falloff
+        const opacity = maxOpacity * Math.pow(1 - t, 1.8) + minOpacity;
 
-    // Corona - largest, faintest glow
-    const coronaGeom = new THREE.SphereGeometry(8, 32, 32);
-    const coronaMat = new THREE.MeshBasicMaterial({
-        color: 0xffcc22,
-        transparent: true,
-        opacity: 0.15,
-        side: THREE.BackSide
-    });
-    const corona = new THREE.Mesh(coronaGeom, coronaMat);
-    sunGroup.add(corona);
+        const glowGeom = new THREE.SphereGeometry(radius, 32, 32);
+        const glowMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: opacity,
+            side: THREE.BackSide,
+            depthWrite: false
+        });
+        const glow = new THREE.Mesh(glowGeom, glowMat);
+        sunGroup.add(glow);
+    }
 
-    // Point light at sun for additional glow effect
-    const sunLight = new THREE.PointLight(0xffffee, 1, 200);
+    // Bright point light
+    const sunLight = new THREE.PointLight(0xffffff, 1.5, 300);
     sunGroup.add(sunLight);
 
     sunGroup.position.copy(SUN_POSITION);
