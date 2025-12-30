@@ -5,7 +5,15 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+// Increase pixel ratio for higher fidelity renders while capping to avoid extreme GPU load.
+const MAX_PIXEL_RATIO = 3; // safety cap
+function updatePixelRatio() {
+    const base = window.devicePixelRatio || 1;
+    // Multiply by 2 for a crisper look on HiDPI displays, but cap at MAX_PIXEL_RATIO.
+    const desired = Math.min(base * 2, MAX_PIXEL_RATIO);
+    renderer.setPixelRatio(desired);
+}
+updatePixelRatio();
 document.body.appendChild(renderer.domElement);
 // Prevent the browser from handling touch gestures (pan/zoom) so pointer events work
 renderer.domElement.style.touchAction = 'none';
