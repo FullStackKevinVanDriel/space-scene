@@ -11,7 +11,7 @@ document.body.appendChild(renderer.domElement);
 // Clock for frame-rate independent animation
 const clock = new THREE.Clock();
 
-// Rotation state from API
+// Rotation state
 let rotationSpeed = 0.05;
 let rotationDirection = 1; // 1 for clockwise, -1 for counter-clockwise
 
@@ -40,10 +40,9 @@ function createStarfield() {
     const starPositions = new Float32Array(starCount * 3);
 
     for (let i = 0; i < starCount * 3; i += 3) {
-        // Random positions in a sphere around the scene
-        starPositions[i] = (Math.random() - 0.5) * 200;     // x
-        starPositions[i + 1] = (Math.random() - 0.5) * 200; // y
-        starPositions[i + 2] = (Math.random() - 0.5) * 200; // z
+        starPositions[i] = (Math.random() - 0.5) * 200;
+        starPositions[i + 1] = (Math.random() - 0.5) * 200;
+        starPositions[i + 2] = (Math.random() - 0.5) * 200;
     }
 
     starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
@@ -61,121 +60,106 @@ function createStarfield() {
 
 const starfield = createStarfield();
 
-// Create Millennium Falcon-style space ship
+// Create realistic starship
 function createSpaceShip() {
     const shipGroup = new THREE.Group();
 
-    const grayMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
-    const darkGrayMaterial = new THREE.MeshBasicMaterial({ color: 0x555555 });
-    const lightGrayMaterial = new THREE.MeshBasicMaterial({ color: 0xaaaaaa });
+    const hullMaterial = new THREE.MeshBasicMaterial({ color: 0x666666 });
+    const darkHullMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+    const accentMaterial = new THREE.MeshBasicMaterial({ color: 0x888888 });
+    const windowMaterial = new THREE.MeshBasicMaterial({ color: 0x66ccff });
 
-    // Main disc body (Millennium Falcon style)
-    const discGeometry = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
-    const disc = new THREE.Mesh(discGeometry, grayMaterial);
-    disc.rotation.x = Math.PI / 2;
-    shipGroup.add(disc);
+    // Main hull - sleek elongated body
+    const hullGeometry = new THREE.CylinderGeometry(0.3, 0.5, 2.0, 12);
+    const hull = new THREE.Mesh(hullGeometry, hullMaterial);
+    hull.rotation.x = Math.PI / 2;
+    shipGroup.add(hull);
 
-    // Front mandibles (the forked front)
-    const mandibleGeometry = new THREE.BoxGeometry(0.15, 0.12, 0.6);
-    const leftMandible = new THREE.Mesh(mandibleGeometry, darkGrayMaterial);
-    leftMandible.position.set(-0.25, 0, -0.9);
-    shipGroup.add(leftMandible);
+    // Nose cone
+    const noseGeometry = new THREE.ConeGeometry(0.3, 0.8, 12);
+    const nose = new THREE.Mesh(noseGeometry, accentMaterial);
+    nose.rotation.x = -Math.PI / 2;
+    nose.position.set(0, 0, -1.4);
+    shipGroup.add(nose);
 
-    const rightMandible = new THREE.Mesh(mandibleGeometry, darkGrayMaterial);
-    rightMandible.position.set(0.25, 0, -0.9);
-    shipGroup.add(rightMandible);
-
-    // Cockpit (offset to the right like the Falcon)
-    const cockpitGeometry = new THREE.SphereGeometry(0.25, 12, 12);
-    const cockpit = new THREE.Mesh(cockpitGeometry, lightGrayMaterial);
-    cockpit.position.set(0.5, 0.15, -0.4);
-    cockpit.scale.set(1, 0.6, 1.2);
+    // Cockpit window
+    const cockpitGeometry = new THREE.SphereGeometry(0.18, 8, 8);
+    const cockpit = new THREE.Mesh(cockpitGeometry, windowMaterial);
+    cockpit.position.set(0, 0.25, -0.8);
+    cockpit.scale.set(1, 0.5, 1.5);
     shipGroup.add(cockpit);
 
-    // Rear section (engine block)
-    const rearGeometry = new THREE.BoxGeometry(0.6, 0.25, 0.3);
-    const rear = new THREE.Mesh(rearGeometry, darkGrayMaterial);
-    rear.position.set(0, 0, 0.7);
-    shipGroup.add(rear);
+    // Wing struts
+    const wingGeometry = new THREE.BoxGeometry(2.0, 0.05, 0.4);
+    const wings = new THREE.Mesh(wingGeometry, darkHullMaterial);
+    wings.position.set(0, 0, 0.2);
+    shipGroup.add(wings);
 
-    // Top details (sensor dish, etc)
-    const dishGeometry = new THREE.CylinderGeometry(0.15, 0.2, 0.08, 12);
-    const dish = new THREE.Mesh(dishGeometry, lightGrayMaterial);
-    dish.position.set(-0.3, 0.2, 0);
-    shipGroup.add(dish);
+    // Wing tips
+    const wingTipGeometry = new THREE.BoxGeometry(0.3, 0.08, 0.6);
+    const leftWingTip = new THREE.Mesh(wingTipGeometry, accentMaterial);
+    leftWingTip.position.set(-1.0, 0, 0.3);
+    shipGroup.add(leftWingTip);
 
-    // Eyeballs! (on top of the cockpit area)
-    const eyeGeometry = new THREE.SphereGeometry(0.12, 8, 8);
-    const eyeWhiteMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const pupilGeometry = new THREE.SphereGeometry(0.06, 8, 8);
-    const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const rightWingTip = new THREE.Mesh(wingTipGeometry, accentMaterial);
+    rightWingTip.position.set(1.0, 0, 0.3);
+    shipGroup.add(rightWingTip);
 
-    // Left eye
-    const leftEye = new THREE.Mesh(eyeGeometry, eyeWhiteMaterial);
-    leftEye.position.set(-0.12, 0.3, -0.5);
-    const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-    leftPupil.position.set(-0.12, 0.3, -0.62);
-    shipGroup.add(leftEye);
-    shipGroup.add(leftPupil);
+    // Engine nacelles
+    const nacelleGeometry = new THREE.CylinderGeometry(0.15, 0.18, 0.8, 8);
 
-    // Right eye
-    const rightEye = new THREE.Mesh(eyeGeometry, eyeWhiteMaterial);
-    rightEye.position.set(0.12, 0.3, -0.5);
-    const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-    rightPupil.position.set(0.12, 0.3, -0.62);
-    shipGroup.add(rightEye);
-    shipGroup.add(rightPupil);
+    const leftNacelle = new THREE.Mesh(nacelleGeometry, darkHullMaterial);
+    leftNacelle.rotation.x = Math.PI / 2;
+    leftNacelle.position.set(-0.5, -0.1, 0.8);
+    shipGroup.add(leftNacelle);
 
-    // TOP HAT!
-    const hatBrimGeometry = new THREE.CylinderGeometry(0.25, 0.25, 0.03, 16);
-    const hatMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    const hatBrim = new THREE.Mesh(hatBrimGeometry, hatMaterial);
-    hatBrim.position.set(0, 0.42, -0.3);
-    shipGroup.add(hatBrim);
+    const rightNacelle = new THREE.Mesh(nacelleGeometry, darkHullMaterial);
+    rightNacelle.rotation.x = Math.PI / 2;
+    rightNacelle.position.set(0.5, -0.1, 0.8);
+    shipGroup.add(rightNacelle);
 
-    const hatTopGeometry = new THREE.CylinderGeometry(0.15, 0.17, 0.35, 16);
-    const hatTop = new THREE.Mesh(hatTopGeometry, hatMaterial);
-    hatTop.position.set(0, 0.62, -0.3);
-    shipGroup.add(hatTop);
+    // Engine block (rear)
+    const engineBlockGeometry = new THREE.BoxGeometry(0.6, 0.3, 0.4);
+    const engineBlock = new THREE.Mesh(engineBlockGeometry, darkHullMaterial);
+    engineBlock.position.set(0, 0, 1.1);
+    shipGroup.add(engineBlock);
 
-    // Hat band (classy touch)
-    const hatBandGeometry = new THREE.CylinderGeometry(0.16, 0.16, 0.05, 16);
-    const hatBandMaterial = new THREE.MeshBasicMaterial({ color: 0x8B0000 });
-    const hatBand = new THREE.Mesh(hatBandGeometry, hatBandMaterial);
-    hatBand.position.set(0, 0.48, -0.3);
-    shipGroup.add(hatBand);
-
-    // Main thrust (rear) - yellow flames
-    const thrustGeometry = new THREE.ConeGeometry(0.12, 0.5, 8);
+    // Main thrusters (3 engines)
+    const thrustGeometry = new THREE.ConeGeometry(0.1, 0.6, 8);
     const thrustMaterial = new THREE.MeshBasicMaterial({ color: 0xffdd00 });
 
     const thrust1 = new THREE.Mesh(thrustGeometry, thrustMaterial);
     thrust1.rotation.x = -Math.PI / 2;
-    thrust1.position.set(-0.15, 0, 1.0);
+    thrust1.position.set(-0.2, 0, 1.4);
     thrust1.name = 'mainThrust';
     shipGroup.add(thrust1);
 
     const thrust2 = new THREE.Mesh(thrustGeometry, thrustMaterial);
     thrust2.rotation.x = -Math.PI / 2;
-    thrust2.position.set(0.15, 0, 1.0);
+    thrust2.position.set(0, 0, 1.4);
     thrust2.name = 'mainThrust2';
     shipGroup.add(thrust2);
 
-    // Corrective thrusters (front, smaller)
-    const smallThrustGeometry = new THREE.ConeGeometry(0.04, 0.12, 6);
-    const smallThrustMaterial = new THREE.MeshBasicMaterial({ color: 0x44aaff });
+    const thrust3 = new THREE.Mesh(thrustGeometry, thrustMaterial);
+    thrust3.rotation.x = -Math.PI / 2;
+    thrust3.position.set(0.2, 0, 1.4);
+    thrust3.name = 'mainThrust3';
+    shipGroup.add(thrust3);
 
-    const leftFrontThrust = new THREE.Mesh(smallThrustGeometry, smallThrustMaterial);
-    leftFrontThrust.rotation.x = Math.PI / 2;
-    leftFrontThrust.position.set(-0.25, 0, -1.15);
-    leftFrontThrust.name = 'leftThrust';
-    shipGroup.add(leftFrontThrust);
+    // Nacelle thrusters
+    const nacelleThrustGeometry = new THREE.ConeGeometry(0.08, 0.4, 6);
 
-    const rightFrontThrust = new THREE.Mesh(smallThrustGeometry, smallThrustMaterial);
-    rightFrontThrust.rotation.x = Math.PI / 2;
-    rightFrontThrust.position.set(0.25, 0, -1.15);
-    rightFrontThrust.name = 'rightThrust';
-    shipGroup.add(rightFrontThrust);
+    const leftNacelleThrust = new THREE.Mesh(nacelleThrustGeometry, thrustMaterial);
+    leftNacelleThrust.rotation.x = -Math.PI / 2;
+    leftNacelleThrust.position.set(-0.5, -0.1, 1.3);
+    leftNacelleThrust.name = 'leftNacelleThrust';
+    shipGroup.add(leftNacelleThrust);
+
+    const rightNacelleThrust = new THREE.Mesh(nacelleThrustGeometry, thrustMaterial);
+    rightNacelleThrust.rotation.x = -Math.PI / 2;
+    rightNacelleThrust.position.set(0.5, -0.1, 1.3);
+    rightNacelleThrust.name = 'rightNacelleThrust';
+    shipGroup.add(rightNacelleThrust);
 
     return shipGroup;
 }
@@ -183,48 +167,150 @@ function createSpaceShip() {
 const spaceShip = createSpaceShip();
 scene.add(spaceShip);
 
-// Initial position for space ship (top-left, flying in)
-let shipStartX = -15;
-let shipStartY = 10;
-let shipStartZ = -5;
-spaceShip.position.set(shipStartX, shipStartY, shipStartZ);
+// Orbit parameters
+const orbitRadius = 4;
+const orbitSpeed = 0.3;
+const orbitY = 2;
 
-// Target position near Earth
-const shipTargetX = 4;
-const shipTargetY = 2;
-const shipTargetZ = 0;
+// Calculate starting angle so ship enters orbit seamlessly from top-left
+// Ship comes from top-left (-15, 10, -5) toward orbit position
+// We want to start orbit where the entry path would naturally meet the circle
+const entryStartAngle = Math.atan2(0, orbitRadius); // Start at angle where z=0, x=orbitRadius
+
+// Initial position for space ship (top-left, flying in toward viewer with flames visible)
+let shipStartX = -12;
+let shipStartY = 8;
+let shipStartZ = -20; // Start behind/far, coming toward viewer
+
+// Target position - entry point on orbit circle
+const shipTargetX = Math.cos(entryStartAngle) * orbitRadius;
+const shipTargetY = orbitY;
+const shipTargetZ = Math.sin(entryStartAngle) * orbitRadius;
 
 // Ship animation progress
 let shipProgress = 0;
-const shipSpeed = 0.15;
+const shipSpeed = 0.12;
+let orbitStartTime = 0;
+
+spaceShip.position.set(shipStartX, shipStartY, shipStartZ);
 
 // Position camera
-camera.position.z = 8;
-camera.position.y = 2;
-camera.lookAt(0, 0, 0); // Look at Earth center
+camera.position.z = 10;
+camera.position.y = 3;
+camera.position.x = 2;
+camera.lookAt(0, 0, 0);
 
-// Poll API for rotation state
-async function fetchRotationState() {
-    try {
-        const response = await fetch('/api/state');
-        if (response.ok) {
-            const data = await response.json();
-            if (data.speed !== undefined) {
-                rotationSpeed = data.speed;
-            }
-            if (data.direction !== undefined) {
-                // Convert "cw"/"ccw" to 1/-1 for multiplication
-                rotationDirection = data.direction === 'cw' ? 1 : -1;
-            }
+// Create UI control dial
+function createControlUI() {
+    const container = document.createElement('div');
+    container.id = 'controls';
+    container.style.cssText = `
+        position: fixed;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 20, 40, 0.8);
+        border: 2px solid #4488ff;
+        border-radius: 15px;
+        padding: 20px 30px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        font-family: 'Courier New', monospace;
+        color: #4488ff;
+    `;
+
+    const label = document.createElement('div');
+    label.textContent = 'PLANET ROTATION';
+    label.style.cssText = 'font-size: 12px; letter-spacing: 2px; margin-bottom: 5px;';
+    container.appendChild(label);
+
+    const dialContainer = document.createElement('div');
+    dialContainer.style.cssText = 'display: flex; align-items: center; gap: 15px;';
+
+    const reverseLabel = document.createElement('span');
+    reverseLabel.textContent = '◄ REV';
+    reverseLabel.style.cssText = 'font-size: 11px; opacity: 0.7;';
+    dialContainer.appendChild(reverseLabel);
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '-100';
+    slider.max = '100';
+    slider.value = '30';
+    slider.style.cssText = `
+        width: 200px;
+        height: 8px;
+        -webkit-appearance: none;
+        background: linear-gradient(to right, #ff4444 0%, #444 45%, #444 55%, #44ff44 100%);
+        border-radius: 4px;
+        outline: none;
+        cursor: pointer;
+    `;
+    dialContainer.appendChild(slider);
+
+    const forwardLabel = document.createElement('span');
+    forwardLabel.textContent = 'FWD ►';
+    forwardLabel.style.cssText = 'font-size: 11px; opacity: 0.7;';
+    dialContainer.appendChild(forwardLabel);
+
+    container.appendChild(dialContainer);
+
+    const speedDisplay = document.createElement('div');
+    speedDisplay.id = 'speedDisplay';
+    speedDisplay.textContent = 'Speed: 0.03 | Direction: CW';
+    speedDisplay.style.cssText = 'font-size: 11px; margin-top: 5px; color: #88aaff;';
+    container.appendChild(speedDisplay);
+
+    document.body.appendChild(container);
+
+    // Slider event
+    slider.addEventListener('input', (e) => {
+        const value = parseInt(e.target.value);
+        rotationSpeed = Math.abs(value) / 1000;
+        rotationDirection = value >= 0 ? 1 : -1;
+
+        const dirText = value === 0 ? 'STOPPED' : (value > 0 ? 'CW' : 'CCW');
+        speedDisplay.textContent = `Speed: ${rotationSpeed.toFixed(3)} | Direction: ${dirText}`;
+
+        // Update API
+        fetch('/api/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                speed: rotationSpeed,
+                direction: rotationDirection === 1 ? 'cw' : 'ccw'
+            })
+        }).catch(() => {});
+    });
+
+    // Style the slider thumb
+    const style = document.createElement('style');
+    style.textContent = `
+        #controls input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #4488ff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px #4488ff;
         }
-    } catch (error) {
-        console.log('API not available, using default rotation values');
-    }
+        #controls input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #4488ff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px #4488ff;
+            border: none;
+        }
+    `;
+    document.head.appendChild(style);
 }
 
-// Initial fetch and set up polling every 3 seconds
-fetchRotationState();
-setInterval(fetchRotationState, 3000);
+createControlUI();
 
 // Handle window resize
 window.addEventListener('resize', () => {
@@ -238,17 +324,19 @@ function animate() {
     requestAnimationFrame(animate);
 
     const delta = clock.getDelta();
+    const elapsed = clock.getElapsedTime();
 
-    // Rotate Earth based on API state (frame-rate independent)
+    // Rotate Earth based on state (frame-rate independent)
     earth.rotation.y += rotationSpeed * rotationDirection * delta;
     earthSolid.rotation.y = earth.rotation.y;
 
-    // Slight tilt rotation
+    // Slight tilt
     earth.rotation.x = 0.2;
     earthSolid.rotation.x = 0.2;
 
-    // Animate space ship flying in from top-left
+    // Animate space ship
     if (shipProgress < 1) {
+        // Entry phase - flying in from top-left toward orbit entry point
         shipProgress += shipSpeed * delta;
         if (shipProgress > 1) shipProgress = 1;
 
@@ -259,39 +347,36 @@ function animate() {
         const newY = shipStartY + (shipTargetY - shipStartY) * easeProgress;
         const newZ = shipStartZ + (shipTargetZ - shipStartZ) * easeProgress;
 
-        // Calculate velocity direction for orientation
-        const velocity = new THREE.Vector3(
-            newX - spaceShip.position.x,
-            newY - spaceShip.position.y,
-            newZ - spaceShip.position.z
-        );
-
         spaceShip.position.set(newX, newY, newZ);
 
-        // Point ship in direction of travel (forward)
-        if (velocity.length() > 0.001) {
-            const targetPos = spaceShip.position.clone().add(velocity.normalize());
-            spaceShip.lookAt(targetPos);
+        // Calculate direction of travel for orientation
+        // Ship should face where it's going (nose forward, thrusters toward viewer during approach)
+        const velocity = new THREE.Vector3(
+            shipTargetX - shipStartX,
+            shipTargetY - shipStartY,
+            shipTargetZ - shipStartZ
+        ).normalize();
+
+        const lookTarget = spaceShip.position.clone().add(velocity);
+        spaceShip.lookAt(lookTarget);
+
+        // Record when we enter orbit
+        if (shipProgress >= 1) {
+            orbitStartTime = elapsed;
         }
     } else {
-        // Once arrived, orbit around Earth
-        const orbitTime = clock.getElapsedTime();
-        const orbitRadius = 4;
-        const orbitSpeed = 0.3;
-        const orbitY = 2;
+        // Orbit phase
+        const orbitElapsed = elapsed - orbitStartTime;
+        const angle = entryStartAngle + orbitElapsed * orbitSpeed;
 
-        // Current position on orbit
-        const angle = orbitTime * orbitSpeed;
         spaceShip.position.x = Math.cos(angle) * orbitRadius;
         spaceShip.position.z = Math.sin(angle) * orbitRadius;
         spaceShip.position.y = orbitY;
 
-        // Calculate tangent direction (derivative of circle position)
-        // Reversed to make ship go forward
-        const tangentX = Math.sin(angle);
-        const tangentZ = -Math.cos(angle);
+        // Calculate tangent for forward-facing orientation
+        const tangentX = -Math.sin(angle);
+        const tangentZ = Math.cos(angle);
 
-        // Point ship along tangent (forward direction of travel)
         const forwardPoint = new THREE.Vector3(
             spaceShip.position.x + tangentX,
             spaceShip.position.y,
@@ -301,26 +386,16 @@ function animate() {
     }
 
     // Animate thrust flames (flicker effect)
-    const mainThrust = spaceShip.getObjectByName('mainThrust');
-    const mainThrust2 = spaceShip.getObjectByName('mainThrust2');
-    const leftThrust = spaceShip.getObjectByName('leftThrust');
-    const rightThrust = spaceShip.getObjectByName('rightThrust');
+    const thrusters = ['mainThrust', 'mainThrust2', 'mainThrust3', 'leftNacelleThrust', 'rightNacelleThrust'];
+    thrusters.forEach(name => {
+        const thrust = spaceShip.getObjectByName(name);
+        if (thrust) {
+            const flicker = 0.7 + Math.random() * 0.5;
+            thrust.scale.set(flicker, 0.7 + Math.random() * 0.6, flicker);
+        }
+    });
 
-    if (mainThrust) {
-        const flicker = 0.8 + Math.random() * 0.4;
-        mainThrust.scale.set(flicker, 0.8 + Math.random() * 0.5, flicker);
-    }
-    if (mainThrust2) {
-        const flicker2 = 0.8 + Math.random() * 0.4;
-        mainThrust2.scale.set(flicker2, 0.8 + Math.random() * 0.5, flicker2);
-    }
-    if (leftThrust && rightThrust) {
-        const smallFlicker = 0.7 + Math.random() * 0.6;
-        leftThrust.scale.set(smallFlicker, smallFlicker, smallFlicker);
-        rightThrust.scale.set(smallFlicker, smallFlicker, smallFlicker);
-    }
-
-    // Subtle starfield rotation for depth effect
+    // Subtle starfield rotation
     starfield.rotation.y += 0.0001;
 
     renderer.render(scene, camera);
