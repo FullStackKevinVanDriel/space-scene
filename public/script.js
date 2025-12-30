@@ -198,7 +198,8 @@ const earthMaterial = new THREE.ShaderMaterial({
             vec3 worldNormal = normalize(vWorldNormal);
 
             // How much this fragment faces the sun (positive = facing sun)
-            float sunIntensity = dot(worldNormal, toSun);
+            // Negate because the normal/sun direction was inverted
+            float sunIntensity = -dot(worldNormal, toSun);
 
             // Smooth transition at terminator (0 = night, 1 = day)
             float dayAmount = smoothstep(-0.1, 0.2, sunIntensity);
