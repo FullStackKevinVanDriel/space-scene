@@ -245,65 +245,52 @@ const atmosphereMaterial = new THREE.MeshPhongMaterial({
 const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 scene.add(atmosphere);
 
-// Dark space background
-scene.background = new THREE.Color(0x000008);
+// Space nebula skybox using CubeTextureLoader
+// Using a purple/blue nebula cubemap
+const skyboxLoader = new THREE.CubeTextureLoader();
+const skyboxUrls = [
+    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/right.png',
+    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/left.png',
+    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/top.png',
+    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/bottom.png',
+    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/front.png',
+    'https://raw.githubusercontent.com/codypearce/some-skyboxes/master/skyboxes/space-nebula/back.png'
+];
 
-// Procedural starfield with varying star sizes and brightness
+// Try to load skybox, fallback to dark color with stars
+skyboxLoader.load(skyboxUrls, (cubeTexture) => {
+    scene.background = cubeTexture;
+    scene.environment = cubeTexture;
+}, undefined, (err) => {
+    console.warn('Skybox failed, using fallback');
+    scene.background = new THREE.Color(0x000510);
+});
+
+// Starfield for additional depth
 function createStarfield() {
-    const starCount = 4000;
+    const starCount = 3000;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(starCount * 3);
-    const colors = new Float32Array(starCount * 3);
-    const sizes = new Float32Array(starCount);
 
-    for (let i = 0; i < starCount; i++) {
-        const i3 = i * 3;
-        // Distribute stars in a large sphere
-        const radius = 150 + Math.random() * 250;
+    for (let i = 0; i < starCount * 3; i += 3) {
+        // Random position on a large sphere
+        const r = 200 + Math.random() * 200;
         const theta = Math.random() * Math.PI * 2;
         const phi = Math.acos(2 * Math.random() - 1);
-
-        positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
-        positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-        positions[i3 + 2] = radius * Math.cos(phi);
-
-        // Varying star colors (white to slightly blue/yellow)
-        const colorVariation = Math.random();
-        if (colorVariation > 0.9) {
-            // Blue-ish stars
-            colors[i3] = 0.7 + Math.random() * 0.3;
-            colors[i3 + 1] = 0.8 + Math.random() * 0.2;
-            colors[i3 + 2] = 1.0;
-        } else if (colorVariation > 0.8) {
-            // Yellow-ish stars
-            colors[i3] = 1.0;
-            colors[i3 + 1] = 0.9 + Math.random() * 0.1;
-            colors[i3 + 2] = 0.7 + Math.random() * 0.2;
-        } else {
-            // White stars
-            const brightness = 0.7 + Math.random() * 0.3;
-            colors[i3] = brightness;
-            colors[i3 + 1] = brightness;
-            colors[i3 + 2] = brightness;
-        }
-
-        // Varying sizes - most small, few large
-        sizes[i] = Math.random() < 0.95 ? 0.03 + Math.random() * 0.05 : 0.1 + Math.random() * 0.15;
+        positions[i] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i + 1] = r * Math.sin(phi) * Math.sin(theta);
+        positions[i + 2] = r * Math.cos(phi);
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
     const material = new THREE.PointsMaterial({
-        size: 0.08,
-        sizeAttenuation: true,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.9
+        color: 0xffffff,
+        size: 0.15,
+        sizeAttenuation: true
     });
-    const starfield = new THREE.Points(geometry, material);
-    scene.add(starfield);
-    return starfield;
+    const stars = new THREE.Points(geometry, material);
+    scene.add(stars);
+    return stars;
 }
 
 const starfield = createStarfield();
