@@ -175,8 +175,8 @@ const earthMaterial = new THREE.ShaderMaterial({
 
         void main() {
             vUv = uv;
-            // Transform normal and position to world space
-            vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+            // Transform normal to world space using mat3 for proper rotation handling
+            vWorldNormal = normalize(mat3(modelMatrix) * normal);
             vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -191,14 +191,17 @@ const earthMaterial = new THREE.ShaderMaterial({
         varying vec3 vWorldPosition;
 
         void main() {
-            // Direction from this point on Earth toward the sun
+            // Direction from this point toward the sun
             vec3 toSun = normalize(sunPosition - vWorldPosition);
 
-            // How much this fragment faces the sun
-            float sunIntensity = dot(normalize(vWorldNormal), toSun);
+            // World normal (re-normalize after interpolation)
+            vec3 worldNormal = normalize(vWorldNormal);
 
-            // Smooth transition at terminator
-            float dayNightMix = smoothstep(-0.1, 0.2, sunIntensity);
+            // How much this fragment faces the sun (positive = facing sun)
+            float sunIntensity = dot(worldNormal, toSun);
+
+            // Smooth transition at terminator (0 = night, 1 = day)
+            float dayAmount = smoothstep(-0.1, 0.2, sunIntensity);
 
             // Sample textures
             vec4 dayColor = texture2D(dayTexture, vUv);
@@ -210,8 +213,8 @@ const earthMaterial = new THREE.ShaderMaterial({
             // Night side: nearly black with bright glowing city lights
             vec3 litNight = dayColor.rgb * 0.003 + nightColor.rgb * 3.0;
 
-            // Blend between day and night
-            vec3 finalColor = mix(litNight, litDay, dayNightMix);
+            // Blend: dayAmount=1 means day, dayAmount=0 means night
+            vec3 finalColor = mix(litNight, litDay, dayAmount);
 
             gl_FragColor = vec4(finalColor, 1.0);
         }
