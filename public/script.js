@@ -21,17 +21,80 @@ renderer.domElement.style.touchAction = 'none';
 // Clock for frame-rate independent animation
 const clock = new THREE.Clock();
 
-// Add lighting
-const ambientLight = new THREE.AmbientLight(0x404050, 0.4);
+// === SUN AND LIGHTING ===
+// Sun position - far enough to feel distant but visible
+const SUN_DISTANCE = 80;
+const SUN_POSITION = new THREE.Vector3(SUN_DISTANCE, SUN_DISTANCE * 0.3, SUN_DISTANCE * 0.2);
+
+// Ambient light (very dim - space is dark)
+const ambientLight = new THREE.AmbientLight(0x111122, 0.15);
 scene.add(ambientLight);
 
-const directionalLight = new THREE.DirectionalLight(0xffffee, 1.5);
-directionalLight.position.set(10, 8, 5);
+// Directional light FROM the sun
+const directionalLight = new THREE.DirectionalLight(0xfffaf0, 2.0);
+directionalLight.position.copy(SUN_POSITION);
 scene.add(directionalLight);
+scene.add(directionalLight.target);
 
-// Add subtle fill light from opposite side
-const fillLight = new THREE.DirectionalLight(0x4466aa, 0.3);
-fillLight.position.set(-5, -3, -5);
+// Create glowing sun
+function createSun() {
+    const sunGroup = new THREE.Group();
+
+    // Core - bright hot center
+    const coreGeom = new THREE.SphereGeometry(3, 32, 32);
+    const coreMat = new THREE.MeshBasicMaterial({
+        color: 0xfffef0
+    });
+    const core = new THREE.Mesh(coreGeom, coreMat);
+    sunGroup.add(core);
+
+    // Inner glow layer
+    const glow1Geom = new THREE.SphereGeometry(3.5, 32, 32);
+    const glow1Mat = new THREE.MeshBasicMaterial({
+        color: 0xffee88,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.BackSide
+    });
+    const glow1 = new THREE.Mesh(glow1Geom, glow1Mat);
+    sunGroup.add(glow1);
+
+    // Outer glow layer
+    const glow2Geom = new THREE.SphereGeometry(5, 32, 32);
+    const glow2Mat = new THREE.MeshBasicMaterial({
+        color: 0xffdd44,
+        transparent: true,
+        opacity: 0.3,
+        side: THREE.BackSide
+    });
+    const glow2 = new THREE.Mesh(glow2Geom, glow2Mat);
+    sunGroup.add(glow2);
+
+    // Corona - largest, faintest glow
+    const coronaGeom = new THREE.SphereGeometry(8, 32, 32);
+    const coronaMat = new THREE.MeshBasicMaterial({
+        color: 0xffcc22,
+        transparent: true,
+        opacity: 0.15,
+        side: THREE.BackSide
+    });
+    const corona = new THREE.Mesh(coronaGeom, coronaMat);
+    sunGroup.add(corona);
+
+    // Point light at sun for additional glow effect
+    const sunLight = new THREE.PointLight(0xffffee, 1, 200);
+    sunGroup.add(sunLight);
+
+    sunGroup.position.copy(SUN_POSITION);
+    return sunGroup;
+}
+
+const sun = createSun();
+scene.add(sun);
+
+// Subtle fill light from opposite side (reflected light from space)
+const fillLight = new THREE.DirectionalLight(0x4466aa, 0.1);
+fillLight.position.set(-SUN_POSITION.x, -SUN_POSITION.y, -SUN_POSITION.z);
 scene.add(fillLight);
 
 // State
@@ -98,51 +161,54 @@ const earthNightTexture = textureLoader.load(EARTH_NIGHT_URL, updateLoadingProgr
 const earthGeometry = new THREE.SphereGeometry(2, 128, 128);
 
 // Custom shader for day/night transition with city lights
+// Uses sun's world position for accurate lighting as Earth rotates
 const earthMaterial = new THREE.ShaderMaterial({
     uniforms: {
         dayTexture: { value: earthTexture },
         nightTexture: { value: earthNightTexture },
-        bumpMap: { value: earthBumpMap },
-        bumpScale: { value: 0.05 },
-        lightDirection: { value: new THREE.Vector3(10, 8, 5).normalize() }
+        sunPosition: { value: SUN_POSITION.clone() }
     },
     vertexShader: `
         varying vec2 vUv;
-        varying vec3 vNormal;
-        varying vec3 vPosition;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPosition;
 
         void main() {
             vUv = uv;
-            vNormal = normalize(normalMatrix * normal);
-            vPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+            // Transform normal and position to world space
+            vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
     `,
     fragmentShader: `
         uniform sampler2D dayTexture;
         uniform sampler2D nightTexture;
-        uniform vec3 lightDirection;
+        uniform vec3 sunPosition;
 
         varying vec2 vUv;
-        varying vec3 vNormal;
-        varying vec3 vPosition;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPosition;
 
         void main() {
-            // Calculate how much this fragment faces the light
-            float lightIntensity = dot(vNormal, lightDirection);
+            // Direction from this point on Earth toward the sun
+            vec3 toSun = normalize(sunPosition - vWorldPosition);
 
-            // Smooth transition at terminator (-0.2 to 0.1 range for sharper transition)
-            float dayNightMix = smoothstep(-0.2, 0.1, lightIntensity);
+            // How much this fragment faces the sun
+            float sunIntensity = dot(normalize(vWorldNormal), toSun);
+
+            // Smooth transition at terminator
+            float dayNightMix = smoothstep(-0.1, 0.2, sunIntensity);
 
             // Sample textures
             vec4 dayColor = texture2D(dayTexture, vUv);
             vec4 nightColor = texture2D(nightTexture, vUv);
 
-            // Day side: full color with lighting
-            vec3 litDay = dayColor.rgb * (0.4 + 0.6 * max(0.0, lightIntensity));
+            // Day side: bright with sun lighting
+            vec3 litDay = dayColor.rgb * (0.5 + 0.5 * max(0.0, sunIntensity));
 
-            // Night side: very dark with bright city lights
-            vec3 litNight = dayColor.rgb * 0.01 + nightColor.rgb * 2.5;
+            // Night side: very dark with glowing city lights
+            vec3 litNight = dayColor.rgb * 0.02 + nightColor.rgb * 2.0;
 
             // Blend between day and night
             vec3 finalColor = mix(litNight, litDay, dayNightMix);
@@ -952,16 +1018,11 @@ function animate() {
     clouds.rotation.y += planetRotationSpeed * planetRotationDirection * delta * 1.05;
     atmosphere.rotation.y = earth.rotation.y;
 
-    earth.rotation.x = 0.2;
-    clouds.rotation.x = 0.2;
-
-    // Update shader light direction based on Earth's rotation
-    // Light is fixed in world space, transform to Earth's local space
-    const worldLightDir = new THREE.Vector3(10, 8, 5).normalize();
-    const inverseRotation = new THREE.Matrix4().makeRotationFromEuler(earth.rotation).invert();
-    const localLightDir = worldLightDir.clone().applyMatrix4(inverseRotation);
-    earthMaterial.uniforms.lightDirection.value.copy(localLightDir);
-    atmosphere.rotation.x = 0.2;
+    // Earth's axial tilt: 23.5 degrees = 0.41 radians
+    const EARTH_TILT = 0.41;
+    earth.rotation.x = EARTH_TILT;
+    clouds.rotation.x = EARTH_TILT;
+    atmosphere.rotation.x = EARTH_TILT;
 
     // Ship orbit
     orbitAngle -= shipOrbitSpeed * shipOrbitDirection * delta;
