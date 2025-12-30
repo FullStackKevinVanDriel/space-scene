@@ -245,36 +245,62 @@ const atmosphereMaterial = new THREE.MeshPhongMaterial({
 const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 scene.add(atmosphere);
 
-// Space skybox with nebula, galaxies, and stars
-// Using NASA/ESA deep space imagery as equirectangular panorama
-const spaceTextureUrl = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r152/examples/textures/2294472375_24a3b8ef46_o.jpg';
+// Dark space background
+scene.background = new THREE.Color(0x000008);
 
-// Load space panorama as background
-const spaceLoader = new THREE.TextureLoader();
-spaceLoader.load(spaceTextureUrl, (texture) => {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    texture.colorSpace = THREE.SRGBColorSpace;
-    scene.background = texture;
-    scene.environment = texture; // Also use for reflections
-}, undefined, (err) => {
-    console.warn('Space skybox failed to load, using fallback color:', err);
-    scene.background = new THREE.Color(0x000011);
-});
-
-// Keep a subtle starfield layer for extra depth (fewer, dimmer stars)
+// Procedural starfield with varying star sizes and brightness
 function createStarfield() {
-    const starCount = 800;
+    const starCount = 4000;
     const geometry = new THREE.BufferGeometry();
     const positions = new Float32Array(starCount * 3);
+    const colors = new Float32Array(starCount * 3);
+    const sizes = new Float32Array(starCount);
 
-    for (let i = 0; i < starCount * 3; i += 3) {
-        positions[i] = (Math.random() - 0.5) * 400;
-        positions[i + 1] = (Math.random() - 0.5) * 400;
-        positions[i + 2] = (Math.random() - 0.5) * 400;
+    for (let i = 0; i < starCount; i++) {
+        const i3 = i * 3;
+        // Distribute stars in a large sphere
+        const radius = 150 + Math.random() * 250;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+
+        positions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+        positions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+        positions[i3 + 2] = radius * Math.cos(phi);
+
+        // Varying star colors (white to slightly blue/yellow)
+        const colorVariation = Math.random();
+        if (colorVariation > 0.9) {
+            // Blue-ish stars
+            colors[i3] = 0.7 + Math.random() * 0.3;
+            colors[i3 + 1] = 0.8 + Math.random() * 0.2;
+            colors[i3 + 2] = 1.0;
+        } else if (colorVariation > 0.8) {
+            // Yellow-ish stars
+            colors[i3] = 1.0;
+            colors[i3 + 1] = 0.9 + Math.random() * 0.1;
+            colors[i3 + 2] = 0.7 + Math.random() * 0.2;
+        } else {
+            // White stars
+            const brightness = 0.7 + Math.random() * 0.3;
+            colors[i3] = brightness;
+            colors[i3 + 1] = brightness;
+            colors[i3 + 2] = brightness;
+        }
+
+        // Varying sizes - most small, few large
+        sizes[i] = Math.random() < 0.95 ? 0.03 + Math.random() * 0.05 : 0.1 + Math.random() * 0.15;
     }
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, sizeAttenuation: true, transparent: true, opacity: 0.6 });
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+        size: 0.08,
+        sizeAttenuation: true,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9
+    });
     const starfield = new THREE.Points(geometry, material);
     scene.add(starfield);
     return starfield;
