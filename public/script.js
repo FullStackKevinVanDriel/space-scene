@@ -121,17 +121,69 @@ function createEarthTexture() {
     ctx.closePath();
     ctx.fill();
 
-    // Antarctica hint
-    ctx.fillStyle = '#aaccdd';
-    ctx.fillRect(0, 470, canvas.width, 42);
+    // North Pole ice cap
+    const northPoleGradient = ctx.createRadialGradient(512, 0, 0, 512, 0, 120);
+    northPoleGradient.addColorStop(0, '#ffffff');
+    northPoleGradient.addColorStop(0.5, '#e8f4f8');
+    northPoleGradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = northPoleGradient;
+    ctx.fillRect(0, 0, canvas.width, 80);
+
+    // South Pole / Antarctica ice cap
+    const southPoleGradient = ctx.createRadialGradient(512, 512, 0, 512, 512, 140);
+    southPoleGradient.addColorStop(0, '#ffffff');
+    southPoleGradient.addColorStop(0.4, '#e8f4f8');
+    southPoleGradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = southPoleGradient;
+    ctx.fillRect(0, 440, canvas.width, 72);
 
     // Add some terrain variation
     ctx.fillStyle = '#3d6a37';
     for (let i = 0; i < 50; i++) {
         const x = Math.random() * canvas.width;
-        const y = Math.random() * canvas.height;
+        const y = 60 + Math.random() * (canvas.height - 120); // Avoid poles
         ctx.beginPath();
-        ctx.arc(x, y, Math.random() * 20 + 5, 0, Math.PI * 2);
+        ctx.arc(x, y, Math.random() * 15 + 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    return new THREE.CanvasTexture(canvas);
+}
+
+// Create cloud texture
+function createCloudTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Transparent base
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw cloud patches
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+
+    for (let i = 0; i < 80; i++) {
+        const x = Math.random() * canvas.width;
+        const y = 30 + Math.random() * (canvas.height - 60);
+        const width = 40 + Math.random() * 100;
+        const height = 20 + Math.random() * 40;
+
+        ctx.beginPath();
+        ctx.ellipse(x, y, width, height, Math.random() * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Add some wispy clouds
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    for (let i = 0; i < 40; i++) {
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        const width = 60 + Math.random() * 150;
+        const height = 10 + Math.random() * 25;
+
+        ctx.beginPath();
+        ctx.ellipse(x, y, width, height, Math.random() * Math.PI, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -148,12 +200,24 @@ const earthMaterial = new THREE.MeshPhongMaterial({
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 scene.add(earth);
 
+// Cloud layer
+const cloudTexture = createCloudTexture();
+const cloudGeometry = new THREE.SphereGeometry(2.02, 64, 64);
+const cloudMaterial = new THREE.MeshPhongMaterial({
+    map: cloudTexture,
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false
+});
+const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+scene.add(clouds);
+
 // Atmosphere glow
-const atmosphereGeometry = new THREE.SphereGeometry(2.05, 64, 64);
+const atmosphereGeometry = new THREE.SphereGeometry(2.08, 64, 64);
 const atmosphereMaterial = new THREE.MeshPhongMaterial({
     color: 0x4488ff,
     transparent: true,
-    opacity: 0.15,
+    opacity: 0.12,
     side: THREE.BackSide
 });
 const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
@@ -318,13 +382,13 @@ const orbitRadius = 4.5;
 const orbitSpeed = 0.25;
 const orbitY = 1.5;
 
-// Entry animation - ship comes from behind camera toward Earth, then orbits
-const entryStartAngle = Math.PI * 0.75; // Start orbit from this angle
+// Entry animation - ship comes from top-right, behind Earth, then orbits left to right
+const entryStartAngle = Math.PI * 1.25; // Start orbit from back-right
 
-// Initial position (behind and to the left of camera)
-let shipStartX = -8;
-let shipStartY = 6;
-let shipStartZ = 15; // Behind camera
+// Initial position (top-right of screen, behind Earth)
+let shipStartX = 10;
+let shipStartY = 8;
+let shipStartZ = -15; // Behind Earth (negative Z)
 
 // Target position - entry point on orbit circle
 const shipTargetX = Math.cos(entryStartAngle) * orbitRadius;
@@ -473,9 +537,13 @@ function animate() {
     earth.rotation.y += rotationSpeed * rotationDirection * delta;
     atmosphere.rotation.y = earth.rotation.y;
 
+    // Clouds rotate slightly faster for realism
+    clouds.rotation.y += rotationSpeed * rotationDirection * delta * 1.1;
+
     // Earth tilt
     earth.rotation.x = 0.2;
     atmosphere.rotation.x = 0.2;
+    clouds.rotation.x = 0.2;
 
     // Animate space ship
     if (shipProgress < 1) {
@@ -508,18 +576,17 @@ function animate() {
             hasEnteredOrbit = true;
         }
     } else {
-        // Orbit phase
+        // Orbit phase - clockwise (left to right from camera view)
         const orbitElapsed = elapsed - orbitStartTime;
-        const angle = entryStartAngle + orbitElapsed * orbitSpeed;
+        const angle = entryStartAngle - orbitElapsed * orbitSpeed; // Subtract for clockwise
 
         spaceShip.position.x = Math.cos(angle) * orbitRadius;
         spaceShip.position.z = Math.sin(angle) * orbitRadius;
         spaceShip.position.y = orbitY;
 
-        // Tangent direction (perpendicular to radius, in direction of motion)
-        // For counterclockwise orbit: tangent = (-sin(angle), 0, cos(angle))
-        const tangentX = -Math.sin(angle);
-        const tangentZ = Math.cos(angle);
+        // Tangent direction for clockwise orbit: tangent = (sin(angle), 0, -cos(angle))
+        const tangentX = Math.sin(angle);
+        const tangentZ = -Math.cos(angle);
 
         // Point nose in direction of travel
         const forwardPoint = new THREE.Vector3(
