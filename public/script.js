@@ -509,6 +509,8 @@ const pointerState = {
     prevMidpoint: null,
     prevDistance: null,
 };
+// If pointer events don't work reliably on the device, use touch handlers as a fallback.
+let touchHandlersActive = false;
 
 renderer.domElement.addEventListener('pointerdown', (ev) => {
     ev.preventDefault();
@@ -649,6 +651,106 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 renderer.domElement.addEventListener('pointercancel', (ev) => {
     renderer.domElement.releasePointerCapture(ev.pointerId);
     pointerState.pointers.delete(ev.pointerId);
+});
+
+// --- TOUCH fallback (restore previous touch behavior if pointer events misbehave) ---
+renderer.domElement.addEventListener('touchstart', (event) => {
+    event.preventDefault();
+    touchHandlersActive = true;
+    touchState.pointers = Array.from(event.touches);
+
+    if (touchState.pointers.length === 1) {
+        touchState.prevPosition = {
+            x: touchState.pointers[0].clientX,
+            y: touchState.pointers[0].clientY,
+        };
+    } else if (touchState.pointers.length === 2) {
+        const t1 = touchState.pointers[0];
+        const t2 = touchState.pointers[1];
+        touchState.prevMidpoint = {
+            x: (t1.clientX + t2.clientX) / 2,
+            y: (t1.clientY + t2.clientY) / 2,
+        };
+        touchState.prevDistance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    }
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchmove', (event) => {
+    event.preventDefault();
+    const touches = Array.from(event.touches);
+
+    // One finger: Orbit
+    if (touches.length === 1 && touchState.prevPosition) {
+        const deltaX = touches[0].clientX - touchState.prevPosition.x;
+        const deltaY = touches[0].clientY - touchState.prevPosition.y;
+
+        const spherical = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(cameraTarget)
+        );
+        spherical.theta -= deltaX * rotationSpeed;
+        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+
+        const newPos = new THREE.Vector3().setFromSpherical(spherical);
+        camera.position.copy(cameraTarget).add(newPos);
+        camera.lookAt(cameraTarget);
+
+        touchState.prevPosition = { x: touches[0].clientX, y: touches[0].clientY };
+    }
+
+    // Two fingers: Pan + Zoom
+    if (touches.length === 2 && touchState.prevMidpoint) {
+        const t1 = touches[0];
+        const t2 = touches[1];
+
+        const midpoint = {
+            x: (t1.clientX + t2.clientX) / 2,
+            y: (t1.clientY + t2.clientY) / 2,
+        };
+        const distance = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+        // Pan
+        const panDeltaX = midpoint.x - touchState.prevMidpoint.x;
+        const panDeltaY = midpoint.y - touchState.prevMidpoint.y;
+
+        const cameraDir = new THREE.Vector3();
+        camera.getWorldDirection(cameraDir);
+        const cameraRight = new THREE.Vector3().crossVectors(cameraDir, camera.up).normalize();
+        const cameraUp = new THREE.Vector3().crossVectors(cameraRight, cameraDir).normalize();
+
+        camera.position.addScaledVector(cameraRight, -panDeltaX * panSpeed);
+        camera.position.addScaledVector(cameraUp, panDeltaY * panSpeed);
+        cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
+        cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
+
+        // Zoom (pinch)
+        const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 0.5;
+        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
+        const currentDist = camera.position.distanceTo(cameraTarget);
+        const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
+        camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+
+        touchState.prevMidpoint = midpoint;
+        touchState.prevDistance = distance;
+    }
+
+    touchState.pointers = touches;
+}, { passive: false });
+
+renderer.domElement.addEventListener('touchend', (event) => {
+    touchState.pointers = Array.from(event.touches);
+    if (touchState.pointers.length === 0) {
+        touchState.prevPosition = null;
+        touchState.prevMidpoint = null;
+        touchState.prevDistance = null;
+        touchHandlersActive = false;
+    } else if (touchState.pointers.length === 1) {
+        touchState.prevPosition = {
+            x: touchState.pointers[0].clientX,
+            y: touchState.pointers[0].clientY,
+        };
+        touchState.prevMidpoint = null;
+        touchState.prevDistance = null;
+    }
 });
 
 // Keep wheel handling and contextmenu prevention
