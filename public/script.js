@@ -272,188 +272,111 @@ const starfield = createStarfield();
 function createSpaceShip() {
     const ship = new THREE.Group();
 
-    // Materials
-    const hullDark = new THREE.MeshPhongMaterial({ color: 0x1a1a24, shininess: 80, specular: 0x444455 });
-    const hullMid = new THREE.MeshPhongMaterial({ color: 0x2a2a38, shininess: 70, specular: 0x555566 });
-    const hullLight = new THREE.MeshPhongMaterial({ color: 0x3a3a48, shininess: 60, specular: 0x666677 });
-    const accentBlue = new THREE.MeshPhongMaterial({ color: 0x0088ff, emissive: 0x004488, emissiveIntensity: 0.5 });
-    const accentRed = new THREE.MeshPhongMaterial({ color: 0xff3333, emissive: 0x881111, emissiveIntensity: 0.3 });
-    const cockpitGlass = new THREE.MeshPhongMaterial({
-        color: 0x88ccff, emissive: 0x2266aa, emissiveIntensity: 0.4,
-        transparent: true, opacity: 0.85, shininess: 100
-    });
+    // Materials - use PBR for more realistic surface response
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0x23262b, metalness: 0.85, roughness: 0.25 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0x0aa8ff, emissive: 0x003355, emissiveIntensity: 0.8, metalness: 0.2, roughness: 0.1 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x111218, metalness: 0.9, roughness: 0.15 });
 
-    // Main fuselage - sleek tapered body
-    const fuselageLength = 3.2;
-    const fuselageShape = new THREE.Shape();
-    fuselageShape.moveTo(0, 0.2);
-    fuselageShape.bezierCurveTo(0.25, 0.22, 0.35, 0.12, 0.35, 0);
-    fuselageShape.bezierCurveTo(0.35, -0.12, 0.25, -0.18, 0, -0.2);
-    fuselageShape.bezierCurveTo(-0.25, -0.18, -0.35, -0.12, -0.35, 0);
-    fuselageShape.bezierCurveTo(-0.35, 0.12, -0.25, 0.22, 0, 0.2);
-
-    const fuselageGeo = new THREE.ExtrudeGeometry(fuselageShape, {
-        depth: fuselageLength, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.06, bevelSegments: 3
-    });
-    const fuselage = new THREE.Mesh(fuselageGeo, hullMid);
+    // Sleek tapered fuselage using Cylinder (narrow nose to wider rear)
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.45, 4.0, 32, 1, true), hullMat);
     fuselage.rotation.x = Math.PI / 2;
-    fuselage.position.z = -fuselageLength / 2;
+    fuselage.position.z = -1.0;
     ship.add(fuselage);
 
-    // Nose cone - sharp pointed
-    const noseGeo = new THREE.ConeGeometry(0.22, 1.0, 8);
-    const nose = new THREE.Mesh(noseGeo, hullLight);
+    // Nose cone
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 32), hullMat);
     nose.rotation.x = -Math.PI / 2;
-    nose.position.z = -fuselageLength / 2 - 0.5;
+    nose.position.z = -3.0;
     ship.add(nose);
 
-    // Cockpit canopy
-    const canopyGeo = new THREE.SphereGeometry(0.18, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-    const canopy = new THREE.Mesh(canopyGeo, cockpitGlass);
-    canopy.scale.set(1.2, 0.6, 2.0);
-    canopy.position.set(0, 0.15, -0.8);
+    // Cockpit: forward glass canopy with physical material
+    const canopyGeo = new THREE.SphereGeometry(0.32, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2);
+    const canopyMat = new THREE.MeshPhysicalMaterial({ color: 0x88ccff, transmission: 0.9, roughness: 0.05, metalness: 0.0, clearcoat: 1.0, clearcoatRoughness: 0.0, reflectivity: 0.8, transparent: true, opacity: 0.95 });
+    const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+    canopy.scale.set(1.0, 0.9, 1.6);
+    canopy.position.set(0, 0.22, -2.2);
+    canopy.rotation.x = 0.05;
+    canopy.name = 'cockpitCanopy';
     ship.add(canopy);
 
     // Cockpit frame
-    const frameGeo = new THREE.TorusGeometry(0.16, 0.025, 6, 16, Math.PI);
-    const frame = new THREE.Mesh(frameGeo, hullDark);
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.03, 8, 40, Math.PI), frameMat);
     frame.rotation.x = Math.PI / 2;
-    frame.rotation.z = Math.PI / 2;
-    frame.scale.set(1.2, 1, 1.5);
-    frame.position.set(0, 0.16, -0.6);
+    frame.rotation.z = Math.PI / 2.1;
+    frame.position.set(0, 0.18, -2.0);
     ship.add(frame);
 
-    // Main wings - swept back
-    const wingGeo = new THREE.BoxGeometry(2.8, 0.04, 0.7);
-    const wings = new THREE.Mesh(wingGeo, hullMid);
-    wings.position.set(0, 0, 0.4);
-    ship.add(wings);
-
-    // Wing tips - angled
-    const tipGeo = new THREE.BoxGeometry(0.5, 0.06, 0.4);
-    const leftTip = new THREE.Mesh(tipGeo, hullDark);
-    leftTip.position.set(-1.5, 0.08, 0.5);
-    leftTip.rotation.z = 0.3;
-    ship.add(leftTip);
-
-    const rightTip = new THREE.Mesh(tipGeo, hullDark);
-    rightTip.position.set(1.5, 0.08, 0.5);
-    rightTip.rotation.z = -0.3;
-    ship.add(rightTip);
-
-    // Wing accent lights
-    const lightStripGeo = new THREE.BoxGeometry(1.5, 0.03, 0.05);
-    const leftLight = new THREE.Mesh(lightStripGeo, accentBlue);
-    leftLight.position.set(-0.8, 0.03, 0.5);
-    ship.add(leftLight);
-
-    const rightLight = new THREE.Mesh(lightStripGeo, accentBlue);
-    rightLight.position.set(0.8, 0.03, 0.5);
-    ship.add(rightLight);
+    // Wings - slim swept geometry
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.03, 0.65), hullMat);
+    wing.position.set(0, 0.02, 0.2);
+    wing.rotation.x = 0.02;
+    ship.add(wing);
 
     // Vertical stabilizers
-    const finGeo = new THREE.BoxGeometry(0.04, 0.4, 0.5);
-    const leftFin = new THREE.Mesh(finGeo, hullDark);
-    leftFin.position.set(-1.3, 0.2, 0.6);
-    leftFin.rotation.z = -0.2;
-    ship.add(leftFin);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.35), hullMat);
+    fin.position.set(-0.95, 0.25, 0.6);
+    fin.rotation.z = -0.25;
+    ship.add(fin);
+    const fin2 = fin.clone();
+    fin2.position.x = 0.95; fin2.rotation.z = 0.25;
+    ship.add(fin2);
 
-    const rightFin = new THREE.Mesh(finGeo, hullDark);
-    rightFin.position.set(1.3, 0.2, 0.6);
-    rightFin.rotation.z = 0.2;
-    ship.add(rightFin);
+    // Engine nacelles and intakes
+    const nacelleGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.9, 24);
+    const leftNacelle = new THREE.Mesh(nacelleGeo, hullMat); leftNacelle.rotation.x = Math.PI / 2; leftNacelle.position.set(-0.6, -0.08, 1.0); ship.add(leftNacelle);
+    const rightNacelle = leftNacelle.clone(); rightNacelle.position.x = 0.6; ship.add(rightNacelle);
 
-    // Engine nacelles
-    const nacelleGeo = new THREE.CylinderGeometry(0.14, 0.18, 1.2, 12);
-    const leftNacelle = new THREE.Mesh(nacelleGeo, hullDark);
-    leftNacelle.rotation.x = Math.PI / 2;
-    leftNacelle.position.set(-0.6, -0.08, 1.0);
-    ship.add(leftNacelle);
+    // Create a radial gradient texture for flame glow (canvas)
+    function makeFlameTexture() {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(size/2, size/2, 2, size/2, size/2, size/2);
+        grad.addColorStop(0, 'rgba(180,235,255,1)');
+        grad.addColorStop(0.4, 'rgba(0,170,255,0.9)');
+        grad.addColorStop(1, 'rgba(0,40,80,0)');
+        ctx.fillStyle = grad; ctx.fillRect(0,0,size,size);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.needsUpdate = true;
+        return tex;
+    }
+    const flameTex = makeFlameTexture();
 
-    const rightNacelle = new THREE.Mesh(nacelleGeo, hullDark);
-    rightNacelle.rotation.x = Math.PI / 2;
-    rightNacelle.position.set(0.6, -0.08, 1.0);
-    ship.add(rightNacelle);
+    function createThruster(x, y, z, scale=1, name='') {
+        const g = new THREE.Group();
+        // inner cone for core
+        const core = new THREE.Mesh(new THREE.ConeGeometry(0.06*scale, 0.8*scale, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        core.rotation.x = -Math.PI/2; core.position.z = 0.1*scale; core.scale.set(1,1,0.8); g.add(core);
 
-    // Engine intakes (glowing rings)
-    const intakeGeo = new THREE.TorusGeometry(0.15, 0.03, 8, 16);
-    const leftIntake = new THREE.Mesh(intakeGeo, accentBlue);
-    leftIntake.position.set(-0.6, -0.08, 0.4);
-    ship.add(leftIntake);
+        // blue flame sprite glow
+        const spriteMat = new THREE.SpriteMaterial({ map: flameTex, color: 0x66ddff, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.scale.set(0.5*scale, 0.9*scale, 1.0);
+        sprite.position.set(0, 0, 0.25*scale);
+        g.add(sprite);
 
-    const rightIntake = new THREE.Mesh(intakeGeo, accentBlue);
-    rightIntake.position.set(0.6, -0.08, 0.4);
-    ship.add(rightIntake);
+        // small point light for emissive feel
+        const pl = new THREE.PointLight(0x66ccff, 0.6, 4*scale, 2);
+        pl.position.set(0,0,0.2*scale);
+        g.add(pl);
 
-    // Main engine block
-    const engineGeo = new THREE.BoxGeometry(0.8, 0.35, 0.6);
-    const engineBlock = new THREE.Mesh(engineGeo, hullDark);
-    engineBlock.position.set(0, -0.05, 1.2);
-    ship.add(engineBlock);
-
-    // === BLUE METHANE THRUSTERS ===
-    const thrusterCore = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const thrusterMid = new THREE.MeshBasicMaterial({ color: 0x66ddff, transparent: true, opacity: 0.9 });
-    const thrusterOuter = new THREE.MeshBasicMaterial({ color: 0x0088ff, transparent: true, opacity: 0.6 });
-
-    function createThruster(x, y, z, scale = 1) {
-        const group = new THREE.Group();
-
-        // Hot white core
-        const coreGeo = new THREE.ConeGeometry(0.04 * scale, 0.35 * scale, 8);
-        const core = new THREE.Mesh(coreGeo, thrusterCore);
-        core.rotation.x = -Math.PI / 2;
-        group.add(core);
-
-        // Mid cyan layer
-        const midGeo = new THREE.ConeGeometry(0.08 * scale, 0.55 * scale, 8);
-        const mid = new THREE.Mesh(midGeo, thrusterMid);
-        mid.rotation.x = -Math.PI / 2;
-        mid.position.z = 0.08 * scale;
-        group.add(mid);
-
-        // Outer blue glow
-        const outerGeo = new THREE.ConeGeometry(0.13 * scale, 0.75 * scale, 8);
-        const outer = new THREE.Mesh(outerGeo, thrusterOuter);
-        outer.rotation.x = -Math.PI / 2;
-        outer.position.z = 0.15 * scale;
-        group.add(outer);
-
-        group.position.set(x, y, z);
-        return group;
+        g.position.set(x,y,z);
+        if (name) g.name = name;
+        return g;
     }
 
-    // Main thrusters
-    const mainThrust1 = createThruster(-0.2, -0.05, 1.55, 1.0);
-    mainThrust1.name = 'thruster1';
-    ship.add(mainThrust1);
+    // Add thrusters (names preserved so animation code still finds them)
+    const t1 = createThruster(-0.2, -0.05, 1.55, 1.0, 'thruster1'); ship.add(t1);
+    const t2 = createThruster(0, -0.05, 1.55, 1.15, 'thruster2'); ship.add(t2);
+    const t3 = createThruster(0.2, -0.05, 1.55, 1.0, 'thruster3'); ship.add(t3);
+    const t4 = createThruster(-0.6, -0.08, 1.65, 0.85, 'thruster4'); ship.add(t4);
+    const t5 = createThruster(0.6, -0.08, 1.65, 0.85, 'thruster5'); ship.add(t5);
 
-    const mainThrust2 = createThruster(0, -0.05, 1.55, 1.15);
-    mainThrust2.name = 'thruster2';
-    ship.add(mainThrust2);
-
-    const mainThrust3 = createThruster(0.2, -0.05, 1.55, 1.0);
-    mainThrust3.name = 'thruster3';
-    ship.add(mainThrust3);
-
-    // Nacelle thrusters
-    const leftThrust = createThruster(-0.6, -0.08, 1.65, 0.85);
-    leftThrust.name = 'thruster4';
-    ship.add(leftThrust);
-
-    const rightThrust = createThruster(0.6, -0.08, 1.65, 0.85);
-    rightThrust.name = 'thruster5';
-    ship.add(rightThrust);
-
-    // Navigation lights
-    const navLightGeo = new THREE.SphereGeometry(0.03, 8, 8);
-    const redNav = new THREE.Mesh(navLightGeo, accentRed);
-    redNav.position.set(-1.4, 0.02, 0.7);
-    ship.add(redNav);
-
-    const greenNav = new THREE.Mesh(navLightGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
-    greenNav.position.set(1.4, 0.02, 0.7);
-    ship.add(greenNav);
+    // Nav lights
+    const navGeo = new THREE.SphereGeometry(0.03, 8, 8);
+    const navR = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xff4444 })); navR.position.set(-1.4,0.02,0.7); ship.add(navR);
+    const navG = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0x44ff88 })); navG.position.set(1.4,0.02,0.7); ship.add(navG);
 
     return ship;
 }
