@@ -213,9 +213,9 @@ const earthMaterial = new THREE.ShaderMaterial({
             // Night side: nearly black with bright glowing city lights
             vec3 litNight = dayColor.rgb * 0.003 + nightColor.rgb * 3.0;
 
-            // Blend: dayAmount=1 means full day, dayAmount=0 means full night
-            // After negating sunIntensity, we need to swap the mix order
-            vec3 finalColor = mix(litDay, litNight, dayAmount);
+            // Blend based on how much sun this fragment receives
+            // dayAmount=1 (facing sun) -> litDay, dayAmount=0 (night) -> litNight
+            vec3 finalColor = mix(litNight, litDay, dayAmount);
 
             gl_FragColor = vec4(finalColor, 1.0);
         }
