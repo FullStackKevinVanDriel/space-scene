@@ -708,16 +708,34 @@ function createSpaceShip() {
 const spaceShip = createSpaceShip();
 scene.add(spaceShip);
 
+// === GAME STATE ===
+let gameLevel = 1; // 1-10, controls asteroid spawn rate
+let earthHealth = 100;
+let maxEarthHealth = 100;
+let score = 0;
+let gameActive = true;
+
+// Level settings: asteroids in field at once
+const LEVEL_ASTEROID_COUNTS = [3, 5, 7, 10, 14, 18, 23, 28, 35, 45]; // Level 1-10
+
 // === LASER SYSTEM ===
 const laserBolts = [];
 const LASER_SPEED = 80;
-const LASER_MAX_DISTANCE = 150;
-const TARGET_SPAWN_DISTANCE = 120; // Distance where target spawns
+const LASER_MAX_DISTANCE = 200;
 let laserAmmo = 1000;
 
-// Active targets and explosions
-const targets = [];
+// Active asteroids and explosions
+const asteroids = [];
 const explosions = [];
+
+// Asteroid spawn settings
+const ASTEROID_SPAWN_MIN_DISTANCE = 100;
+const ASTEROID_SPAWN_MAX_DISTANCE = 150;
+const ASTEROID_MIN_SPEED = 3;
+const ASTEROID_MAX_SPEED = 8;
+const ASTEROID_MIN_SIZE = 0.5;
+const ASTEROID_MAX_SIZE = 2.5;
+const EARTH_RADIUS = 2; // For collision detection
 
 // Create laser bolt geometry and material (reusable)
 const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 8);
@@ -728,59 +746,133 @@ const laserGlowMat = new THREE.MeshBasicMaterial({
     opacity: 0.6
 });
 
-// Create target (enemy ship/asteroid)
-function createTarget(position) {
-    const targetGroup = new THREE.Group();
+// Create asteroid with rocky appearance
+function createAsteroid() {
+    const asteroidGroup = new THREE.Group();
 
-    // Simple enemy ship - angular design
-    const bodyGeo = new THREE.OctahedronGeometry(0.8, 0);
-    const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x884422,
-        metalness: 0.6,
-        roughness: 0.4,
-        emissive: 0x221100,
-        emissiveIntensity: 0.3
+    // Random size (affects health and damage)
+    const size = ASTEROID_MIN_SIZE + Math.random() * (ASTEROID_MAX_SIZE - ASTEROID_MIN_SIZE);
+
+    // Health based on size: bigger = more hits required
+    const health = Math.ceil(size * 2); // 1-5 hits based on size
+
+    // Create rocky asteroid geometry using icosahedron with noise
+    const baseGeo = new THREE.IcosahedronGeometry(size, 1);
+    const positions = baseGeo.attributes.position;
+
+    // Displace vertices for rocky appearance
+    for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const y = positions.getY(i);
+        const z = positions.getZ(i);
+        const noise = 0.7 + Math.random() * 0.6; // 0.7-1.3 multiplier
+        positions.setXYZ(i, x * noise, y * noise, z * noise);
+    }
+    baseGeo.computeVertexNormals();
+
+    // Rocky asteroid material
+    const asteroidMat = new THREE.MeshStandardMaterial({
+        color: 0x6b5b4d,
+        metalness: 0.2,
+        roughness: 0.9,
+        flatShading: true
     });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.scale.set(1, 0.5, 1.5);
-    targetGroup.add(body);
+    const asteroidMesh = new THREE.Mesh(baseGeo, asteroidMat);
 
-    // Engine glow
-    const engineGlow = new THREE.Mesh(
-        new THREE.SphereGeometry(0.3, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 })
+    // Random rotation for variety
+    asteroidMesh.rotation.set(
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2,
+        Math.random() * Math.PI * 2
     );
-    engineGlow.position.z = 0.8;
-    targetGroup.add(engineGlow);
+    asteroidGroup.add(asteroidMesh);
 
-    // Red running lights
-    [-0.6, 0.6].forEach(x => {
-        const light = new THREE.Mesh(
-            new THREE.SphereGeometry(0.08, 6, 6),
-            new THREE.MeshBasicMaterial({ color: 0xff0000 })
+    // Add some crater marks (darker spots)
+    for (let i = 0; i < 3; i++) {
+        const craterGeo = new THREE.CircleGeometry(size * 0.15, 8);
+        const craterMat = new THREE.MeshBasicMaterial({
+            color: 0x3d3429,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.6
+        });
+        const crater = new THREE.Mesh(craterGeo, craterMat);
+
+        // Position on surface
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI;
+        crater.position.set(
+            size * Math.sin(phi) * Math.cos(theta),
+            size * Math.sin(phi) * Math.sin(theta),
+            size * Math.cos(phi)
         );
-        light.position.set(x, 0, -0.5);
-        targetGroup.add(light);
-    });
+        crater.lookAt(0, 0, 0);
+        asteroidGroup.add(crater);
+    }
 
-    targetGroup.position.copy(position);
-    targetGroup.userData.health = 1;
-    targetGroup.userData.createdAt = Date.now();
+    // Spawn position: random point on sphere around Earth at spawn distance
+    const spawnDistance = ASTEROID_SPAWN_MIN_DISTANCE + Math.random() * (ASTEROID_SPAWN_MAX_DISTANCE - ASTEROID_SPAWN_MIN_DISTANCE);
+    const spawnTheta = Math.random() * Math.PI * 2;
+    const spawnPhi = Math.acos(2 * Math.random() - 1);
 
-    scene.add(targetGroup);
-    targets.push(targetGroup);
-    return targetGroup;
+    asteroidGroup.position.set(
+        spawnDistance * Math.sin(spawnPhi) * Math.cos(spawnTheta),
+        spawnDistance * Math.sin(spawnPhi) * Math.sin(spawnTheta),
+        spawnDistance * Math.cos(spawnPhi)
+    );
+
+    // Velocity: moves toward Earth (origin) with slight random offset
+    const speed = ASTEROID_MIN_SPEED + Math.random() * (ASTEROID_MAX_SPEED - ASTEROID_MIN_SPEED);
+    const targetOffset = new THREE.Vector3(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2
+    );
+    const direction = targetOffset.sub(asteroidGroup.position).normalize();
+
+    // Store asteroid data
+    asteroidGroup.userData = {
+        health: health,
+        maxHealth: health,
+        size: size,
+        velocity: direction.multiplyScalar(speed),
+        rotationSpeed: new THREE.Vector3(
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2
+        ),
+        createdAt: Date.now()
+    };
+
+    scene.add(asteroidGroup);
+    asteroids.push(asteroidGroup);
+    return asteroidGroup;
 }
 
-// Create explosion effect
-function createExplosion(position) {
+// Spawn asteroids to maintain level count
+function spawnAsteroids() {
+    if (!gameActive) return;
+
+    const targetCount = LEVEL_ASTEROID_COUNTS[gameLevel - 1] || 3;
+
+    while (asteroids.length < targetCount) {
+        createAsteroid();
+    }
+}
+
+// Create explosion effect (size-based)
+function createExplosion(position, asteroidSize = 1) {
     const explosionGroup = new THREE.Group();
     explosionGroup.position.copy(position);
 
+    // Scale explosion based on asteroid size
+    const scaleFactor = Math.max(0.5, asteroidSize);
+    const particleCount = Math.floor(6 + asteroidSize * 4);
+
     // Multiple expanding spheres for explosion
     const colors = [0xff4400, 0xff8800, 0xffcc00, 0xffffff];
-    for (let i = 0; i < 8; i++) {
-        const size = 0.2 + Math.random() * 0.4;
+    for (let i = 0; i < particleCount; i++) {
+        const size = (0.2 + Math.random() * 0.4) * scaleFactor;
         const geo = new THREE.SphereGeometry(size, 8, 8);
         const mat = new THREE.MeshBasicMaterial({
             color: colors[Math.floor(Math.random() * colors.length)],
@@ -791,30 +883,62 @@ function createExplosion(position) {
 
         // Random offset
         sphere.position.set(
-            (Math.random() - 0.5) * 0.5,
-            (Math.random() - 0.5) * 0.5,
-            (Math.random() - 0.5) * 0.5
+            (Math.random() - 0.5) * scaleFactor,
+            (Math.random() - 0.5) * scaleFactor,
+            (Math.random() - 0.5) * scaleFactor
         );
         sphere.userData.velocity = new THREE.Vector3(
-            (Math.random() - 0.5) * 8,
-            (Math.random() - 0.5) * 8,
-            (Math.random() - 0.5) * 8
+            (Math.random() - 0.5) * 8 * scaleFactor,
+            (Math.random() - 0.5) * 8 * scaleFactor,
+            (Math.random() - 0.5) * 8 * scaleFactor
         );
         sphere.userData.initialScale = size;
         explosionGroup.add(sphere);
     }
 
     // Bright flash
-    const flash = new THREE.PointLight(0xff8800, 3, 20);
+    const flash = new THREE.PointLight(0xff8800, 3 * scaleFactor, 20 * scaleFactor);
     explosionGroup.add(flash);
     explosionGroup.userData.flash = flash;
 
     explosionGroup.userData.createdAt = Date.now();
-    explosionGroup.userData.duration = 800; // ms
+    explosionGroup.userData.duration = 600 + asteroidSize * 200; // Bigger = longer explosion
 
     scene.add(explosionGroup);
     explosions.push(explosionGroup);
     return explosionGroup;
+}
+
+// Create small hit spark when laser damages but doesn't destroy asteroid
+function createHitSpark(position) {
+    const sparkGroup = new THREE.Group();
+    sparkGroup.position.copy(position);
+
+    const colors = [0xffff00, 0xff8800, 0xffffff];
+    for (let i = 0; i < 5; i++) {
+        const size = 0.05 + Math.random() * 0.1;
+        const geo = new THREE.SphereGeometry(size, 4, 4);
+        const mat = new THREE.MeshBasicMaterial({
+            color: colors[Math.floor(Math.random() * colors.length)],
+            transparent: true,
+            opacity: 1
+        });
+        const spark = new THREE.Mesh(geo, mat);
+        spark.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 15,
+            (Math.random() - 0.5) * 15,
+            (Math.random() - 0.5) * 15
+        );
+        spark.userData.initialScale = size;
+        sparkGroup.add(spark);
+    }
+
+    sparkGroup.userData.createdAt = Date.now();
+    sparkGroup.userData.duration = 200;
+
+    scene.add(sparkGroup);
+    explosions.push(sparkGroup); // Reuse explosions array for cleanup
+    return sparkGroup;
 }
 
 // Update ammo display
@@ -826,22 +950,274 @@ function updateAmmoDisplay() {
     }
 }
 
+// Update Earth health display
+function updateHealthDisplay() {
+    const healthBar = document.getElementById('healthBar');
+    const healthText = document.getElementById('healthText');
+    if (healthBar) {
+        const pct = (earthHealth / maxEarthHealth) * 100;
+        healthBar.style.width = pct + '%';
+        healthBar.style.background = pct > 50 ? '#44ff88' : pct > 25 ? '#ffaa00' : '#ff4444';
+    }
+    if (healthText) {
+        healthText.textContent = Math.max(0, earthHealth);
+    }
+}
+
+// Update score display
+function updateScoreDisplay() {
+    const scoreEl = document.getElementById('scoreValue');
+    if (scoreEl) {
+        scoreEl.textContent = score;
+    }
+}
+
+// Update level display
+function updateLevelDisplay() {
+    const levelEl = document.getElementById('levelValue');
+    if (levelEl) {
+        levelEl.textContent = gameLevel;
+    }
+}
+
+// Show game over screen
+function showGameOver() {
+    const overlay = document.createElement('div');
+    overlay.id = 'gameOverOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        font-family: 'Courier New', monospace;
+    `;
+    overlay.innerHTML = `
+        <div style="color: #ff4444; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #ff0000;">GAME OVER</div>
+        <div style="color: #ffffff; font-size: 24px; margin-top: 20px;">Earth has been destroyed</div>
+        <div style="color: #44ff88; font-size: 20px; margin-top: 10px;">Final Score: ${score}</div>
+        <button id="restartBtn" style="
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 18px;
+            background: #44ff88;
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+        ">RESTART</button>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('restartBtn').addEventListener('click', () => {
+        restartGame();
+        overlay.remove();
+    });
+}
+
+// Restart game
+function restartGame() {
+    // Reset state
+    earthHealth = maxEarthHealth;
+    score = 0;
+    laserAmmo = 1000;
+    gameActive = true;
+
+    // Clear all asteroids
+    asteroids.forEach(a => scene.remove(a));
+    asteroids.length = 0;
+
+    // Update displays
+    updateHealthDisplay();
+    updateScoreDisplay();
+    updateAmmoDisplay();
+}
+
+// Targeting HUD: shows crosshairs over asteroids
+function updateTargetingHUD() {
+    let hudContainer = document.getElementById('targetingHUD');
+    if (!hudContainer) {
+        hudContainer = document.createElement('div');
+        hudContainer.id = 'targetingHUD';
+        hudContainer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        `;
+        document.body.appendChild(hudContainer);
+    }
+
+    // Clear previous markers
+    hudContainer.innerHTML = '';
+
+    // Add alignment line from ship
+    const alignmentLine = document.getElementById('alignmentLine') || createAlignmentLine();
+
+    // Get ship's forward direction
+    const shipDirection = new THREE.Vector3(0, 0, -1);
+    shipDirection.applyQuaternion(spaceShip.quaternion);
+
+    // Update alignment line (dotted line showing where ship is aiming)
+    updateAlignmentLine(shipDirection);
+
+    // Project each asteroid to screen space
+    asteroids.forEach((asteroid, index) => {
+        const screenPos = projectToScreen(asteroid.position);
+
+        if (screenPos.z < 1 && screenPos.x > -50 && screenPos.x < window.innerWidth + 50 &&
+            screenPos.y > -50 && screenPos.y < window.innerHeight + 50) {
+
+            // Calculate apparent size based on distance
+            const distance = camera.position.distanceTo(asteroid.position);
+            const baseSize = 40 + asteroid.userData.size * 20;
+            const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
+
+            // Check if asteroid is aligned with ship direction
+            const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
+            const alignment = shipDirection.dot(toAsteroid);
+            const isAligned = alignment > 0.98; // Within ~11 degrees
+
+            // Create targeting reticle
+            const reticle = document.createElement('div');
+            reticle.style.cssText = `
+                position: absolute;
+                left: ${screenPos.x - size/2}px;
+                top: ${screenPos.y - size/2}px;
+                width: ${size}px;
+                height: ${size}px;
+                border: 2px solid ${isAligned ? '#ff4444' : '#44aaff'};
+                border-radius: 50%;
+                box-shadow: 0 0 10px ${isAligned ? '#ff4444' : '#44aaff'};
+            `;
+
+            // Crosshair lines
+            const crosshair = document.createElement('div');
+            crosshair.innerHTML = `
+                <div style="position:absolute;left:50%;top:0;width:2px;height:30%;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateX(-50%);"></div>
+                <div style="position:absolute;left:50%;bottom:0;width:2px;height:30%;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateX(-50%);"></div>
+                <div style="position:absolute;top:50%;left:0;width:30%;height:2px;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateY(-50%);"></div>
+                <div style="position:absolute;top:50%;right:0;width:30%;height:2px;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateY(-50%);"></div>
+            `;
+            crosshair.style.cssText = `position:absolute;width:100%;height:100%;`;
+            reticle.appendChild(crosshair);
+
+            // Health indicator (for multi-hit asteroids)
+            if (asteroid.userData.maxHealth > 1) {
+                const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
+                const healthIndicator = document.createElement('div');
+                healthIndicator.style.cssText = `
+                    position: absolute;
+                    bottom: -12px;
+                    left: 10%;
+                    width: 80%;
+                    height: 4px;
+                    background: rgba(0,0,0,0.5);
+                    border-radius: 2px;
+                `;
+                healthIndicator.innerHTML = `<div style="width:${healthPct}%;height:100%;background:#ff4444;border-radius:2px;"></div>`;
+                reticle.appendChild(healthIndicator);
+            }
+
+            // Distance indicator
+            const distLabel = document.createElement('div');
+            distLabel.style.cssText = `
+                position: absolute;
+                top: -18px;
+                left: 50%;
+                transform: translateX(-50%);
+                font-family: 'Courier New', monospace;
+                font-size: 10px;
+                color: ${isAligned ? '#ff4444' : '#44aaff'};
+                text-shadow: 0 0 5px ${isAligned ? '#ff0000' : '#0088ff'};
+            `;
+            distLabel.textContent = Math.round(distance) + 'm';
+            reticle.appendChild(distLabel);
+
+            hudContainer.appendChild(reticle);
+        }
+    });
+}
+
+// Project 3D position to screen coordinates
+function projectToScreen(position) {
+    const vector = position.clone();
+    vector.project(camera);
+
+    return {
+        x: (vector.x * 0.5 + 0.5) * window.innerWidth,
+        y: (-vector.y * 0.5 + 0.5) * window.innerHeight,
+        z: vector.z
+    };
+}
+
+// Create alignment line element
+function createAlignmentLine() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'alignmentLine';
+    svg.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 99;
+    `;
+    svg.innerHTML = `
+        <defs>
+            <pattern id="dottedPattern" patternUnits="userSpaceOnUse" width="10" height="10">
+                <circle cx="2" cy="2" r="1.5" fill="#44ff88" />
+            </pattern>
+        </defs>
+        <line id="aimLine" x1="0" y1="0" x2="0" y2="0" stroke="url(#dottedPattern)" stroke-width="3" stroke-dasharray="5,5" />
+    `;
+    document.body.appendChild(svg);
+    return svg;
+}
+
+// Update alignment line position
+function updateAlignmentLine(shipDirection) {
+    const aimLine = document.getElementById('aimLine');
+    if (!aimLine) return;
+
+    // Start from ship position on screen
+    const shipScreen = projectToScreen(spaceShip.position);
+
+    // End at a point far in the direction ship is facing
+    const farPoint = spaceShip.position.clone().add(shipDirection.clone().multiplyScalar(200));
+    const farScreen = projectToScreen(farPoint);
+
+    // Only show if ship is on screen
+    if (shipScreen.z < 1 && farScreen.z < 1) {
+        aimLine.setAttribute('x1', shipScreen.x);
+        aimLine.setAttribute('y1', shipScreen.y);
+        aimLine.setAttribute('x2', farScreen.x);
+        aimLine.setAttribute('y2', farScreen.y);
+        aimLine.style.opacity = '0.6';
+    } else {
+        aimLine.style.opacity = '0';
+    }
+}
+
 function fireLasers() {
-    // Check ammo
-    if (laserAmmo <= 0) return;
+    // Check ammo and game state
+    if (laserAmmo <= 0 || !gameActive) return;
 
     // Get ship's forward direction (negative Z in local space)
     const shipDirection = new THREE.Vector3(0, 0, -1);
     shipDirection.applyQuaternion(spaceShip.quaternion);
-
-    // Spawn a target in the distance (guaranteed hit)
-    const targetPos = spaceShip.position.clone().add(
-        shipDirection.clone().multiplyScalar(TARGET_SPAWN_DISTANCE + Math.random() * 10)
-    );
-    // Add slight random offset so it's not perfectly centered
-    targetPos.x += (Math.random() - 0.5) * 2;
-    targetPos.y += (Math.random() - 0.5) * 2;
-    createTarget(targetPos);
 
     // Cannon positions (2 weapon pods on sides)
     const cannonOffsets = [
@@ -1286,6 +1662,125 @@ function createControlUI() {
 
     document.body.appendChild(shipControlsDiv);
 
+    // === GAME STATUS PANEL (top left) ===
+    const gamePanel = document.createElement('div');
+    gamePanel.id = 'gamePanel';
+    gamePanel.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 20, 40, 0.9);
+        border: 1px solid #44aaff;
+        border-radius: 12px;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        font-family: 'Courier New', monospace;
+        color: #44aaff;
+        box-shadow: 0 0 20px rgba(68, 170, 255, 0.2);
+        min-width: 180px;
+        z-index: 1000;
+    `;
+
+    // Level selector
+    const levelDiv = document.createElement('div');
+    levelDiv.innerHTML = '<div style="font-size: 12px; letter-spacing: 2px; margin-bottom: 8px;">DIFFICULTY LEVEL</div>';
+
+    const levelRow = document.createElement('div');
+    levelRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+
+    const levelSlider = document.createElement('input');
+    levelSlider.type = 'range';
+    levelSlider.min = '1';
+    levelSlider.max = '10';
+    levelSlider.value = '1';
+    levelSlider.style.cssText = 'flex: 1;';
+    levelSlider.addEventListener('input', (e) => {
+        gameLevel = parseInt(e.target.value);
+        levelValue.textContent = gameLevel;
+        updateLevelDisplay();
+    });
+
+    const levelValue = document.createElement('div');
+    levelValue.id = 'levelValue';
+    levelValue.textContent = '1';
+    levelValue.style.cssText = 'font-size: 24px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff; min-width: 30px; text-align: center;';
+
+    levelRow.appendChild(levelSlider);
+    levelRow.appendChild(levelValue);
+    levelDiv.appendChild(levelRow);
+    gamePanel.appendChild(levelDiv);
+
+    // Earth health bar
+    const healthDiv = document.createElement('div');
+    healthDiv.innerHTML = '<div style="font-size: 10px; letter-spacing: 2px; opacity: 0.7; margin-bottom: 4px;">EARTH HEALTH</div>';
+
+    const healthBarContainer = document.createElement('div');
+    healthBarContainer.style.cssText = `
+        width: 100%;
+        height: 20px;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #44ff88;
+    `;
+
+    const healthBar = document.createElement('div');
+    healthBar.id = 'healthBar';
+    healthBar.style.cssText = `
+        width: 100%;
+        height: 100%;
+        background: #44ff88;
+        transition: width 0.3s, background 0.3s;
+    `;
+    healthBarContainer.appendChild(healthBar);
+
+    const healthText = document.createElement('div');
+    healthText.id = 'healthText';
+    healthText.textContent = '100';
+    healthText.style.cssText = 'font-size: 14px; text-align: center; margin-top: 4px; color: #44ff88;';
+
+    healthDiv.appendChild(healthBarContainer);
+    healthDiv.appendChild(healthText);
+    gamePanel.appendChild(healthDiv);
+
+    // Score display
+    const scoreDiv = document.createElement('div');
+    scoreDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #44aaff; padding-top: 10px; margin-top: 5px;';
+
+    const scoreLabel = document.createElement('div');
+    scoreLabel.textContent = 'SCORE';
+    scoreLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
+
+    const scoreValue = document.createElement('div');
+    scoreValue.id = 'scoreValue';
+    scoreValue.textContent = '0';
+    scoreValue.style.cssText = 'font-size: 20px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 10px #ffaa00;';
+
+    scoreDiv.appendChild(scoreLabel);
+    scoreDiv.appendChild(scoreValue);
+    gamePanel.appendChild(scoreDiv);
+
+    // Asteroid count display
+    const asteroidDiv = document.createElement('div');
+    asteroidDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+
+    const asteroidLabel = document.createElement('div');
+    asteroidLabel.textContent = 'THREATS';
+    asteroidLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
+
+    const asteroidValue = document.createElement('div');
+    asteroidValue.id = 'asteroidCount';
+    asteroidValue.textContent = '0';
+    asteroidValue.style.cssText = 'font-size: 16px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;';
+
+    asteroidDiv.appendChild(asteroidLabel);
+    asteroidDiv.appendChild(asteroidValue);
+    gamePanel.appendChild(asteroidDiv);
+
+    document.body.appendChild(gamePanel);
+
     // Slider styling
     const style = document.createElement('style');
     style.textContent = `
@@ -1331,6 +1826,29 @@ function createControlUI() {
             width: 14px;
             height: 14px;
             background: #44ff88;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        #gamePanel input[type="range"] {
+            -webkit-appearance: none;
+            height: 6px;
+            background: linear-gradient(to right, #224466 0%, #44aaff 50%, #224466 100%);
+            border-radius: 3px;
+        }
+        #gamePanel input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #44aaff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 8px #44aaff;
+        }
+        #gamePanel input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: #44aaff;
             border-radius: 50%;
             cursor: pointer;
             border: none;
@@ -1931,6 +2449,46 @@ function animate() {
         }
     });
 
+    // === ASTEROID MOVEMENT & ANIMATION ===
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+        const asteroid = asteroids[i];
+
+        // Move asteroid toward Earth
+        const movement = asteroid.userData.velocity.clone().multiplyScalar(delta);
+        asteroid.position.add(movement);
+
+        // Rotate asteroid
+        const rotSpeed = asteroid.userData.rotationSpeed;
+        asteroid.rotation.x += rotSpeed.x * delta;
+        asteroid.rotation.y += rotSpeed.y * delta;
+        asteroid.rotation.z += rotSpeed.z * delta;
+
+        // Check collision with Earth
+        const distanceToEarth = asteroid.position.length();
+        const hitRadius = EARTH_RADIUS + asteroid.userData.size * 0.5;
+
+        if (distanceToEarth < hitRadius) {
+            // Asteroid hit Earth!
+            const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
+            earthHealth -= damage;
+            updateHealthDisplay();
+
+            // Create explosion at impact point
+            createExplosion(asteroid.position.clone(), asteroid.userData.size);
+
+            // Remove asteroid
+            scene.remove(asteroid);
+            asteroids.splice(i, 1);
+
+            // Check game over
+            if (earthHealth <= 0) {
+                earthHealth = 0;
+                gameActive = false;
+                showGameOver();
+            }
+        }
+    }
+
     // === LASER BOLT ANIMATION & COLLISION DETECTION ===
     for (let i = laserBolts.length - 1; i >= 0; i--) {
         const bolt = laserBolts[i];
@@ -1940,34 +2498,59 @@ function animate() {
         bolt.position.add(movement);
         bolt.userData.distanceTraveled += movement.length();
 
-        // Check collision with targets
-        let hitTarget = false;
-        for (let j = targets.length - 1; j >= 0; j--) {
-            const target = targets[j];
-            const distance = bolt.position.distanceTo(target.position);
+        // Check collision with asteroids
+        let hitAsteroid = false;
+        for (let j = asteroids.length - 1; j >= 0; j--) {
+            const asteroid = asteroids[j];
+            const distance = bolt.position.distanceTo(asteroid.position);
+            const hitRadius = asteroid.userData.size + 0.5; // Hit radius based on size
 
-            if (distance < 2.0) { // Hit radius
-                // Create explosion at target position
-                createExplosion(target.position.clone());
+            if (distance < hitRadius) {
+                // Damage asteroid
+                asteroid.userData.health--;
 
-                // Remove target
-                scene.remove(target);
-                targets.splice(j, 1);
+                // Small hit effect
+                createHitSpark(bolt.position.clone());
+
+                if (asteroid.userData.health <= 0) {
+                    // Asteroid destroyed!
+                    score += Math.ceil(asteroid.userData.size * 10);
+                    updateScoreDisplay();
+
+                    // Create explosion at asteroid position (size-based)
+                    createExplosion(asteroid.position.clone(), asteroid.userData.size);
+
+                    // Remove asteroid
+                    scene.remove(asteroid);
+                    asteroids.splice(j, 1);
+                }
 
                 // Remove bolt
                 scene.remove(bolt);
                 laserBolts.splice(i, 1);
-                hitTarget = true;
+                hitAsteroid = true;
                 break;
             }
         }
 
         // Remove if traveled too far (and didn't hit anything)
-        if (!hitTarget && bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
+        if (!hitAsteroid && bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
             scene.remove(bolt);
             laserBolts.splice(i, 1);
         }
     }
+
+    // === SPAWN ASTEROIDS ===
+    spawnAsteroids();
+
+    // Update asteroid count display
+    const asteroidCountEl = document.getElementById('asteroidCount');
+    if (asteroidCountEl) {
+        asteroidCountEl.textContent = asteroids.length;
+    }
+
+    // === UPDATE HUD ===
+    updateTargetingHUD();
 
     // === EXPLOSION ANIMATION ===
     for (let i = explosions.length - 1; i >= 0; i--) {
@@ -1984,7 +2567,9 @@ function animate() {
             explosion.children.forEach(child => {
                 if (child.userData.velocity) {
                     child.position.add(child.userData.velocity.clone().multiplyScalar(delta));
-                    child.material.opacity = 1 - progress;
+                    if (child.material.opacity !== undefined) {
+                        child.material.opacity = 1 - progress;
+                    }
                     const scale = child.userData.initialScale * (1 + progress * 3);
                     child.scale.set(scale, scale, scale);
                 }
@@ -1993,16 +2578,6 @@ function animate() {
             if (explosion.userData.flash) {
                 explosion.userData.flash.intensity = 3 * (1 - progress);
             }
-        }
-    }
-
-    // === TARGET CLEANUP (old unfired targets) ===
-    for (let i = targets.length - 1; i >= 0; i--) {
-        const target = targets[i];
-        const age = Date.now() - target.userData.createdAt;
-        if (age > 5000) { // Remove after 5 seconds if not hit
-            scene.remove(target);
-            targets.splice(i, 1);
         }
     }
 
