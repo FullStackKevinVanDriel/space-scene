@@ -38,17 +38,20 @@ const directionalLight = new THREE.DirectionalLight(0xfffaf0, 2.0);
 directionalLight.position.copy(SUN_POSITION);
 // Enable shadow casting for eclipse effects
 directionalLight.castShadow = true;
-// Configure shadow camera to cover the scene (Earth-Moon system)
-directionalLight.shadow.mapSize.width = 2048;
-directionalLight.shadow.mapSize.height = 2048;
-// Distance from sun to origin is ~85, so set near/far to encompass the scene
+// Configure shadow camera for intense, sharp eclipse shadows
+directionalLight.shadow.mapSize.width = 4096;
+directionalLight.shadow.mapSize.height = 4096;
 directionalLight.shadow.camera.near = 0.5;
 directionalLight.shadow.camera.far = 200;
-directionalLight.shadow.camera.left = -15;
-directionalLight.shadow.camera.right = 15;
-directionalLight.shadow.camera.top = 15;
-directionalLight.shadow.camera.bottom = -15;
-directionalLight.shadow.bias = -0.0005;
+// Tighter frustum for sharper shadows
+directionalLight.shadow.camera.left = -10;
+directionalLight.shadow.camera.right = 10;
+directionalLight.shadow.camera.top = 10;
+directionalLight.shadow.camera.bottom = -10;
+directionalLight.shadow.bias = -0.0001;
+directionalLight.shadow.normalBias = 0.02;
+// Maximum shadow darkness
+directionalLight.shadow.intensity = 1;
 scene.add(directionalLight);
 scene.add(directionalLight.target);
 
@@ -247,13 +250,25 @@ const cloudGeometry = new THREE.SphereGeometry(2.03, 64, 64);
 const cloudMaterial = new THREE.MeshPhongMaterial({
     map: cloudTexture,
     transparent: true,
-    opacity: 0.6,
+    opacity: 0.7,
     depthWrite: false
 });
 const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
 // Clouds receive shadow from moon (solar eclipse)
 clouds.receiveShadow = true;
 scene.add(clouds);
+
+// Shadow overlay sphere - shows intense moon shadow during solar eclipse
+const shadowOverlayGeometry = new THREE.SphereGeometry(2.015, 64, 64);
+const shadowOverlayMaterial = new THREE.MeshLambertMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false
+});
+const shadowOverlay = new THREE.Mesh(shadowOverlayGeometry, shadowOverlayMaterial);
+shadowOverlay.receiveShadow = true;
+scene.add(shadowOverlay);
 
 // Atmosphere glow
 const atmosphereGeometry = new THREE.SphereGeometry(2.1, 64, 64);
@@ -294,7 +309,8 @@ scene.add(moonLight);
 
 // Moon orbital parameters
 const MOON_ORBIT_RADIUS = 6;
-const MOON_ORBIT_SPEED = 0.15;
+let moonOrbitSpeed = 0.15;
+let moonOrbitDirection = 1; // 1 = normal, -1 = reverse
 // Realistic orbital inclination: Moon's orbit is inclined ~5.14° to ecliptic
 const MOON_ORBIT_INCLINATION = 5.14 * (Math.PI / 180); // Convert to radians
 let moonOrbitAngle = 0;
@@ -902,6 +918,30 @@ function createControlUI() {
 
     container.appendChild(shipDiv);
 
+    // Moon orbit controls
+    const moonDiv = document.createElement('div');
+    moonDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 8px;';
+
+    const moonLabel = document.createElement('div');
+    moonLabel.textContent = 'MOON';
+    moonLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
+    moonDiv.appendChild(moonLabel);
+
+    const moonSlider = document.createElement('input');
+    moonSlider.type = 'range';
+    moonSlider.min = '-100';
+    moonSlider.max = '100';
+    moonSlider.value = '30';
+    moonSlider.style.cssText = 'width: 120px; cursor: pointer;';
+    moonDiv.appendChild(moonSlider);
+
+    const moonValue = document.createElement('div');
+    moonValue.style.cssText = 'font-size: 10px;';
+    moonValue.textContent = 'CW 0.15';
+    moonDiv.appendChild(moonValue);
+
+    container.appendChild(moonDiv);
+
     document.body.appendChild(container);
 
     // Event handlers
@@ -919,6 +959,14 @@ function createControlUI() {
         shipOrbitDirection = val >= 0 ? 1 : -1;
         const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
         shipValue.textContent = `${dir} ${shipOrbitSpeed.toFixed(2)}`;
+    });
+
+    moonSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        moonOrbitSpeed = Math.abs(val) / 200;
+        moonOrbitDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        moonValue.textContent = `${dir} ${moonOrbitSpeed.toFixed(2)}`;
     });
 
     // Laser fire button
@@ -1416,7 +1464,7 @@ function animate() {
     atmosphere.rotation.x = EARTH_TILT;
 
     // Moon orbit around Earth with realistic 5.14° inclination
-    moonOrbitAngle += MOON_ORBIT_SPEED * delta;
+    moonOrbitAngle += moonOrbitSpeed * moonOrbitDirection * delta;
     // Slowly rotate the ascending node (in reality ~18.6 year cycle, sped up for demo)
     moonAscendingNode += 0.01 * delta;
 
