@@ -522,33 +522,23 @@ function createSpaceShip() {
         ship.add(skirt);
     });
 
-    // === REAR FINS (Starship style) ===
-    // Two large rear stabilizer fins
+    // === REAR FINS (Starship style) - Symmetric ===
     [-1, 1].forEach(side => {
-        // Main fin
-        const finShape = new THREE.Shape();
-        finShape.moveTo(0, 0);
-        finShape.lineTo(0.8, 0);
-        finShape.lineTo(1.0, 1.2);
-        finShape.lineTo(0.3, 1.5);
-        finShape.lineTo(0, 0.8);
-        finShape.closePath();
-
-        const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.06, bevelEnabled: false });
+        // Symmetric fin using box geometry for cleaner look
+        const finGeo = new THREE.BoxGeometry(0.06, 1.4, 0.8);
         const fin = new THREE.Mesh(finGeo, steelHullMat);
-        fin.rotation.y = side * Math.PI / 2;
-        fin.rotation.z = side * -0.2;
-        fin.position.set(side * 0.7, -0.3, 1.8);
+        fin.position.set(side * 0.75, 0.3, 2.4);
+        fin.rotation.z = side * -0.25;
         ship.add(fin);
 
-        // Fin accent
-        const finAccent = new THREE.Mesh(
-            new THREE.BoxGeometry(0.08, 1.0, 0.03),
+        // Fin edge trim
+        const finTrim = new THREE.Mesh(
+            new THREE.BoxGeometry(0.08, 1.3, 0.06),
             accentMat
         );
-        finAccent.position.set(side * 1.1, 0.2, 2.3);
-        finAccent.rotation.z = side * -0.2;
-        ship.add(finAccent);
+        finTrim.position.set(side * 0.78, 0.3, 2.8);
+        finTrim.rotation.z = side * -0.25;
+        ship.add(finTrim);
     });
 
     // === FORWARD CANARD FINS (Starship style) ===
@@ -795,12 +785,23 @@ window.addEventListener('keydown', (e) => {
 });
 
 // === ORBIT PARAMETERS ===
-const orbitRadius = 4.5;
+let orbitRadius = 4.5;
+let orbitPerigee = 4.5;  // Closest point (can be adjusted)
+let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
+let orbitInclination = 0; // Degrees of orbital tilt
 const orbitY = 1.5;
 
 // Ship starts already partway through entry for immediate action
 let shipPhase = 'orbit'; // Start directly in orbit for smooth experience
 let orbitAngle = Math.PI * 1.5; // Starting angle
+
+// Ship orientation (pitch, yaw, roll offsets)
+let shipPitch = 0;
+let shipYaw = 0;
+let shipRoll = 0;
+
+// Control mode: 'camera' or 'ship'
+let controlMode = 'camera';
 
 spaceShip.position.set(
     Math.cos(orbitAngle) * orbitRadius,
@@ -1015,6 +1016,171 @@ function createControlUI() {
     laserDiv.appendChild(laserBtn);
     container.appendChild(laserDiv);
 
+    // === MODE TOGGLE BUTTON ===
+    const modeDiv = document.createElement('div');
+    modeDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 8px;';
+
+    const modeLabel = document.createElement('div');
+    modeLabel.textContent = 'MODE';
+    modeLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
+    modeDiv.appendChild(modeLabel);
+
+    const modeBtn = document.createElement('button');
+    modeBtn.textContent = 'CAMERA';
+    modeBtn.style.cssText = `
+        background: linear-gradient(180deg, #4488ff 0%, #2255aa 100%);
+        border: 2px solid #4488ff;
+        border-radius: 8px;
+        color: white;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        padding: 8px 12px;
+        cursor: pointer;
+        min-width: 80px;
+    `;
+    modeBtn.addEventListener('click', () => {
+        controlMode = controlMode === 'camera' ? 'ship' : 'camera';
+        modeBtn.textContent = controlMode.toUpperCase();
+        modeBtn.style.background = controlMode === 'camera'
+            ? 'linear-gradient(180deg, #4488ff 0%, #2255aa 100%)'
+            : 'linear-gradient(180deg, #44ff88 0%, #22aa55 100%)';
+        modeBtn.style.borderColor = controlMode === 'camera' ? '#4488ff' : '#44ff88';
+        shipControlsDiv.style.display = controlMode === 'ship' ? 'flex' : 'none';
+    });
+    modeDiv.appendChild(modeBtn);
+    container.appendChild(modeDiv);
+
+    document.body.appendChild(container);
+
+    // === SHIP CONTROLS PANEL (hidden by default) ===
+    const shipControlsDiv = document.createElement('div');
+    shipControlsDiv.id = 'shipControls';
+    shipControlsDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 30, 15, 0.9);
+        border: 1px solid #44ff88;
+        border-radius: 12px;
+        padding: 15px;
+        display: none;
+        flex-direction: column;
+        gap: 12px;
+        font-family: 'Courier New', monospace;
+        color: #44ff88;
+        box-shadow: 0 0 20px rgba(68, 255, 136, 0.2);
+        min-width: 180px;
+    `;
+
+    const shipTitle = document.createElement('div');
+    shipTitle.textContent = 'SHIP CONTROLS';
+    shipTitle.style.cssText = 'font-size: 12px; letter-spacing: 2px; text-align: center; border-bottom: 1px solid #44ff88; padding-bottom: 8px;';
+    shipControlsDiv.appendChild(shipTitle);
+
+    // Inclination control
+    const incDiv = document.createElement('div');
+    incDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">INCLINATION</div>';
+    const incSlider = document.createElement('input');
+    incSlider.type = 'range';
+    incSlider.min = '-45';
+    incSlider.max = '45';
+    incSlider.value = '0';
+    incSlider.style.cssText = 'width: 100%;';
+    const incValue = document.createElement('div');
+    incValue.style.cssText = 'font-size: 10px; text-align: center;';
+    incValue.textContent = '0°';
+    incSlider.addEventListener('input', (e) => {
+        orbitInclination = parseInt(e.target.value);
+        incValue.textContent = `${orbitInclination}°`;
+    });
+    incDiv.appendChild(incSlider);
+    incDiv.appendChild(incValue);
+    shipControlsDiv.appendChild(incDiv);
+
+    // Perigee control
+    const periDiv = document.createElement('div');
+    periDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">PERIGEE (closest)</div>';
+    const periSlider = document.createElement('input');
+    periSlider.type = 'range';
+    periSlider.min = '25';
+    periSlider.max = '80';
+    periSlider.value = '45';
+    periSlider.style.cssText = 'width: 100%;';
+    const periValue = document.createElement('div');
+    periValue.style.cssText = 'font-size: 10px; text-align: center;';
+    periValue.textContent = '4.5';
+    periSlider.addEventListener('input', (e) => {
+        orbitPerigee = parseInt(e.target.value) / 10;
+        periValue.textContent = orbitPerigee.toFixed(1);
+    });
+    periDiv.appendChild(periSlider);
+    periDiv.appendChild(periValue);
+    shipControlsDiv.appendChild(periDiv);
+
+    // Apogee control
+    const apoDiv = document.createElement('div');
+    apoDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">APOGEE (farthest)</div>';
+    const apoSlider = document.createElement('input');
+    apoSlider.type = 'range';
+    apoSlider.min = '25';
+    apoSlider.max = '80';
+    apoSlider.value = '45';
+    apoSlider.style.cssText = 'width: 100%;';
+    const apoValue = document.createElement('div');
+    apoValue.style.cssText = 'font-size: 10px; text-align: center;';
+    apoValue.textContent = '4.5';
+    apoSlider.addEventListener('input', (e) => {
+        orbitApogee = parseInt(e.target.value) / 10;
+        apoValue.textContent = orbitApogee.toFixed(1);
+    });
+    apoDiv.appendChild(apoSlider);
+    apoDiv.appendChild(apoValue);
+    shipControlsDiv.appendChild(apoDiv);
+
+    // Pitch control
+    const pitchDiv = document.createElement('div');
+    pitchDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">PITCH</div>';
+    const pitchSlider = document.createElement('input');
+    pitchSlider.type = 'range';
+    pitchSlider.min = '-30';
+    pitchSlider.max = '30';
+    pitchSlider.value = '0';
+    pitchSlider.style.cssText = 'width: 100%;';
+    const pitchValue = document.createElement('div');
+    pitchValue.style.cssText = 'font-size: 10px; text-align: center;';
+    pitchValue.textContent = '0°';
+    pitchSlider.addEventListener('input', (e) => {
+        shipPitch = parseInt(e.target.value) * Math.PI / 180;
+        pitchValue.textContent = `${e.target.value}°`;
+    });
+    pitchDiv.appendChild(pitchSlider);
+    pitchDiv.appendChild(pitchValue);
+    shipControlsDiv.appendChild(pitchDiv);
+
+    // Roll control
+    const rollDiv = document.createElement('div');
+    rollDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">ROLL</div>';
+    const rollSlider = document.createElement('input');
+    rollSlider.type = 'range';
+    rollSlider.min = '-45';
+    rollSlider.max = '45';
+    rollSlider.value = '0';
+    rollSlider.style.cssText = 'width: 100%;';
+    const rollValue = document.createElement('div');
+    rollValue.style.cssText = 'font-size: 10px; text-align: center;';
+    rollValue.textContent = '0°';
+    rollSlider.addEventListener('input', (e) => {
+        shipRoll = parseInt(e.target.value) * Math.PI / 180;
+        rollValue.textContent = `${e.target.value}°`;
+    });
+    rollDiv.appendChild(rollSlider);
+    rollDiv.appendChild(rollValue);
+    shipControlsDiv.appendChild(rollDiv);
+
+    document.body.appendChild(shipControlsDiv);
+
     // Slider styling
     const style = document.createElement('style');
     style.textContent = `
@@ -1037,6 +1203,29 @@ function createControlUI() {
             width: 16px;
             height: 16px;
             background: #4488ff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        #shipControls input[type="range"] {
+            -webkit-appearance: none;
+            height: 6px;
+            background: linear-gradient(to right, #225533 0%, #44ff88 50%, #225533 100%);
+            border-radius: 3px;
+        }
+        #shipControls input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #44ff88;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 6px #44ff88;
+        }
+        #shipControls input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            background: #44ff88;
             border-radius: 50%;
             cursor: pointer;
             border: none;
@@ -1534,24 +1723,41 @@ function animate() {
         }
     }
 
-    // Ship orbit
+    // Ship orbit with elliptical path and inclination
     orbitAngle -= shipOrbitSpeed * shipOrbitDirection * delta;
 
-    spaceShip.position.x = Math.cos(orbitAngle) * orbitRadius;
-    spaceShip.position.z = Math.sin(orbitAngle) * orbitRadius;
-    spaceShip.position.y = orbitY;
+    // Calculate elliptical orbit radius based on perigee and apogee
+    // Using simplified ellipse: r = (perigee + apogee) / 2 + (apogee - perigee) / 2 * cos(angle)
+    const semiMajor = (orbitPerigee + orbitApogee) / 2;
+    const eccentricityOffset = (orbitApogee - orbitPerigee) / 2;
+    const currentRadius = semiMajor + eccentricityOffset * Math.cos(orbitAngle);
+
+    // Apply orbital inclination (tilt the orbital plane)
+    const incRad = orbitInclination * Math.PI / 180;
+    const flatX = Math.cos(orbitAngle) * currentRadius;
+    const flatZ = Math.sin(orbitAngle) * currentRadius;
+
+    // Rotate orbital plane around X axis for inclination
+    spaceShip.position.x = flatX;
+    spaceShip.position.z = flatZ * Math.cos(incRad);
+    spaceShip.position.y = orbitY + flatZ * Math.sin(incRad);
 
     // Ship orientation - face direction of travel
     const tangentX = Math.sin(orbitAngle) * shipOrbitDirection;
-    const tangentZ = -Math.cos(orbitAngle) * shipOrbitDirection;
+    const tangentZ = -Math.cos(orbitAngle) * shipOrbitDirection * Math.cos(incRad);
+    const tangentY = -Math.cos(orbitAngle) * shipOrbitDirection * Math.sin(incRad);
 
     const forward = new THREE.Vector3(
         spaceShip.position.x + tangentX,
-        spaceShip.position.y,
+        spaceShip.position.y + tangentY,
         spaceShip.position.z + tangentZ
     );
     spaceShip.lookAt(forward);
     spaceShip.rotateY(Math.PI);
+
+    // Apply custom pitch, yaw, roll orientation offsets
+    spaceShip.rotateX(shipPitch);
+    spaceShip.rotateZ(shipRoll);
 
     // Animate thrusters
     for (let i = 1; i <= 5; i++) {
