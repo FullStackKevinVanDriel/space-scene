@@ -754,7 +754,8 @@ function createAsteroid() {
     const size = ASTEROID_MIN_SIZE + Math.random() * (ASTEROID_MAX_SIZE - ASTEROID_MIN_SIZE);
 
     // Health based on size: bigger = more hits required
-    const health = Math.ceil(size * 2); // 1-5 hits based on size
+    // Health: small asteroids = 1 hit, medium = 2, large = 3 max
+    const health = Math.ceil(size); // 1-3 hits based on size
 
     // Create rocky asteroid geometry using icosahedron with noise
     const baseGeo = new THREE.IcosahedronGeometry(size, 1);
@@ -909,15 +910,16 @@ function createExplosion(position, asteroidSize = 1) {
     return explosionGroup;
 }
 
-// Create small hit spark when laser damages but doesn't destroy asteroid
-function createHitSpark(position) {
+// Create dramatic hit spark when laser damages asteroid
+function createHitSpark(position, asteroid) {
     const sparkGroup = new THREE.Group();
     sparkGroup.position.copy(position);
 
-    const colors = [0xffff00, 0xff8800, 0xffffff];
-    for (let i = 0; i < 5; i++) {
-        const size = 0.05 + Math.random() * 0.1;
-        const geo = new THREE.SphereGeometry(size, 4, 4);
+    // Lots of bright sparks flying outward
+    const colors = [0xffff00, 0xff8800, 0xffffff, 0xff4400, 0xffcc00];
+    for (let i = 0; i < 20; i++) {
+        const size = 0.1 + Math.random() * 0.25;
+        const geo = new THREE.SphereGeometry(size, 6, 6);
         const mat = new THREE.MeshBasicMaterial({
             color: colors[Math.floor(Math.random() * colors.length)],
             transparent: true,
@@ -925,20 +927,102 @@ function createHitSpark(position) {
         });
         const spark = new THREE.Mesh(geo, mat);
         spark.userData.velocity = new THREE.Vector3(
-            (Math.random() - 0.5) * 15,
-            (Math.random() - 0.5) * 15,
-            (Math.random() - 0.5) * 15
+            (Math.random() - 0.5) * 25,
+            (Math.random() - 0.5) * 25,
+            (Math.random() - 0.5) * 25
         );
         spark.userData.initialScale = size;
         sparkGroup.add(spark);
     }
 
+    // Add debris chunks
+    for (let i = 0; i < 5; i++) {
+        const chunkSize = 0.15 + Math.random() * 0.2;
+        const chunkGeo = new THREE.TetrahedronGeometry(chunkSize);
+        const chunkMat = new THREE.MeshBasicMaterial({
+            color: 0x6b5b4d,
+            transparent: true,
+            opacity: 1
+        });
+        const chunk = new THREE.Mesh(chunkGeo, chunkMat);
+        chunk.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 15,
+            (Math.random() - 0.5) * 15,
+            (Math.random() - 0.5) * 15
+        );
+        chunk.userData.initialScale = chunkSize;
+        chunk.userData.rotationSpeed = new THREE.Vector3(
+            Math.random() * 5,
+            Math.random() * 5,
+            Math.random() * 5
+        );
+        sparkGroup.add(chunk);
+    }
+
+    // Bright flash at impact point
+    const flash = new THREE.PointLight(0xffaa00, 5, 15);
+    sparkGroup.add(flash);
+    sparkGroup.userData.flash = flash;
+
     sparkGroup.userData.createdAt = Date.now();
-    sparkGroup.userData.duration = 200;
+    sparkGroup.userData.duration = 400;
 
     scene.add(sparkGroup);
-    explosions.push(sparkGroup); // Reuse explosions array for cleanup
+    explosions.push(sparkGroup);
+
+    // Visual damage to asteroid - make it glow/flash red briefly
+    if (asteroid && asteroid.children[0]) {
+        const mesh = asteroid.children[0];
+        const originalColor = mesh.material.color.getHex();
+        mesh.material.emissive = new THREE.Color(0xff4400);
+        mesh.material.emissiveIntensity = 0.8;
+
+        // Shake the asteroid
+        const originalPos = asteroid.position.clone();
+        const shakeAmount = 0.3;
+        asteroid.position.x += (Math.random() - 0.5) * shakeAmount;
+        asteroid.position.y += (Math.random() - 0.5) * shakeAmount;
+        asteroid.position.z += (Math.random() - 0.5) * shakeAmount;
+
+        // Reset after brief moment
+        setTimeout(() => {
+            if (mesh.material) {
+                mesh.material.emissiveIntensity = 0;
+            }
+        }, 150);
+    }
+
+    // Screen flash effect
+    flashScreen();
+
     return sparkGroup;
+}
+
+// Brief screen flash for impact feedback
+function flashScreen() {
+    let flashOverlay = document.getElementById('hitFlash');
+    if (!flashOverlay) {
+        flashOverlay = document.createElement('div');
+        flashOverlay.id = 'hitFlash';
+        flashOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 200, 100, 0.15);
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.05s;
+        `;
+        document.body.appendChild(flashOverlay);
+    }
+
+    flashOverlay.style.opacity = '1';
+    setTimeout(() => {
+        flashOverlay.style.opacity = '0';
+    }, 50);
 }
 
 // Update ammo display
@@ -2673,8 +2757,8 @@ function animate() {
                 // Damage asteroid
                 asteroid.userData.health--;
 
-                // Small hit effect
-                createHitSpark(bolt.position.clone());
+                // Dramatic hit effect with asteroid feedback
+                createHitSpark(bolt.position.clone(), asteroid);
 
                 if (asteroid.userData.health <= 0) {
                     // Asteroid destroyed!
@@ -2731,11 +2815,19 @@ function animate() {
             explosion.children.forEach(child => {
                 if (child.userData.velocity) {
                     child.position.add(child.userData.velocity.clone().multiplyScalar(delta));
-                    if (child.material.opacity !== undefined) {
+                    if (child.material && child.material.opacity !== undefined) {
                         child.material.opacity = 1 - progress;
                     }
-                    const scale = child.userData.initialScale * (1 + progress * 3);
-                    child.scale.set(scale, scale, scale);
+                    if (child.userData.initialScale) {
+                        const scale = child.userData.initialScale * (1 + progress * 3);
+                        child.scale.set(scale, scale, scale);
+                    }
+                    // Rotate debris chunks
+                    if (child.userData.rotationSpeed) {
+                        child.rotation.x += child.userData.rotationSpeed.x * delta;
+                        child.rotation.y += child.userData.rotationSpeed.y * delta;
+                        child.rotation.z += child.userData.rotationSpeed.z * delta;
+                    }
                 }
             });
             // Fade flash
