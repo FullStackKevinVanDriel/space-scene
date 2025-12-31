@@ -897,14 +897,10 @@ function createAsteroid() {
         spawnDistance * Math.cos(spawnPhi)
     );
 
-    // Velocity: moves toward Earth (origin) with slight random offset
+    // Velocity: moves directly toward Earth (origin at 0,0,0)
     const speed = getAsteroidSpeed();
-    const targetOffset = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2
-    );
-    const direction = targetOffset.sub(asteroidGroup.position).normalize();
+    const earthPosition = new THREE.Vector3(0, 0, 0); // Earth is at origin
+    const direction = earthPosition.sub(asteroidGroup.position).normalize();
 
     // Store asteroid data
     asteroidGroup.userData = {
@@ -1529,23 +1525,6 @@ function updateTargetingHUD() {
             `;
             crosshair.style.cssText = `position:absolute;width:100%;height:100%;`;
             reticle.appendChild(crosshair);
-
-            // Health indicator (for multi-hit asteroids)
-            if (asteroid.userData.maxHealth > 1) {
-                const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
-                const healthIndicator = document.createElement('div');
-                healthIndicator.style.cssText = `
-                    position: absolute;
-                    bottom: -12px;
-                    left: 10%;
-                    width: 80%;
-                    height: 4px;
-                    background: rgba(0,0,0,0.5);
-                    border-radius: 2px;
-                `;
-                healthIndicator.innerHTML = `<div style="width:${healthPct}%;height:100%;background:#ff4444;border-radius:2px;"></div>`;
-                reticle.appendChild(healthIndicator);
-            }
 
             // Distance indicator
             const distLabel = document.createElement('div');
