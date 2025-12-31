@@ -246,61 +246,21 @@ const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 scene.add(atmosphere);
 
 // === MOON ===
-const MOON_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/lunar-surface.jpg';
+// NASA moon texture - high quality lunar surface
+const MOON_TEXTURE_URL = 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_1k.jpg';
+const MOON_BUMP_URL = 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_3_8bit_1k.jpg';
+
 const moonTexture = textureLoader.load(MOON_TEXTURE_URL, updateLoadingProgress, undefined, onTextureError);
+const moonBumpMap = textureLoader.load(MOON_BUMP_URL, () => {}, undefined, () => {});
 
-// Moon with realistic sun-side shading (same shader approach as Earth)
+// Moon with realistic lighting using MeshStandardMaterial (responds to directional light)
 const moonGeometry = new THREE.SphereGeometry(0.5, 64, 64);
-const moonMaterial = new THREE.ShaderMaterial({
-    uniforms: {
-        moonTexture: { value: moonTexture },
-        sunPosition: { value: SUN_POSITION.clone() }
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        varying vec3 vWorldNormal;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            vUv = uv;
-            vWorldNormal = normalize(mat3(modelMatrix) * normal);
-            vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D moonTexture;
-        uniform vec3 sunPosition;
-
-        varying vec2 vUv;
-        varying vec3 vWorldNormal;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            vec3 toSun = normalize(sunPosition - vWorldPosition);
-            vec3 worldNormal = normalize(vWorldNormal);
-
-            // Sun intensity on this fragment
-            float sunIntensity = dot(worldNormal, toSun);
-
-            // Smooth terminator transition
-            float lightAmount = smoothstep(-0.1, 0.3, sunIntensity);
-
-            // Sample moon texture
-            vec4 moonColor = texture2D(moonTexture, vUv);
-
-            // Lit side: bright with sun
-            vec3 litSide = moonColor.rgb * (0.4 + 0.6 * max(0.0, sunIntensity));
-
-            // Dark side: very dim (no city lights on moon!)
-            vec3 darkSide = moonColor.rgb * 0.02;
-
-            // Blend
-            vec3 finalColor = mix(darkSide, litSide, lightAmount);
-
-            gl_FragColor = vec4(finalColor, 1.0);
-        }
-    `
+const moonMaterial = new THREE.MeshStandardMaterial({
+    map: moonTexture,
+    bumpMap: moonBumpMap,
+    bumpScale: 0.02,
+    roughness: 0.95,
+    metalness: 0.0
 });
 
 const moon = new THREE.Mesh(moonGeometry, moonMaterial);
