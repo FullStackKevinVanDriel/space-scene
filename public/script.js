@@ -246,25 +246,25 @@ const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 scene.add(atmosphere);
 
 // === MOON ===
-// NASA moon texture - high quality lunar surface
-const MOON_TEXTURE_URL = 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_poles_1k.jpg';
-const MOON_BUMP_URL = 'https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_3_8bit_1k.jpg';
+// High quality moon texture (hosted locally)
+const moonTexture = textureLoader.load('moon.jpg', updateLoadingProgress, undefined, onTextureError);
 
-const moonTexture = textureLoader.load(MOON_TEXTURE_URL, updateLoadingProgress, undefined, onTextureError);
-const moonBumpMap = textureLoader.load(MOON_BUMP_URL, () => {}, undefined, () => {});
-
-// Moon with realistic lighting using MeshStandardMaterial (responds to directional light)
+// Moon geometry
 const moonGeometry = new THREE.SphereGeometry(0.5, 64, 64);
-const moonMaterial = new THREE.MeshStandardMaterial({
+
+// Use MeshPhongMaterial for brighter response to light
+const moonMaterial = new THREE.MeshPhongMaterial({
     map: moonTexture,
-    bumpMap: moonBumpMap,
-    bumpScale: 0.02,
-    roughness: 0.95,
-    metalness: 0.0
+    shininess: 5,
+    specular: new THREE.Color(0x222222)
 });
 
 const moon = new THREE.Mesh(moonGeometry, moonMaterial);
 scene.add(moon);
+
+// Add a subtle light that follows the moon to ensure it's visible
+const moonLight = new THREE.PointLight(0xffffee, 0.3, 10);
+scene.add(moonLight);
 
 // Moon orbital parameters
 const MOON_ORBIT_RADIUS = 6;
@@ -1396,6 +1396,9 @@ function animate() {
 
     // Moon rotation (tidally locked - same face always toward Earth)
     moon.rotation.y = -moonOrbitAngle + Math.PI;
+
+    // Position moon light near the moon for visibility
+    moonLight.position.copy(moon.position);
 
     // Ship orbit
     orbitAngle -= shipOrbitSpeed * shipOrbitDirection * delta;
