@@ -1828,99 +1828,57 @@ function createControlUI() {
 
     document.body.appendChild(container);
 
-    // === MODE TOGGLE (Camera/Ship) ===
-    const modeToggle = document.createElement('div');
-    modeToggle.id = 'modeToggle';
-    modeToggle.style.cssText = `
+    // === MODE TOGGLE (Camera/Ship) - Single toggle button ===
+    const modeToggleBtn = document.createElement('button');
+    modeToggleBtn.textContent = 'CAM'; // Start in ship mode, so button shows "CAM" (what you'll switch to)
+    modeToggleBtn.style.cssText = `
         position: fixed;
         bottom: 10px;
         left: 10px;
-        background: rgba(0, 30, 15, 0.95);
-        border: 1px solid #44ff88;
-        border-radius: 8px;
-        padding: 6px 8px;
-        font-family: 'Courier New', monospace;
-        color: #44ff88;
-        box-shadow: 0 0 15px rgba(68, 255, 136, 0.3);
-        z-index: 1000;
-        display: flex;
-        flex-direction: row;
-        gap: 4px;
-        align-items: center;
-    `;
-
-    const modeLabel = document.createElement('div');
-    modeLabel.textContent = 'MODE';
-    modeLabel.style.cssText = 'font-size: 8px; letter-spacing: 1px; opacity: 0.6; margin-right: 4px;';
-    modeToggle.appendChild(modeLabel);
-
-    const modeButtons = document.createElement('div');
-    modeButtons.style.cssText = 'display: flex; gap: 3px;';
-
-    const cameraModeBtn = document.createElement('button');
-    cameraModeBtn.textContent = 'CAM';
-    cameraModeBtn.style.cssText = `
-        padding: 4px 8px;
-        border: 1px solid #44ff88;
-        border-radius: 4px;
-        background: transparent;
-        color: #44ff88;
-        cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 9px;
-        transition: all 0.2s;
-    `;
-
-    const shipModeBtn = document.createElement('button');
-    shipModeBtn.textContent = 'SHIP';
-    shipModeBtn.style.cssText = `
-        padding: 4px 8px;
-        border: 1px solid #44ff88;
-        border-radius: 4px;
         background: #44ff88;
+        border: 2px solid #44ff88;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-family: 'Courier New', monospace;
         color: #000;
         cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 9px;
+        font-size: 16px;
         font-weight: bold;
+        letter-spacing: 2px;
+        box-shadow: 0 0 15px rgba(68, 255, 136, 0.3);
+        z-index: 1000;
         transition: all 0.2s;
+        min-width: 80px;
+        text-align: center;
     `;
 
-    function updateModeButtons() {
+    function updateModeToggle() {
         if (controlMode === 'camera') {
-            cameraModeBtn.style.background = '#44ff88';
-            cameraModeBtn.style.color = '#000';
-            cameraModeBtn.style.fontWeight = 'bold';
-            shipModeBtn.style.background = 'transparent';
-            shipModeBtn.style.color = '#44ff88';
-            shipModeBtn.style.fontWeight = 'normal';
+            // In camera mode, button shows "SHIP" (tap to switch to ship)
+            modeToggleBtn.textContent = 'SHIP';
             shipControlPad.style.display = 'none';
         } else {
-            shipModeBtn.style.background = '#44ff88';
-            shipModeBtn.style.color = '#000';
-            shipModeBtn.style.fontWeight = 'bold';
-            cameraModeBtn.style.background = 'transparent';
-            cameraModeBtn.style.color = '#44ff88';
-            cameraModeBtn.style.fontWeight = 'normal';
+            // In ship mode, button shows "CAM" (tap to switch to camera)
+            modeToggleBtn.textContent = 'CAM';
             shipControlPad.style.display = 'flex';
         }
     }
 
-    cameraModeBtn.addEventListener('click', () => {
-        controlMode = 'camera';
-        updateModeButtons();
+    modeToggleBtn.addEventListener('click', () => {
+        // Toggle between modes
+        controlMode = controlMode === 'camera' ? 'ship' : 'camera';
+        updateModeToggle();
     });
 
-    shipModeBtn.addEventListener('click', () => {
-        controlMode = 'ship';
-        updateModeButtons();
+    // Touch feedback
+    modeToggleBtn.addEventListener('touchstart', () => {
+        modeToggleBtn.style.transform = 'scale(0.95)';
+    });
+    modeToggleBtn.addEventListener('touchend', () => {
+        modeToggleBtn.style.transform = 'scale(1)';
     });
 
-    modeButtons.appendChild(cameraModeBtn);
-    modeButtons.appendChild(shipModeBtn);
-    modeToggle.appendChild(modeButtons);
-
-    document.body.appendChild(modeToggle);
+    document.body.appendChild(modeToggleBtn);
 
     // === HAMBURGER MENU FOR SETTINGS ===
     const hamburgerBtn = document.createElement('button');
@@ -2291,8 +2249,8 @@ function createControlUI() {
         }
     });
 
-    // Initialize mode button states
-    setTimeout(updateModeButtons, 0);
+    // Initialize mode toggle state
+    setTimeout(updateModeToggle, 0);
 
     // === GAME STATUS PANEL (top left) ===
     const gamePanel = document.createElement('div');
