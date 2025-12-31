@@ -1934,73 +1934,42 @@ function createControlUI() {
 
     const soundLabel = document.createElement('div');
     soundLabel.textContent = 'Sound';
-    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px; flex: 1;';
+    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
 
-    const soundButtons = document.createElement('div');
-    soundButtons.style.cssText = 'display: flex; gap: 3px;';
-
-    const soundOnBtn = document.createElement('button');
-    soundOnBtn.textContent = 'ON';
-    soundOnBtn.style.cssText = `
-        padding: 4px 8px;
-        border: 1px solid #44ff88;
-        border-radius: 4px;
+    const soundToggleBtn = document.createElement('button');
+    soundToggleBtn.textContent = 'OFF'; // Start with sound ON, so button shows "OFF" (what you'll switch to)
+    soundToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44ff88;
+        border-radius: 6px;
         background: #44ff88;
         color: #000;
         cursor: pointer;
         font-family: 'Courier New', monospace;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: bold;
         transition: all 0.2s;
+        min-width: 60px;
     `;
 
-    const soundOffBtn = document.createElement('button');
-    soundOffBtn.textContent = 'OFF';
-    soundOffBtn.style.cssText = `
-        padding: 4px 8px;
-        border: 1px solid #44ff88;
-        border-radius: 4px;
-        background: transparent;
-        color: #44ff88;
-        cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 9px;
-        transition: all 0.2s;
-    `;
-
-    function updateSoundButtons() {
+    function updateSoundToggle() {
         if (soundEnabled) {
-            soundOnBtn.style.background = '#44ff88';
-            soundOnBtn.style.color = '#000';
-            soundOnBtn.style.fontWeight = 'bold';
-            soundOffBtn.style.background = 'transparent';
-            soundOffBtn.style.color = '#44ff88';
-            soundOffBtn.style.fontWeight = 'normal';
+            // Sound is ON, button shows "OFF" (tap to turn off)
+            soundToggleBtn.textContent = 'OFF';
         } else {
-            soundOffBtn.style.background = '#44ff88';
-            soundOffBtn.style.color = '#000';
-            soundOffBtn.style.fontWeight = 'bold';
-            soundOnBtn.style.background = 'transparent';
-            soundOnBtn.style.color = '#44ff88';
-            soundOnBtn.style.fontWeight = 'normal';
+            // Sound is OFF, button shows "ON" (tap to turn on)
+            soundToggleBtn.textContent = 'ON';
         }
     }
 
-    soundOnBtn.addEventListener('click', () => {
-        soundEnabled = true;
-        updateSoundButtons();
+    soundToggleBtn.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        updateSoundToggle();
     });
 
-    soundOffBtn.addEventListener('click', () => {
-        soundEnabled = false;
-        updateSoundButtons();
-    });
-
-    soundButtons.appendChild(soundOnBtn);
-    soundButtons.appendChild(soundOffBtn);
     soundSetting.appendChild(soundIcon);
     soundSetting.appendChild(soundLabel);
-    soundSetting.appendChild(soundButtons);
+    soundSetting.appendChild(soundToggleBtn);
     settingsPanel.appendChild(soundSetting);
 
     // === ORBIT CONTROLS IN SETTINGS ===
