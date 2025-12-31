@@ -1,4 +1,4 @@
-// Space Scene - Three.js Frontend
+// Space Scene - Three.js Frontend with Sound Effects
 
 // Scene setup
 const scene = new THREE.Scene();
