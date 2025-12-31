@@ -1723,24 +1723,6 @@ const keys = {};
 
 // === UI CONTROLS ===
 function createControlUI() {
-    const container = document.createElement('div');
-    container.id = 'controls';
-    container.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 15, 30, 0.9);
-        border: 1px solid #4488ff;
-        border-radius: 12px;
-        padding: 15px 25px;
-        display: none;
-        gap: 30px;
-        font-family: 'Courier New', monospace;
-        color: #4488ff;
-        box-shadow: 0 0 20px rgba(68, 136, 255, 0.2);
-    `;
-
     // Laser fire button
     const laserDiv = document.createElement('div');
     laserDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;';
@@ -1804,29 +1786,6 @@ function createControlUI() {
         z-index: 1000;
     `;
     document.body.appendChild(laserDiv);
-
-    // === AMMO COUNTER ===
-    const ammoDiv = document.createElement('div');
-    ammoDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 4px;';
-
-    const ammoLabel = document.createElement('div');
-    ammoLabel.textContent = 'AMMO';
-    ammoLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
-    ammoDiv.appendChild(ammoLabel);
-
-    const ammoCount = document.createElement('div');
-    ammoCount.id = 'ammoCount';
-    ammoCount.textContent = '1000';
-    ammoCount.style.cssText = `
-        font-size: 20px;
-        font-weight: bold;
-        color: #44ff88;
-        text-shadow: 0 0 10px #44ff88;
-    `;
-    ammoDiv.appendChild(ammoCount);
-    container.appendChild(ammoDiv);
-
-    document.body.appendChild(container);
 
     // === MODE TOGGLE (Camera/Ship) - Single toggle button ===
     const modeToggleBtn = document.createElement('button');
@@ -2091,7 +2050,7 @@ function createControlUI() {
     shipControlPad.style.cssText = `
         position: fixed;
         bottom: 100px;
-        right: 20px;
+        left: 10px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -2315,7 +2274,7 @@ function createControlUI() {
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">THREATS</div>
-            <div id="asteroidCount" style="font-size: 12px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;">0</div>
+            <div id="asteroidCount" style="font-size: 12px; font-weight: bold; color: #ff4444;">0</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">KILLS</div>
@@ -2337,15 +2296,24 @@ function createControlUI() {
             0%, 100% {
                 text-shadow: 0 0 8px #ff4444;
                 transform: scale(1);
+                background-color: transparent;
             }
             50% {
-                text-shadow: 0 0 20px #ff4444, 0 0 30px #ff0000;
-                transform: scale(1.15);
+                text-shadow: 0 0 25px #ff4444, 0 0 35px #ff0000, 0 0 45px #ff0000;
+                transform: scale(1.2);
+                background-color: rgba(255, 68, 68, 0.2);
             }
         }
 
+        #asteroidCount {
+            text-shadow: 0 0 8px #ff4444;
+            border-radius: 4px;
+            padding: 2px 4px;
+            transition: all 0.2s;
+        }
+
         .threat-active {
-            animation: threatPulse 1s ease-in-out infinite;
+            animation: threatPulse 0.6s ease-in-out infinite;
         }
 
         #controls input[type="range"] {
@@ -3104,6 +3072,45 @@ function animate() {
             if (distance < hitRadius) {
                 // Damage asteroid
                 asteroid.userData.health--;
+
+                // Show/update health bar on asteroid
+                if (!asteroid.userData.healthBar) {
+                    // Create health bar
+                    const healthBarGroup = new THREE.Group();
+
+                    // Background (red)
+                    const bgGeo = new THREE.PlaneGeometry(asteroid.userData.size * 2, 0.3);
+                    const bgMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.8 });
+                    const bg = new THREE.Mesh(bgGeo, bgMat);
+                    healthBarGroup.add(bg);
+
+                    // Health fill (green)
+                    const fillGeo = new THREE.PlaneGeometry(asteroid.userData.size * 2, 0.3);
+                    const fillMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.9 });
+                    const fill = new THREE.Mesh(fillGeo, fillMat);
+                    fill.position.z = 0.01; // Slightly in front
+                    healthBarGroup.add(fill);
+
+                    healthBarGroup.position.y = asteroid.userData.size + 0.5; // Above asteroid
+                    asteroid.add(healthBarGroup);
+                    asteroid.userData.healthBar = healthBarGroup;
+                    asteroid.userData.healthFill = fill;
+                    asteroid.userData.maxHealth = asteroid.userData.health + 1; // Store max health
+                }
+
+                // Update health bar fill
+                const healthPct = asteroid.userData.health / asteroid.userData.maxHealth;
+                asteroid.userData.healthFill.scale.x = Math.max(0, healthPct);
+                asteroid.userData.healthFill.position.x = -(asteroid.userData.size * (1 - healthPct));
+
+                // Color based on health
+                if (healthPct > 0.5) {
+                    asteroid.userData.healthFill.material.color.setHex(0x00ff00); // Green
+                } else if (healthPct > 0.25) {
+                    asteroid.userData.healthFill.material.color.setHex(0xffaa00); // Orange
+                } else {
+                    asteroid.userData.healthFill.material.color.setHex(0xff0000); // Red
+                }
 
                 // Dramatic hit effect with asteroid feedback
                 createHitSpark(bolt.position.clone(), asteroid);
