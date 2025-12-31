@@ -2304,31 +2304,50 @@ function createControlUI() {
     healthDiv.appendChild(healthText);
     gamePanel.appendChild(healthDiv);
 
-    // Stats row - combine score/threats/destroyed in compact format
+    // Stats row - score/threats/kills/ammo in compact format
     const statsRow = document.createElement('div');
-    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
+    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
 
     statsRow.innerHTML = `
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">SCORE</div>
-            <div id="scoreValue" style="font-size: 14px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
+            <div id="scoreValue" style="font-size: 12px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">THREATS</div>
-            <div id="asteroidCount" style="font-size: 14px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;">0</div>
+            <div id="asteroidCount" style="font-size: 12px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;">0</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">KILLS</div>
-            <div id="killCount" style="font-size: 14px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+            <div id="killCount" style="font-size: 12px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">AMMO</div>
+            <div id="ammoCount" style="font-size: 12px; font-weight: bold; color: #44aaff; text-shadow: 0 0 8px #44aaff;">1000</div>
         </div>
     `;
     gamePanel.appendChild(statsRow);
 
     document.body.appendChild(gamePanel);
 
-    // Slider styling
+    // Slider styling and threat animation
     const style = document.createElement('style');
     style.textContent = `
+        @keyframes threatPulse {
+            0%, 100% {
+                text-shadow: 0 0 8px #ff4444;
+                transform: scale(1);
+            }
+            50% {
+                text-shadow: 0 0 20px #ff4444, 0 0 30px #ff0000;
+                transform: scale(1.15);
+            }
+        }
+
+        .threat-active {
+            animation: threatPulse 1s ease-in-out infinite;
+        }
+
         #controls input[type="range"] {
             -webkit-appearance: none;
             height: 6px;
@@ -3145,6 +3164,12 @@ function animate() {
     const asteroidCountEl = document.getElementById('asteroidCount');
     if (asteroidCountEl) {
         asteroidCountEl.textContent = asteroids.length;
+        // Make threats pulse/glow when there are active threats
+        if (asteroids.length > 0) {
+            asteroidCountEl.classList.add('threat-active');
+        } else {
+            asteroidCountEl.classList.remove('threat-active');
+        }
     }
 
     // === UPDATE HUD ===
