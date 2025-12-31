@@ -829,8 +829,8 @@ function createAsteroid() {
     const size = ASTEROID_MIN_SIZE + Math.random() * (ASTEROID_MAX_SIZE - ASTEROID_MIN_SIZE);
 
     // Health based on size: bigger = more hits required
-    // Health: small asteroids = 1 hit, medium = 2, large = 3 max
-    const health = Math.ceil(size); // 1-3 hits based on size
+    // Ensure all asteroids take multiple hits for better feedback (3-6 hits)
+    const health = Math.floor(3 + size * 1.5); // 3-6 hits based on size
 
     // Create rocky asteroid geometry using icosahedron with noise
     const baseGeo = new THREE.IcosahedronGeometry(size, 1);
@@ -919,6 +919,49 @@ function createAsteroid() {
         ),
         createdAt: Date.now()
     };
+
+    // Create health bar immediately (visible from spawn)
+    const healthBarGroup = new THREE.Group();
+
+    // Background (black/dark for contrast)
+    const bgGeo = new THREE.PlaneGeometry(size * 3, 0.8);
+    const bgMat = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide
+    });
+    const bg = new THREE.Mesh(bgGeo, bgMat);
+    healthBarGroup.add(bg);
+
+    // Red background bar
+    const redGeo = new THREE.PlaneGeometry(size * 3, 0.6);
+    const redMat = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    const redBar = new THREE.Mesh(redGeo, redMat);
+    redBar.position.z = 0.01;
+    healthBarGroup.add(redBar);
+
+    // Health fill (green) - starts at full
+    const fillGeo = new THREE.PlaneGeometry(size * 3, 0.6);
+    const fillMat = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide
+    });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.position.z = 0.02;
+    healthBarGroup.add(fill);
+
+    healthBarGroup.position.y = size + 1.5;
+    asteroidGroup.add(healthBarGroup);
+    asteroidGroup.userData.healthBar = healthBarGroup;
+    asteroidGroup.userData.healthFill = fill;
 
     scene.add(asteroidGroup);
     asteroids.push(asteroidGroup);
@@ -3142,54 +3185,7 @@ function animate() {
                     }
                 }, 100);
 
-                // Show/update health bar on asteroid
-                if (!asteroid.userData.healthBar) {
-                    // Create health bar - much larger and more visible
-                    const healthBarGroup = new THREE.Group();
-
-                    // Background (black/dark for contrast)
-                    const bgGeo = new THREE.PlaneGeometry(asteroid.userData.size * 3, 0.8);
-                    const bgMat = new THREE.MeshBasicMaterial({
-                        color: 0x000000,
-                        transparent: true,
-                        opacity: 0.7,
-                        side: THREE.DoubleSide
-                    });
-                    const bg = new THREE.Mesh(bgGeo, bgMat);
-                    healthBarGroup.add(bg);
-
-                    // Red background bar
-                    const redGeo = new THREE.PlaneGeometry(asteroid.userData.size * 3, 0.6);
-                    const redMat = new THREE.MeshBasicMaterial({
-                        color: 0xff0000,
-                        transparent: true,
-                        opacity: 0.8,
-                        side: THREE.DoubleSide
-                    });
-                    const redBar = new THREE.Mesh(redGeo, redMat);
-                    redBar.position.z = 0.01;
-                    healthBarGroup.add(redBar);
-
-                    // Health fill (green)
-                    const fillGeo = new THREE.PlaneGeometry(asteroid.userData.size * 3, 0.6);
-                    const fillMat = new THREE.MeshBasicMaterial({
-                        color: 0x00ff00,
-                        transparent: true,
-                        opacity: 0.9,
-                        side: THREE.DoubleSide
-                    });
-                    const fill = new THREE.Mesh(fillGeo, fillMat);
-                    fill.position.z = 0.02; // In front of red bar
-                    healthBarGroup.add(fill);
-
-                    healthBarGroup.position.y = asteroid.userData.size + 1.5; // Higher above asteroid
-                    asteroid.add(healthBarGroup);
-                    asteroid.userData.healthBar = healthBarGroup;
-                    asteroid.userData.healthFill = fill;
-                    asteroid.userData.maxHealth = asteroid.userData.health + 1; // Store max health
-                }
-
-                // Update health bar fill
+                // Update health bar fill (health bar already exists from spawn)
                 const healthPct = asteroid.userData.health / asteroid.userData.maxHealth;
                 asteroid.userData.healthFill.scale.x = Math.max(0, healthPct);
                 asteroid.userData.healthFill.position.x = -(asteroid.userData.size * 1.5 * (1 - healthPct));
