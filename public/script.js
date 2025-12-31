@@ -715,8 +715,13 @@ let maxEarthHealth = 100;
 let score = 0;
 let gameActive = true;
 
-// Level settings: asteroids in field at once
-const LEVEL_ASTEROID_COUNTS = [3, 5, 7, 10, 14, 18, 23, 28, 35, 45]; // Level 1-10
+// Level settings: asteroids in field at once (level 1 = just 1 asteroid)
+const LEVEL_ASTEROID_COUNTS = [1, 2, 3, 5, 7, 10, 14, 18, 25, 35]; // Level 1-10
+
+// Track destroyed asteroids for rewards
+let asteroidsDestroyed = 0;
+const AMMO_REWARD_PER_KILL = 5; // Gain ammo when destroying asteroids
+const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
 // === LASER SYSTEM ===
 const laserBolts = [];
@@ -729,13 +734,21 @@ const asteroids = [];
 const explosions = [];
 
 // Asteroid spawn settings
-const ASTEROID_SPAWN_MIN_DISTANCE = 100;
-const ASTEROID_SPAWN_MAX_DISTANCE = 150;
-const ASTEROID_MIN_SPEED = 3;
-const ASTEROID_MAX_SPEED = 8;
+const ASTEROID_SPAWN_MIN_DISTANCE = 120;
+const ASTEROID_SPAWN_MAX_DISTANCE = 180;
 const ASTEROID_MIN_SIZE = 0.5;
-const ASTEROID_MAX_SIZE = 2.5;
+const ASTEROID_MAX_SIZE = 2.0;
 const EARTH_RADIUS = 2; // For collision detection
+
+// Speed scales with level: level 1 is very slow, level 10 is fast
+function getAsteroidSpeed() {
+    const baseMin = 1.0;  // Slow at level 1
+    const baseMax = 2.0;
+    const levelMultiplier = 0.5 + (gameLevel - 1) * 0.3; // 0.5x at L1, up to 3.2x at L10
+    const min = baseMin * levelMultiplier;
+    const max = baseMax * levelMultiplier;
+    return min + Math.random() * (max - min);
+}
 
 // Create laser bolt geometry and material (reusable)
 const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 8);
@@ -823,7 +836,7 @@ function createAsteroid() {
     );
 
     // Velocity: moves toward Earth (origin) with slight random offset
-    const speed = ASTEROID_MIN_SPEED + Math.random() * (ASTEROID_MAX_SPEED - ASTEROID_MIN_SPEED);
+    const speed = getAsteroidSpeed();
     const targetOffset = new THREE.Vector3(
         (Math.random() - 0.5) * 2,
         (Math.random() - 0.5) * 2,
@@ -1025,6 +1038,213 @@ function flashScreen() {
     }, 50);
 }
 
+// Spawn an angel asteroid (glowing, heals Earth when destroyed)
+function spawnAngelAsteroid() {
+    const angelGroup = new THREE.Group();
+
+    // Angel asteroids are medium-sized, glowing white/gold
+    const size = 1.2;
+
+    // Create crystalline geometry
+    const crystalGeo = new THREE.OctahedronGeometry(size, 0);
+
+    // Glowing ethereal material
+    const angelMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 0.3,
+        roughness: 0.2,
+        emissive: 0x88ffaa,
+        emissiveIntensity: 0.8
+    });
+    const crystal = new THREE.Mesh(crystalGeo, angelMat);
+    angelGroup.add(crystal);
+
+    // Add golden inner glow
+    const innerGlow = new THREE.Mesh(
+        new THREE.OctahedronGeometry(size * 0.7, 0),
+        new THREE.MeshBasicMaterial({
+            color: 0xffdd88,
+            transparent: true,
+            opacity: 0.6
+        })
+    );
+    angelGroup.add(innerGlow);
+
+    // Outer halo
+    const haloGeo = new THREE.RingGeometry(size * 1.2, size * 1.8, 32);
+    const haloMat = new THREE.MeshBasicMaterial({
+        color: 0x88ffaa,
+        transparent: true,
+        opacity: 0.4,
+        side: THREE.DoubleSide
+    });
+    const halo = new THREE.Mesh(haloGeo, haloMat);
+    halo.rotation.x = Math.PI / 2;
+    angelGroup.add(halo);
+
+    // Point light for glow effect
+    const angelLight = new THREE.PointLight(0x88ffaa, 2, 20);
+    angelGroup.add(angelLight);
+
+    // Spawn position: random point in the sky
+    const spawnDistance = ASTEROID_SPAWN_MIN_DISTANCE + Math.random() * 30;
+    const spawnTheta = Math.random() * Math.PI * 2;
+    const spawnPhi = Math.acos(2 * Math.random() - 1);
+
+    angelGroup.position.set(
+        spawnDistance * Math.sin(spawnPhi) * Math.cos(spawnTheta),
+        spawnDistance * Math.sin(spawnPhi) * Math.sin(spawnTheta),
+        spawnDistance * Math.cos(spawnPhi)
+    );
+
+    // Slower movement than regular asteroids
+    const speed = getAsteroidSpeed() * 0.5;
+    const direction = angelGroup.position.clone().negate().normalize();
+
+    angelGroup.userData = {
+        health: 1, // One hit to collect
+        maxHealth: 1,
+        size: size,
+        velocity: direction.multiplyScalar(speed),
+        rotationSpeed: new THREE.Vector3(0.5, 1, 0.3),
+        isAngel: true,
+        createdAt: Date.now()
+    };
+
+    scene.add(angelGroup);
+    asteroids.push(angelGroup);
+
+    // Show notification
+    showNotification('+HEALTH INCOMING!', '#88ffaa');
+}
+
+// Special explosion for angel asteroid
+function createAngelExplosion(position) {
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(position);
+
+    // Bright healing particles
+    const colors = [0x88ffaa, 0xffffff, 0xaaffcc, 0xffdd88];
+    for (let i = 0; i < 30; i++) {
+        const size = 0.2 + Math.random() * 0.4;
+        const geo = new THREE.SphereGeometry(size, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({
+            color: colors[Math.floor(Math.random() * colors.length)],
+            transparent: true,
+            opacity: 1
+        });
+        const sphere = new THREE.Mesh(geo, mat);
+        sphere.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 12,
+            (Math.random() - 0.5) * 12,
+            (Math.random() - 0.5) * 12
+        );
+        sphere.userData.initialScale = size;
+        explosionGroup.add(sphere);
+    }
+
+    // Bright healing flash
+    const flash = new THREE.PointLight(0x88ffaa, 8, 30);
+    explosionGroup.add(flash);
+    explosionGroup.userData.flash = flash;
+
+    explosionGroup.userData.createdAt = Date.now();
+    explosionGroup.userData.duration = 1000;
+
+    scene.add(explosionGroup);
+    explosions.push(explosionGroup);
+
+    // Green screen flash for healing
+    flashScreenGreen();
+
+    // Show heal notification
+    showNotification('+25 HEALTH!', '#88ffaa');
+}
+
+// Green flash for healing
+function flashScreenGreen() {
+    let flashOverlay = document.getElementById('healFlash');
+    if (!flashOverlay) {
+        flashOverlay = document.createElement('div');
+        flashOverlay.id = 'healFlash';
+        flashOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(100, 255, 150, 0.25);
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.1s;
+        `;
+        document.body.appendChild(flashOverlay);
+    }
+
+    flashOverlay.style.opacity = '1';
+    setTimeout(() => {
+        flashOverlay.style.opacity = '0';
+    }, 200);
+}
+
+// Show floating notification
+function showNotification(text, color) {
+    const notification = document.createElement('div');
+    notification.textContent = text;
+    notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-family: 'Courier New', monospace;
+        font-size: 28px;
+        font-weight: bold;
+        color: ${color};
+        text-shadow: 0 0 20px ${color}, 0 0 40px ${color};
+        z-index: 10000;
+        pointer-events: none;
+        animation: notifyPop 1.5s ease-out forwards;
+    `;
+    document.body.appendChild(notification);
+
+    // Add animation style if not exists
+    if (!document.getElementById('notifyStyle')) {
+        const style = document.createElement('style');
+        style.id = 'notifyStyle';
+        style.textContent = `
+            @keyframes notifyPop {
+                0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+                20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+                40% { transform: translate(-50%, -50%) scale(1); }
+                100% { opacity: 0; transform: translate(-50%, -100%) scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    setTimeout(() => notification.remove(), 1500);
+}
+
+// Update kill count display
+function updateKillCountDisplay() {
+    const killEl = document.getElementById('killCount');
+    if (killEl) {
+        killEl.textContent = asteroidsDestroyed;
+    }
+
+    // Update angel indicator
+    const angelEl = document.getElementById('angelIndicator');
+    if (angelEl) {
+        const killsUntilAngel = ANGEL_SPAWN_INTERVAL - (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL);
+        if (killsUntilAngel === ANGEL_SPAWN_INTERVAL) {
+            angelEl.textContent = 'Next heal in 3 kills';
+        } else {
+            angelEl.textContent = `Next heal in ${killsUntilAngel} kill${killsUntilAngel > 1 ? 's' : ''}`;
+        }
+    }
+}
+
 // Update ammo display
 function updateAmmoDisplay() {
     const ammoEl = document.getElementById('ammoCount');
@@ -1113,6 +1333,7 @@ function restartGame() {
     earthHealth = maxEarthHealth;
     score = 0;
     laserAmmo = 1000;
+    asteroidsDestroyed = 0;
     gameActive = true;
 
     // Clear all asteroids
@@ -1123,6 +1344,7 @@ function restartGame() {
     updateHealthDisplay();
     updateScoreDisplay();
     updateAmmoDisplay();
+    updateKillCountDisplay();
 }
 
 // Targeting HUD: shows crosshairs over asteroids
@@ -1995,6 +2217,30 @@ function createControlUI() {
     asteroidDiv.appendChild(asteroidValue);
     gamePanel.appendChild(asteroidDiv);
 
+    // Destroyed counter
+    const killDiv = document.createElement('div');
+    killDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+
+    const killLabel = document.createElement('div');
+    killLabel.textContent = 'DESTROYED';
+    killLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
+
+    const killValue = document.createElement('div');
+    killValue.id = 'killCount';
+    killValue.textContent = '0';
+    killValue.style.cssText = 'font-size: 16px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;';
+
+    killDiv.appendChild(killLabel);
+    killDiv.appendChild(killValue);
+    gamePanel.appendChild(killDiv);
+
+    // Next angel indicator
+    const angelDiv = document.createElement('div');
+    angelDiv.id = 'angelIndicator';
+    angelDiv.style.cssText = 'font-size: 9px; text-align: center; opacity: 0.7; color: #88ffaa; margin-top: 5px;';
+    angelDiv.textContent = 'Next heal in 3 kills';
+    gamePanel.appendChild(angelDiv);
+
     document.body.appendChild(gamePanel);
 
     // Slider styling
@@ -2761,12 +3007,33 @@ function animate() {
                 createHitSpark(bolt.position.clone(), asteroid);
 
                 if (asteroid.userData.health <= 0) {
-                    // Asteroid destroyed!
-                    score += Math.ceil(asteroid.userData.size * 10);
-                    updateScoreDisplay();
+                    // Check if this is an angel asteroid
+                    if (asteroid.userData.isAngel) {
+                        // Angel destroyed - restore health!
+                        earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                        updateHealthDisplay();
+                        createAngelExplosion(asteroid.position.clone());
+                    } else {
+                        // Regular asteroid destroyed!
+                        score += Math.ceil(asteroid.userData.size * 10);
+                        updateScoreDisplay();
 
-                    // Create explosion at asteroid position (size-based)
-                    createExplosion(asteroid.position.clone(), asteroid.userData.size);
+                        // Reward: gain ammo
+                        laserAmmo += AMMO_REWARD_PER_KILL;
+                        updateAmmoDisplay();
+
+                        // Track kills
+                        asteroidsDestroyed++;
+                        updateKillCountDisplay();
+
+                        // Every 3 kills, spawn an angel asteroid
+                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0) {
+                            spawnAngelAsteroid();
+                        }
+
+                        // Create explosion at asteroid position (size-based)
+                        createExplosion(asteroid.position.clone(), asteroid.userData.size);
+                    }
 
                     // Remove asteroid
                     scene.remove(asteroid);
