@@ -725,6 +725,7 @@ const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
 // === SOUND SYSTEM ===
 let soundEnabled = true;
+let showDpadControls = false; // D-pad movement controls hidden by default
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
 // Sound manager with synthesized sounds
@@ -1819,7 +1820,8 @@ function createControlUI() {
         } else {
             // In ship mode, button shows "CAM" (tap to switch to camera)
             modeToggleBtn.textContent = 'CAM';
-            shipControlPad.style.display = 'flex';
+            // Only show D-pad if both in ship mode AND the setting is enabled
+            shipControlPad.style.display = showDpadControls ? 'flex' : 'none';
         }
     }
 
@@ -1930,6 +1932,59 @@ function createControlUI() {
     soundSetting.appendChild(soundLabel);
     soundSetting.appendChild(soundToggleBtn);
     settingsPanel.appendChild(soundSetting);
+
+    // D-pad controls toggle in settings
+    const dpadSetting = document.createElement('div');
+    dpadSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+
+    const dpadIcon = document.createElement('div');
+    dpadIcon.textContent = '🎮';
+    dpadIcon.style.cssText = 'font-size: 16px;';
+
+    const dpadLabel = document.createElement('div');
+    dpadLabel.textContent = 'D-Pad';
+    dpadLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
+
+    const dpadToggleBtn = document.createElement('button');
+    dpadToggleBtn.textContent = 'ON'; // Start hidden, so button shows "ON" (tap to show)
+    dpadToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44ff88;
+        border-radius: 6px;
+        background: rgba(68, 255, 136, 0.2);
+        color: #44ff88;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.2s;
+        min-width: 60px;
+    `;
+
+    function updateDpadToggle() {
+        if (showDpadControls) {
+            // D-pad is shown, button shows "OFF" (tap to hide)
+            dpadToggleBtn.textContent = 'OFF';
+            dpadToggleBtn.style.background = '#44ff88';
+            dpadToggleBtn.style.color = '#000';
+        } else {
+            // D-pad is hidden, button shows "ON" (tap to show)
+            dpadToggleBtn.textContent = 'ON';
+            dpadToggleBtn.style.background = 'rgba(68, 255, 136, 0.2)';
+            dpadToggleBtn.style.color = '#44ff88';
+        }
+    }
+
+    dpadToggleBtn.addEventListener('click', () => {
+        showDpadControls = !showDpadControls;
+        updateDpadToggle();
+        updateModeToggle(); // Update D-pad visibility
+    });
+
+    dpadSetting.appendChild(dpadIcon);
+    dpadSetting.appendChild(dpadLabel);
+    dpadSetting.appendChild(dpadToggleBtn);
+    settingsPanel.appendChild(dpadSetting);
 
     // === ORBIT CONTROLS IN SETTINGS ===
     // Planet rotation control
