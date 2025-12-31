@@ -1229,6 +1229,63 @@ function spawnAngelAsteroid() {
         createdAt: Date.now()
     };
 
+    // Create health bar (same style as regular asteroids)
+    const healthBarGroup = new THREE.Group();
+    const barWidth = size * 3.5;
+    const barHeight = 0.7;
+
+    // White border/frame for clear reference
+    const borderGeo = new THREE.PlaneGeometry(barWidth + 0.15, barHeight + 0.15);
+    const borderMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide
+    });
+    const border = new THREE.Mesh(borderGeo, borderMat);
+    healthBarGroup.add(border);
+
+    // Black background for contrast
+    const bgGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+    const bgMat = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    const bg = new THREE.Mesh(bgGeo, bgMat);
+    bg.position.z = 0.01;
+    healthBarGroup.add(bg);
+
+    // Red background bar (always visible - shows empty health)
+    const redGeo = new THREE.PlaneGeometry(barWidth * 0.95, barHeight * 0.75);
+    const redMat = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+    });
+    const redBar = new THREE.Mesh(redGeo, redMat);
+    redBar.position.z = 0.02;
+    healthBarGroup.add(redBar);
+
+    // Health fill (green for angel asteroids) - starts at full
+    const fillGeo = new THREE.PlaneGeometry(barWidth * 0.95, barHeight * 0.75);
+    const fillMat = new THREE.MeshBasicMaterial({
+        color: 0x88ffaa, // Use angel color instead of regular green
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+    });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.position.z = 0.03;
+    healthBarGroup.add(fill);
+
+    healthBarGroup.position.y = -(size + 0.8); // Position below asteroid
+    angelGroup.add(healthBarGroup);
+    angelGroup.userData.healthBar = healthBarGroup;
+    angelGroup.userData.healthFill = fill;
+
     scene.add(angelGroup);
     asteroids.push(angelGroup);
 
