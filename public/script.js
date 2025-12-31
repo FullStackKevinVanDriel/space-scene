@@ -868,6 +868,63 @@ function createControlUI() {
         shipValue.textContent = `${dir} ${shipOrbitSpeed.toFixed(2)}`;
     });
 
+    // Laser fire button
+    const laserDiv = document.createElement('div');
+    laserDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;';
+
+    const laserBtn = document.createElement('button');
+    laserBtn.textContent = 'LASER';
+    laserBtn.style.cssText = `
+        background: linear-gradient(180deg, #ff3300 0%, #aa0000 100%);
+        border: 2px solid #ff4400;
+        border-radius: 8px;
+        color: white;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        padding: 12px 24px;
+        cursor: pointer;
+        box-shadow: 0 0 15px rgba(255, 50, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.2);
+        text-shadow: 0 0 10px #ff0000;
+        transition: all 0.1s ease;
+    `;
+    laserBtn.addEventListener('mousedown', () => {
+        laserBtn.style.transform = 'scale(0.95)';
+        laserBtn.style.boxShadow = '0 0 25px rgba(255, 50, 0, 0.8), inset 0 1px 0 rgba(255,255,255,0.2)';
+    });
+    laserBtn.addEventListener('mouseup', () => {
+        laserBtn.style.transform = 'scale(1)';
+        laserBtn.style.boxShadow = '0 0 15px rgba(255, 50, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)';
+    });
+    laserBtn.addEventListener('mouseleave', () => {
+        laserBtn.style.transform = 'scale(1)';
+        laserBtn.style.boxShadow = '0 0 15px rgba(255, 50, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)';
+    });
+    laserBtn.addEventListener('click', () => {
+        if (canFire) {
+            fireLasers();
+            canFire = false;
+            setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+        }
+    });
+    // Touch support
+    laserBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        laserBtn.style.transform = 'scale(0.95)';
+        if (canFire) {
+            fireLasers();
+            canFire = false;
+            setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+        }
+    });
+    laserBtn.addEventListener('touchend', () => {
+        laserBtn.style.transform = 'scale(1)';
+    });
+
+    laserDiv.appendChild(laserBtn);
+    container.appendChild(laserDiv);
+
     // Slider styling
     const style = document.createElement('style');
     style.textContent = `
