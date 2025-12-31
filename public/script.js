@@ -362,7 +362,7 @@ if (typeof THREE.EffectComposer !== 'undefined') {
     bloomPass.radius = 0.4;
     composer.addPass(bloomPass);
 }
-// === SPACESHIP - X-Wing inspired Star Wars style fighter ===
+// === SPACESHIP - Synthesis of Ornithopter + Starship + EVE Online ===
 // CubeCamera for real-time reflections on canopy
 const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
     format: THREE.RGBAFormat,
@@ -375,211 +375,236 @@ scene.add(cubeCamera);
 function createSpaceShip() {
     const ship = new THREE.Group();
 
-    // Materials - weathered military spacecraft look
-    const hullMat = new THREE.MeshStandardMaterial({
-        color: 0xd8d8d0,
-        metalness: 0.4,
-        roughness: 0.6
+    // === MATERIALS - Industrial military spacecraft ===
+    // Main hull - brushed stainless steel (Starship inspired)
+    const steelHullMat = new THREE.MeshStandardMaterial({
+        color: 0xb8b8b8,
+        metalness: 0.85,
+        roughness: 0.35
     });
-    const darkHullMat = new THREE.MeshStandardMaterial({
-        color: 0x3a3a3a,
-        metalness: 0.5,
-        roughness: 0.5
-    });
-    const accentMat = new THREE.MeshStandardMaterial({
-        color: 0xcc3333,
-        metalness: 0.3,
-        roughness: 0.4
-    });
-    const engineMat = new THREE.MeshStandardMaterial({
+    // Dark gunmetal armor plates (EVE inspired)
+    const armorMat = new THREE.MeshStandardMaterial({
         color: 0x2a2a2a,
         metalness: 0.7,
+        roughness: 0.4
+    });
+    // Gold/bronze accent panels (EVE inspired)
+    const accentMat = new THREE.MeshStandardMaterial({
+        color: 0xc9a227,
+        metalness: 0.8,
         roughness: 0.3
     });
+    // Dark interior
     const interiorMat = new THREE.MeshStandardMaterial({
-        color: 0x1a1a1a,
-        metalness: 0.2,
+        color: 0x0a0a0a,
+        metalness: 0.3,
         roughness: 0.8
     });
+    // Engine housing
+    const engineMat = new THREE.MeshStandardMaterial({
+        color: 0x1a1a1a,
+        metalness: 0.9,
+        roughness: 0.2
+    });
 
-    // === MAIN FUSELAGE - Angular X-Wing style ===
-    // Nose cone - pointed
-    const noseGeo = new THREE.ConeGeometry(0.25, 1.2, 6);
-    const nose = new THREE.Mesh(noseGeo, hullMat);
-    nose.rotation.x = -Math.PI / 2;
-    nose.position.z = -2.8;
+    // === MAIN FUSELAGE - Elongated cylindrical body (Starship style) ===
+    // Curved nose cone
+    const noseGeo = new THREE.SphereGeometry(0.5, 32, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+    const nose = new THREE.Mesh(noseGeo, steelHullMat);
+    nose.rotation.x = Math.PI / 2;
+    nose.position.z = -3.5;
     ship.add(nose);
 
-    // Main body - hexagonal cross-section
-    const bodyShape = new THREE.Shape();
-    bodyShape.moveTo(0, 0.35);
-    bodyShape.lineTo(0.3, 0.2);
-    bodyShape.lineTo(0.3, -0.15);
-    bodyShape.lineTo(0, -0.25);
-    bodyShape.lineTo(-0.3, -0.15);
-    bodyShape.lineTo(-0.3, 0.2);
-    bodyShape.closePath();
-
-    const extrudeSettings = { depth: 3.5, bevelEnabled: false };
-    const bodyGeo = new THREE.ExtrudeGeometry(bodyShape, extrudeSettings);
-    const body = new THREE.Mesh(bodyGeo, hullMat);
-    body.rotation.x = Math.PI;
-    body.position.z = -2.2;
+    // Main cylindrical body
+    const bodyGeo = new THREE.CylinderGeometry(0.5, 0.55, 5, 24);
+    const body = new THREE.Mesh(bodyGeo, steelHullMat);
+    body.rotation.x = Math.PI / 2;
+    body.position.z = -0.8;
     ship.add(body);
 
-    // Rear engine housing
-    const rearGeo = new THREE.CylinderGeometry(0.35, 0.4, 0.8, 8);
-    const rear = new THREE.Mesh(rearGeo, darkHullMat);
+    // Panel lines on body (horizontal rings)
+    for (let i = 0; i < 8; i++) {
+        const ringGeo = new THREE.TorusGeometry(0.52 + i * 0.003, 0.015, 8, 32);
+        const ring = new THREE.Mesh(ringGeo, armorMat);
+        ring.position.z = -3.0 + i * 0.7;
+        ship.add(ring);
+    }
+
+    // Rear engine section - wider
+    const rearGeo = new THREE.CylinderGeometry(0.55, 0.7, 1.5, 24);
+    const rear = new THREE.Mesh(rearGeo, armorMat);
     rear.rotation.x = Math.PI / 2;
-    rear.position.z = 1.7;
+    rear.position.z = 2.2;
     ship.add(rear);
 
-    // === COCKPIT INTERIOR ===
-    // Cockpit floor/base
-    const cockpitFloor = new THREE.Mesh(
-        new THREE.BoxGeometry(0.4, 0.05, 0.8),
-        interiorMat
-    );
-    cockpitFloor.position.set(0, -0.05, -1.8);
-    ship.add(cockpitFloor);
+    // === ANGULAR COCKPIT SECTION (Ornithopter inspired) ===
+    // Faceted angular cockpit housing
+    const cockpitShape = new THREE.Shape();
+    cockpitShape.moveTo(0, 0.3);
+    cockpitShape.lineTo(0.4, 0.15);
+    cockpitShape.lineTo(0.5, -0.1);
+    cockpitShape.lineTo(0.3, -0.25);
+    cockpitShape.lineTo(-0.3, -0.25);
+    cockpitShape.lineTo(-0.5, -0.1);
+    cockpitShape.lineTo(-0.4, 0.15);
+    cockpitShape.closePath();
 
-    // Pilot seat
-    const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.25), interiorMat);
-    seatBase.position.set(0, 0.05, -1.7);
-    ship.add(seatBase);
-    const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.35, 0.08), interiorMat);
-    seatBack.position.set(0, 0.22, -1.55);
-    seatBack.rotation.x = 0.15;
-    ship.add(seatBack);
+    const cockpitGeo = new THREE.ExtrudeGeometry(cockpitShape, { depth: 1.2, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.03 });
+    const cockpitHousing = new THREE.Mesh(cockpitGeo, armorMat);
+    cockpitHousing.rotation.x = Math.PI;
+    cockpitHousing.position.set(0, 0.35, -2.8);
+    ship.add(cockpitHousing);
 
-    // Pilot body (orange flight suit like Rebel pilot)
-    const pilotBody = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.08, 0.25, 8),
-        new THREE.MeshStandardMaterial({ color: 0xff6600, roughness: 0.8 })
-    );
-    pilotBody.position.set(0, 0.22, -1.7);
-    ship.add(pilotBody);
-
-    // Pilot helmet (white with visor)
-    const helmetMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, roughness: 0.3, metalness: 0.1 });
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 12), helmetMat);
-    helmet.position.set(0, 0.42, -1.7);
-    helmet.scale.set(1, 1.1, 1);
-    ship.add(helmet);
-    // Visor
-    const visor = new THREE.Mesh(
-        new THREE.SphereGeometry(0.065, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.1 })
-    );
-    visor.position.set(0, 0.42, -1.65);
-    visor.rotation.x = Math.PI * 0.6;
-    ship.add(visor);
-
-    // Control console
-    const console1 = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 0.15), interiorMat);
-    console1.position.set(0, 0.15, -2.1);
-    console1.rotation.x = -0.4;
-    ship.add(console1);
-
-    // Console screens (glowing)
-    const screenMat = new THREE.MeshBasicMaterial({ color: 0x00ff44 });
-    const screen1 = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.05), screenMat);
-    screen1.position.set(-0.08, 0.2, -2.05);
-    screen1.rotation.x = -0.4;
-    ship.add(screen1);
-    const screen2 = new THREE.Mesh(new THREE.PlaneGeometry(0.08, 0.05), new THREE.MeshBasicMaterial({ color: 0xff8800 }));
-    screen2.position.set(0.08, 0.2, -2.05);
-    screen2.rotation.x = -0.4;
-    ship.add(screen2);
-
-    // Control sticks
-    const stickMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 0.15, 8), stickMat);
-    stick.position.set(0.12, 0.12, -1.9);
-    stick.rotation.z = -0.2;
-    ship.add(stick);
-
-    // === CANOPY - Reflective glass ===
-    const canopyGeo = new THREE.SphereGeometry(0.38, 32, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+    // Angular canopy glass (Ornithopter style faceted)
     const canopyMat = new THREE.MeshPhysicalMaterial({
-        color: 0x88aacc,
+        color: 0x334455,
         metalness: 0.1,
         roughness: 0.05,
         envMap: cubeRenderTarget.texture,
-        envMapIntensity: 1.5,
+        envMapIntensity: 2.0,
         clearcoat: 1.0,
         clearcoatRoughness: 0.02,
-        reflectivity: 1.0,
         transparent: true,
-        opacity: 0.75,
+        opacity: 0.7,
         side: THREE.DoubleSide
     });
+
+    // Multi-faceted canopy
+    const canopyGeo = new THREE.BoxGeometry(0.7, 0.25, 1.0);
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
-    canopy.scale.set(0.9, 0.7, 1.4);
-    canopy.position.set(0, 0.32, -1.75);
+    canopy.position.set(0, 0.55, -2.4);
     canopy.name = 'cockpitCanopy';
     ship.add(canopy);
 
-    // Canopy frame (metal strips)
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8, roughness: 0.3 });
-    const frameStrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.9), frameMat);
-    frameStrip.position.set(0, 0.52, -1.75);
-    ship.add(frameStrip);
+    // Canopy frame strips
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.9, roughness: 0.2 });
+    [-0.25, 0, 0.25].forEach(xOff => {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.28, 0.03), frameMat);
+        frame.position.set(xOff, 0.55, -2.4);
+        ship.add(frame);
+    });
 
-    // === S-FOILS (X-Wing style wings) ===
-    function createWing(isTop, isLeft) {
-        const wingGroup = new THREE.Group();
-        const xMult = isLeft ? -1 : 1;
-        const yMult = isTop ? 1 : -1;
+    // Cockpit interior glow
+    const interiorGlow = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.15, 0.8),
+        new THREE.MeshBasicMaterial({ color: 0x113322, transparent: true, opacity: 0.5 })
+    );
+    interiorGlow.position.set(0, 0.45, -2.4);
+    ship.add(interiorGlow);
 
-        // Main wing structure
-        const wingGeo = new THREE.BoxGeometry(2.2, 0.04, 0.35);
-        const wing = new THREE.Mesh(wingGeo, hullMat);
-        wing.position.set(xMult * 1.3, yMult * 0.08, 0.3);
-        wingGroup.add(wing);
+    // === LAYERED ARMOR PLATING (EVE Online inspired) ===
+    // Top armor layer
+    const topArmorGeo = new THREE.BoxGeometry(0.8, 0.08, 2.5);
+    const topArmor = new THREE.Mesh(topArmorGeo, armorMat);
+    topArmor.position.set(0, 0.55, -0.3);
+    ship.add(topArmor);
 
-        // Wing stripe (red accent)
-        const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.045, 0.08), accentMat);
-        stripe.position.set(xMult * 1.0, yMult * 0.085, 0.3);
-        wingGroup.add(stripe);
+    // Side armor plates with gold trim
+    [-1, 1].forEach(side => {
+        // Main side plate
+        const sidePlateGeo = new THREE.BoxGeometry(0.1, 0.5, 2.0);
+        const sidePlate = new THREE.Mesh(sidePlateGeo, armorMat);
+        sidePlate.position.set(side * 0.55, 0.1, -0.5);
+        ship.add(sidePlate);
 
-        // Laser cannon at wing tip
-        const cannonGeo = new THREE.CylinderGeometry(0.04, 0.05, 1.8, 8);
-        const cannon = new THREE.Mesh(cannonGeo, darkHullMat);
-        cannon.rotation.x = Math.PI / 2;
-        cannon.position.set(xMult * 2.3, yMult * 0.08, -0.3);
-        wingGroup.add(cannon);
-
-        // Cannon tip (glowing)
-        const cannonTip = new THREE.Mesh(
-            new THREE.SphereGeometry(0.035, 8, 8),
-            new THREE.MeshBasicMaterial({ color: 0xff2200 })
+        // Gold accent strip
+        const accentStrip = new THREE.Mesh(
+            new THREE.BoxGeometry(0.12, 0.08, 1.8),
+            accentMat
         );
-        cannonTip.position.set(xMult * 2.3, yMult * 0.08, -1.15);
-        cannonTip.name = isLeft ? 'cannonTipLeft' : 'cannonTipRight';
-        wingGroup.add(cannonTip);
+        accentStrip.position.set(side * 0.56, 0.25, -0.5);
+        ship.add(accentStrip);
 
-        return wingGroup;
-    }
+        // Lower armor skirt
+        const skirtGeo = new THREE.BoxGeometry(0.15, 0.3, 1.5);
+        const skirt = new THREE.Mesh(skirtGeo, armorMat);
+        skirt.position.set(side * 0.6, -0.35, 0);
+        ship.add(skirt);
+    });
 
-    ship.add(createWing(true, true));   // Top left
-    ship.add(createWing(true, false));  // Top right
-    ship.add(createWing(false, true));  // Bottom left
-    ship.add(createWing(false, false)); // Bottom right
+    // === REAR FINS (Starship style) ===
+    // Two large rear stabilizer fins
+    [-1, 1].forEach(side => {
+        // Main fin
+        const finShape = new THREE.Shape();
+        finShape.moveTo(0, 0);
+        finShape.lineTo(0.8, 0);
+        finShape.lineTo(1.0, 1.2);
+        finShape.lineTo(0.3, 1.5);
+        finShape.lineTo(0, 0.8);
+        finShape.closePath();
 
-    // === ENGINES (4 engine pods with blue methane flames) ===
-    // Create flame texture for engine glow
+        const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.06, bevelEnabled: false });
+        const fin = new THREE.Mesh(finGeo, steelHullMat);
+        fin.rotation.y = side * Math.PI / 2;
+        fin.rotation.z = side * -0.2;
+        fin.position.set(side * 0.7, -0.3, 1.8);
+        ship.add(fin);
+
+        // Fin accent
+        const finAccent = new THREE.Mesh(
+            new THREE.BoxGeometry(0.08, 1.0, 0.03),
+            accentMat
+        );
+        finAccent.position.set(side * 1.1, 0.2, 2.3);
+        finAccent.rotation.z = side * -0.2;
+        ship.add(finAccent);
+    });
+
+    // === FORWARD CANARD FINS (Starship style) ===
+    [-1, 1].forEach(side => {
+        const canardGeo = new THREE.BoxGeometry(0.6, 0.04, 0.3);
+        const canard = new THREE.Mesh(canardGeo, steelHullMat);
+        canard.position.set(side * 0.7, 0.3, -2.8);
+        canard.rotation.z = side * 0.15;
+        ship.add(canard);
+    });
+
+    // === WEAPON PODS (Laser cannons) ===
+    [-1, 1].forEach(side => {
+        // Weapon pod housing
+        const podGeo = new THREE.CylinderGeometry(0.12, 0.15, 1.5, 12);
+        const pod = new THREE.Mesh(podGeo, armorMat);
+        pod.rotation.x = Math.PI / 2;
+        pod.position.set(side * 0.9, -0.15, -1.5);
+        ship.add(pod);
+
+        // Laser barrel
+        const barrelGeo = new THREE.CylinderGeometry(0.04, 0.05, 2.0, 8);
+        const barrel = new THREE.Mesh(barrelGeo, engineMat);
+        barrel.rotation.x = Math.PI / 2;
+        barrel.position.set(side * 0.9, -0.15, -2.5);
+        ship.add(barrel);
+
+        // Cannon tip (glowing red)
+        const tipGeo = new THREE.SphereGeometry(0.045, 8, 8);
+        const tipMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
+        const tip = new THREE.Mesh(tipGeo, tipMat);
+        tip.position.set(side * 0.9, -0.15, -3.5);
+        tip.name = side < 0 ? 'cannonTipLeft' : 'cannonTipRight';
+        ship.add(tip);
+
+        // Weapon pod accent
+        const podAccent = new THREE.Mesh(
+            new THREE.BoxGeometry(0.18, 0.05, 0.8),
+            accentMat
+        );
+        podAccent.position.set(side * 0.9, 0, -1.5);
+        ship.add(podAccent);
+    });
+
+    // === MAIN ENGINES - Triple blue glow cluster ===
     function makeBlueFlameTexture() {
         const size = 128;
         const canvas = document.createElement('canvas');
         canvas.width = canvas.height = size;
         const ctx = canvas.getContext('2d');
         const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-        grad.addColorStop(0, 'rgba(220,240,255,1)');
-        grad.addColorStop(0.2, 'rgba(100,180,255,0.95)');
-        grad.addColorStop(0.5, 'rgba(30,100,220,0.7)');
-        grad.addColorStop(0.8, 'rgba(10,40,150,0.3)');
-        grad.addColorStop(1, 'rgba(0,10,60,0)');
+        grad.addColorStop(0, 'rgba(230,245,255,1)');
+        grad.addColorStop(0.15, 'rgba(150,200,255,0.95)');
+        grad.addColorStop(0.4, 'rgba(50,120,255,0.8)');
+        grad.addColorStop(0.7, 'rgba(20,60,200,0.4)');
+        grad.addColorStop(1, 'rgba(5,20,100,0)');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, size, size);
         const tex = new THREE.CanvasTexture(canvas);
@@ -588,135 +613,104 @@ function createSpaceShip() {
     }
     const blueFlameTexture = makeBlueFlameTexture();
 
-    function createEngine(isTop, isLeft) {
-        const engGroup = new THREE.Group();
-        const xMult = isLeft ? -1 : 1;
-        const yMult = isTop ? 1 : -1;
-        const engX = xMult * 0.55;
-        const engY = yMult * 0.15;
+    // Three main engines in triangular arrangement
+    const enginePositions = [
+        { x: 0, y: 0.25, name: 'top' },
+        { x: -0.3, y: -0.2, name: 'bot_left' },
+        { x: 0.3, y: -0.2, name: 'bot_right' }
+    ];
 
-        // Engine nacelle
-        const nacelle = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.12, 0.15, 1.2, 12),
-            engineMat
-        );
-        nacelle.rotation.x = Math.PI / 2;
-        nacelle.position.set(engX, engY, 1.0);
-        engGroup.add(nacelle);
-
-        // Engine intake ring
-        const intake = new THREE.Mesh(
-            new THREE.TorusGeometry(0.13, 0.025, 8, 16),
-            darkHullMat
-        );
-        intake.position.set(engX, engY, 0.35);
-        engGroup.add(intake);
-
-        // Exhaust nozzle
-        const nozzle = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.08, 0.11, 0.15, 12),
-            new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.9, roughness: 0.2 })
-        );
+    enginePositions.forEach(eng => {
+        // Engine bell/nozzle
+        const nozzleGeo = new THREE.CylinderGeometry(0.12, 0.2, 0.5, 16);
+        const nozzle = new THREE.Mesh(nozzleGeo, engineMat);
         nozzle.rotation.x = Math.PI / 2;
-        nozzle.position.set(engX, engY, 1.55);
-        engGroup.add(nozzle);
+        nozzle.position.set(eng.x, eng.y, 2.9);
+        ship.add(nozzle);
+
+        // Inner nozzle ring
+        const innerRing = new THREE.Mesh(
+            new THREE.TorusGeometry(0.11, 0.02, 8, 16),
+            new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.9, roughness: 0.1 })
+        );
+        innerRing.position.set(eng.x, eng.y, 2.65);
+        ship.add(innerRing);
 
         // Hot white core
-        const coreMat = new THREE.MeshBasicMaterial({ color: 0xeeffff });
-        const core = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), coreMat);
-        core.position.set(engX, engY, 1.62);
-        core.name = `engine_core_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
-        engGroup.add(core);
+        const core = new THREE.Mesh(
+            new THREE.CircleGeometry(0.1, 16),
+            new THREE.MeshBasicMaterial({ color: 0xeeffff })
+        );
+        core.position.set(eng.x, eng.y, 3.15);
+        core.name = `engine_core_${eng.name}`;
+        ship.add(core);
 
-        // Blue flame sprite (main glow)
+        // Main blue flame sprite
         const flameMat = new THREE.SpriteMaterial({
             map: blueFlameTexture,
-            color: 0x88ccff,
+            color: 0x88ddff,
             blending: THREE.AdditiveBlending,
             transparent: true,
             depthWrite: false
         });
         const flame = new THREE.Sprite(flameMat);
-        flame.scale.set(0.35, 0.5, 1);
-        flame.position.set(engX, engY, 1.85);
-        flame.name = `engine_flame_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
-        engGroup.add(flame);
+        flame.scale.set(0.6, 1.2, 1);
+        flame.position.set(eng.x, eng.y, 3.6);
+        flame.name = `engine_flame_${eng.name}`;
+        ship.add(flame);
 
-        // Outer glow sprite
+        // Outer glow
         const outerMat = new THREE.SpriteMaterial({
             map: blueFlameTexture,
             color: 0x4488ff,
             blending: THREE.AdditiveBlending,
             transparent: true,
-            opacity: 0.5,
+            opacity: 0.6,
             depthWrite: false
         });
         const outer = new THREE.Sprite(outerMat);
-        outer.scale.set(0.5, 0.7, 1);
-        outer.position.set(engX, engY, 1.95);
-        outer.name = `engine_outer_${isTop ? 'top' : 'bot'}_${isLeft ? 'left' : 'right'}`;
-        engGroup.add(outer);
+        outer.scale.set(0.9, 1.6, 1);
+        outer.position.set(eng.x, eng.y, 3.8);
+        outer.name = `engine_outer_${eng.name}`;
+        ship.add(outer);
 
-        // Point light for glow
-        const engLight = new THREE.PointLight(0x4488ff, 0.5, 3, 2);
-        engLight.position.set(engX, engY, 1.7);
-        engGroup.add(engLight);
-
-        return engGroup;
-    }
-
-    ship.add(createEngine(true, true));
-    ship.add(createEngine(true, false));
-    ship.add(createEngine(false, true));
-    ship.add(createEngine(false, false));
-
-    // === ASTROMECH DROID (R2 unit) ===
-    const droidBody = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.1, 0.1, 0.2, 16),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
-    );
-    droidBody.position.set(0, 0.25, -0.8);
-    ship.add(droidBody);
-
-    const droidHead = new THREE.Mesh(
-        new THREE.SphereGeometry(0.1, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
-    );
-    droidHead.position.set(0, 0.35, -0.8);
-    ship.add(droidHead);
-
-    // Droid eye
-    const droidEye = new THREE.Mesh(
-        new THREE.SphereGeometry(0.03, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff0000 })
-    );
-    droidEye.position.set(0, 0.38, -0.72);
-    ship.add(droidEye);
-
-    // Blue panels on droid
-    const droidPanel = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.12, 0.01),
-        new THREE.MeshStandardMaterial({ color: 0x0044aa })
-    );
-    droidPanel.position.set(0.07, 0.25, -0.71);
-    ship.add(droidPanel);
+        // Point light
+        const engLight = new THREE.PointLight(0x4499ff, 0.8, 5, 2);
+        engLight.position.set(eng.x, eng.y, 3.2);
+        ship.add(engLight);
+    });
 
     // === NAV LIGHTS ===
-    const navGeo = new THREE.SphereGeometry(0.025, 8, 8);
+    const navGeo = new THREE.SphereGeometry(0.03, 8, 8);
+
+    // Red port light
     const navR = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xff0000 }));
-    navR.position.set(-2.4, 0, 0.3);
+    navR.position.set(-0.9, -0.15, -2.0);
     navR.name = 'navLightRed';
     ship.add(navR);
 
+    // Green starboard light
     const navG = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
-    navG.position.set(2.4, 0, 0.3);
+    navG.position.set(0.9, -0.15, -2.0);
     navG.name = 'navLightGreen';
     ship.add(navG);
 
-    // White tail light
-    const navW = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    navW.position.set(0, 0, 2.1);
-    ship.add(navW);
+    // White tail lights
+    const navW1 = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    navW1.position.set(-0.7, 0.5, 2.8);
+    ship.add(navW1);
+    const navW2 = new THREE.Mesh(navGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    navW2.position.set(0.7, 0.5, 2.8);
+    ship.add(navW2);
+
+    // Beacon light on top
+    const beacon = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff4400 })
+    );
+    beacon.position.set(0, 0.65, -1.0);
+    beacon.name = 'beaconLight';
+    ship.add(beacon);
 
     return ship;
 }
@@ -743,12 +737,10 @@ function fireLasers() {
     const shipDirection = new THREE.Vector3(0, 0, -1);
     shipDirection.applyQuaternion(spaceShip.quaternion);
 
-    // Cannon positions (4 wing tips)
+    // Cannon positions (2 weapon pods on sides)
     const cannonOffsets = [
-        { x: -2.3, y: 0.08 },   // Top left
-        { x: 2.3, y: 0.08 },    // Top right
-        { x: -2.3, y: -0.08 },  // Bottom left
-        { x: 2.3, y: -0.08 }    // Bottom right
+        { x: -0.9, y: -0.15 },  // Left cannon
+        { x: 0.9, y: -0.15 }    // Right cannon
     ];
 
     cannonOffsets.forEach(offset => {
@@ -773,7 +765,7 @@ function fireLasers() {
         bolt.add(light);
 
         // Position at cannon tip in world space
-        const localPos = new THREE.Vector3(offset.x, offset.y, -1.15);
+        const localPos = new THREE.Vector3(offset.x, offset.y, -3.5);
         localPos.applyQuaternion(spaceShip.quaternion);
         bolt.position.copy(spaceShip.position).add(localPos);
 
@@ -1599,31 +1591,31 @@ function animate() {
 
     // === BLUE METHANE ENGINE FLAME ANIMATION ===
     const flameTime = clock.getElapsedTime();
-    const enginePositions = ['top_left', 'top_right', 'bot_left', 'bot_right'];
-    enginePositions.forEach(pos => {
+    const engineNames = ['top', 'bot_left', 'bot_right'];
+    engineNames.forEach((pos, idx) => {
         const flame = spaceShip.getObjectByName(`engine_flame_${pos}`);
         const outer = spaceShip.getObjectByName(`engine_outer_${pos}`);
         const core = spaceShip.getObjectByName(`engine_core_${pos}`);
 
         if (flame && outer) {
             // Flickering scale with multiple noise frequencies
-            const flicker1 = Math.sin(flameTime * 25 + pos.length) * 0.15;
-            const flicker2 = Math.sin(flameTime * 40 + pos.length * 2) * 0.08;
+            const flicker1 = Math.sin(flameTime * 25 + idx * 2) * 0.15;
+            const flicker2 = Math.sin(flameTime * 40 + idx * 3) * 0.08;
             const flicker3 = Math.sin(flameTime * 15) * 0.1;
             const baseScale = 1 + flicker1 + flicker2 + flicker3;
 
-            flame.scale.set(0.35 * baseScale, 0.5 * (1 + flicker1 * 1.5), 1);
-            outer.scale.set(0.5 * baseScale, 0.7 * (1 + flicker2 * 1.2), 1);
+            flame.scale.set(0.6 * baseScale, 1.2 * (1 + flicker1 * 1.5), 1);
+            outer.scale.set(0.9 * baseScale, 1.6 * (1 + flicker2 * 1.2), 1);
 
             // Slight position jitter
-            const jitterZ = Math.sin(flameTime * 30 + pos.length * 3) * 0.02;
-            flame.position.z = 1.85 + jitterZ;
-            outer.position.z = 1.95 + jitterZ * 0.5;
+            const jitterZ = Math.sin(flameTime * 30 + idx * 4) * 0.03;
+            flame.position.z = 3.6 + jitterZ;
+            outer.position.z = 3.8 + jitterZ * 0.5;
         }
 
         if (core) {
             // Core brightness flicker
-            const coreFlicker = 0.9 + Math.sin(flameTime * 50) * 0.1;
+            const coreFlicker = 0.9 + Math.sin(flameTime * 50 + idx) * 0.1;
             core.material.opacity = coreFlicker;
         }
     });
