@@ -3135,13 +3135,21 @@ function animate() {
         const hitRadius = EARTH_RADIUS + asteroid.userData.size * 0.5;
 
         if (distanceToEarth < hitRadius) {
-            // Asteroid hit Earth!
-            const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
-            earthHealth -= damage;
-            updateHealthDisplay();
-
-            // Create explosion at impact point
-            createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            // Check if this is an angel asteroid
+            if (asteroid.userData.isAngel) {
+                // Angel hit Earth - restore health!
+                earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                updateHealthDisplay();
+                createAngelExplosion(asteroid.position.clone());
+                showNotification('+25 HEALTH!', '#88ffaa');
+            } else {
+                // Regular asteroid hit Earth - damage!
+                const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
+                earthHealth -= damage;
+                updateHealthDisplay();
+                // Create explosion at impact point
+                createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            }
 
             // Remove asteroid
             scene.remove(asteroid);
@@ -3241,6 +3249,38 @@ function animate() {
                 laserBolts.splice(i, 1);
                 hitAsteroid = true;
                 break;
+            }
+        }
+
+        // Check collision with Earth (friendly fire!)
+        if (!hitAsteroid) {
+            const distanceToEarth = bolt.position.length();
+            if (distanceToEarth < EARTH_RADIUS + 0.3) {
+                // Laser hit Earth!
+                const damage = 2; // Small damage per laser hit
+                earthHealth -= damage;
+                updateHealthDisplay();
+
+                // Create small impact explosion on Earth
+                createExplosion(bolt.position.clone(), 0.3);
+
+                // Flash the Earth briefly
+                earth.material.emissive.setHex(0xff4444);
+                setTimeout(() => {
+                    earth.material.emissive.setHex(0x000000);
+                }, 50);
+
+                // Remove bolt
+                scene.remove(bolt);
+                laserBolts.splice(i, 1);
+                hitAsteroid = true; // Prevent further checks
+
+                // Check game over
+                if (earthHealth <= 0) {
+                    earthHealth = 0;
+                    gameActive = false;
+                    showGameOver();
+                }
             }
         }
 
