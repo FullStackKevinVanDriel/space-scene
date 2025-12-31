@@ -1894,8 +1894,15 @@ function createControlUI() {
         laserBtn.style.transform = 'scale(1)';
     });
 
+    // Make laser button standalone and always visible
     laserDiv.appendChild(laserBtn);
-    container.appendChild(laserDiv);
+    laserDiv.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        z-index: 1000;
+    `;
+    document.body.appendChild(laserDiv);
 
     // === AMMO COUNTER ===
     const ammoDiv = document.createElement('div');
@@ -2016,31 +2023,59 @@ function createControlUI() {
 
     document.body.appendChild(modeToggle);
 
-    // === SOUND TOGGLE ===
-    const soundToggle = document.createElement('div');
-    soundToggle.id = 'soundToggle';
-    soundToggle.style.cssText = `
+    // === HAMBURGER MENU FOR SETTINGS ===
+    const hamburgerBtn = document.createElement('button');
+    hamburgerBtn.innerHTML = '☰';
+    hamburgerBtn.style.cssText = `
         position: fixed;
         bottom: 10px;
         left: 10px;
-        background: rgba(30, 15, 0, 0.95);
-        border: 1px solid #ff8844;
+        background: rgba(20, 20, 30, 0.95);
+        border: 1px solid #888;
         border-radius: 8px;
-        padding: 6px 8px;
-        font-family: 'Courier New', monospace;
-        color: #ff8844;
-        box-shadow: 0 0 15px rgba(255, 136, 68, 0.3);
+        color: #fff;
+        cursor: pointer;
+        font-size: 24px;
+        padding: 8px 12px;
+        z-index: 1001;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        transition: all 0.2s;
+    `;
+    hamburgerBtn.addEventListener('mouseenter', () => {
+        hamburgerBtn.style.background = 'rgba(40, 40, 50, 0.95)';
+    });
+    hamburgerBtn.addEventListener('mouseleave', () => {
+        hamburgerBtn.style.background = 'rgba(20, 20, 30, 0.95)';
+    });
+
+    // Settings panel (hidden by default)
+    const settingsPanel = document.createElement('div');
+    settingsPanel.style.cssText = `
+        position: fixed;
+        bottom: 60px;
+        left: 10px;
+        background: rgba(20, 20, 30, 0.98);
+        border: 1px solid #888;
+        border-radius: 8px;
+        padding: 12px;
         z-index: 1000;
-        display: flex;
-        flex-direction: row;
-        gap: 4px;
-        align-items: center;
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
     `;
 
+    // Sound toggle in settings
+    const soundSetting = document.createElement('div');
+    soundSetting.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+    const soundIcon = document.createElement('div');
+    soundIcon.textContent = '🔊';
+    soundIcon.style.cssText = 'font-size: 16px;';
+
     const soundLabel = document.createElement('div');
-    soundLabel.textContent = '🔊';
-    soundLabel.style.cssText = 'font-size: 12px; margin-right: 2px;';
-    soundToggle.appendChild(soundLabel);
+    soundLabel.textContent = 'Sound';
+    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px; flex: 1;';
 
     const soundButtons = document.createElement('div');
     soundButtons.style.cssText = 'display: flex; gap: 3px;';
@@ -2049,9 +2084,9 @@ function createControlUI() {
     soundOnBtn.textContent = 'ON';
     soundOnBtn.style.cssText = `
         padding: 4px 8px;
-        border: 1px solid #ff8844;
+        border: 1px solid #44ff88;
         border-radius: 4px;
-        background: #ff8844;
+        background: #44ff88;
         color: #000;
         cursor: pointer;
         font-family: 'Courier New', monospace;
@@ -2064,10 +2099,10 @@ function createControlUI() {
     soundOffBtn.textContent = 'OFF';
     soundOffBtn.style.cssText = `
         padding: 4px 8px;
-        border: 1px solid #ff8844;
+        border: 1px solid #44ff88;
         border-radius: 4px;
         background: transparent;
-        color: #ff8844;
+        color: #44ff88;
         cursor: pointer;
         font-family: 'Courier New', monospace;
         font-size: 9px;
@@ -2076,18 +2111,18 @@ function createControlUI() {
 
     function updateSoundButtons() {
         if (soundEnabled) {
-            soundOnBtn.style.background = '#ff8844';
+            soundOnBtn.style.background = '#44ff88';
             soundOnBtn.style.color = '#000';
             soundOnBtn.style.fontWeight = 'bold';
             soundOffBtn.style.background = 'transparent';
-            soundOffBtn.style.color = '#ff8844';
+            soundOffBtn.style.color = '#44ff88';
             soundOffBtn.style.fontWeight = 'normal';
         } else {
-            soundOffBtn.style.background = '#ff8844';
+            soundOffBtn.style.background = '#44ff88';
             soundOffBtn.style.color = '#000';
             soundOffBtn.style.fontWeight = 'bold';
             soundOnBtn.style.background = 'transparent';
-            soundOnBtn.style.color = '#ff8844';
+            soundOnBtn.style.color = '#44ff88';
             soundOnBtn.style.fontWeight = 'normal';
         }
     }
@@ -2104,9 +2139,28 @@ function createControlUI() {
 
     soundButtons.appendChild(soundOnBtn);
     soundButtons.appendChild(soundOffBtn);
-    soundToggle.appendChild(soundButtons);
+    soundSetting.appendChild(soundIcon);
+    soundSetting.appendChild(soundLabel);
+    soundSetting.appendChild(soundButtons);
+    settingsPanel.appendChild(soundSetting);
 
-    document.body.appendChild(soundToggle);
+    // Toggle settings panel
+    let settingsPanelOpen = false;
+    hamburgerBtn.addEventListener('click', () => {
+        settingsPanelOpen = !settingsPanelOpen;
+        settingsPanel.style.display = settingsPanelOpen ? 'flex' : 'none';
+    });
+
+    // Close panel when clicking outside
+    document.addEventListener('click', (e) => {
+        if (settingsPanelOpen && !settingsPanel.contains(e.target) && !hamburgerBtn.contains(e.target)) {
+            settingsPanelOpen = false;
+            settingsPanel.style.display = 'none';
+        }
+    });
+
+    document.body.appendChild(settingsPanel);
+    document.body.appendChild(hamburgerBtn);
 
     // === SHIP CONTROL PAD (D-pad style) ===
     const shipControlPad = document.createElement('div');
