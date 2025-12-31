@@ -723,6 +723,67 @@ let asteroidsDestroyed = 0;
 const AMMO_REWARD_PER_KILL = 5; // Gain ammo when destroying asteroids
 const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
+// === SOUND SYSTEM ===
+let soundEnabled = true;
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+// Sound manager with synthesized sounds
+const SoundManager = {
+    playLaser() {
+        if (!soundEnabled) return;
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        // Laser sound: quick descending frequency
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.1);
+
+        gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+    },
+
+    playExplosion(size = 1) {
+        if (!soundEnabled) return;
+
+        // White noise for explosion
+        const bufferSize = audioContext.sampleRate * 0.5; // 0.5 second
+        const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        const noise = audioContext.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = audioContext.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1000, audioContext.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
+
+        const gainNode = audioContext.createGain();
+        const volume = Math.min(0.2, 0.1 * size);
+        gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+        noise.connect(filter);
+        filter.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        noise.start(audioContext.currentTime);
+        noise.stop(audioContext.currentTime + 0.5);
+    }
+};
+
 // === LASER SYSTEM ===
 const laserBolts = [];
 const LASER_SPEED = 80;
@@ -876,6 +937,9 @@ function spawnAsteroids() {
 
 // Create explosion effect (size-based)
 function createExplosion(position, asteroidSize = 1) {
+    // Play explosion sound
+    SoundManager.playExplosion(asteroidSize);
+
     const explosionGroup = new THREE.Group();
     explosionGroup.position.copy(position);
 
@@ -1120,6 +1184,9 @@ function spawnAngelAsteroid() {
 
 // Special explosion for angel asteroid
 function createAngelExplosion(position) {
+    // Play explosion sound (medium size)
+    SoundManager.playExplosion(1.5);
+
     const explosionGroup = new THREE.Group();
     explosionGroup.position.copy(position);
 
@@ -1520,6 +1587,9 @@ function updateAlignmentLine(shipDirection) {
 function fireLasers() {
     // Check ammo and game state
     if (laserAmmo <= 0 || !gameActive) return;
+
+    // Play laser sound
+    SoundManager.playLaser();
 
     // Get ship's forward direction (negative Z in local space)
     const shipDirection = new THREE.Vector3(0, 0, -1);
@@ -1950,6 +2020,99 @@ function createControlUI() {
     modeToggle.appendChild(modeHint);
 
     document.body.appendChild(modeToggle);
+
+    // === SOUND TOGGLE ===
+    const soundToggle = document.createElement('div');
+    soundToggle.id = 'soundToggle';
+    soundToggle.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background: rgba(30, 15, 0, 0.9);
+        border: 1px solid #ff8844;
+        border-radius: 12px;
+        padding: 10px 15px;
+        font-family: 'Courier New', monospace;
+        color: #ff8844;
+        box-shadow: 0 0 20px rgba(255, 136, 68, 0.2);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    `;
+
+    const soundLabel = document.createElement('div');
+    soundLabel.textContent = 'SOUND';
+    soundLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7; text-align: center;';
+    soundToggle.appendChild(soundLabel);
+
+    const soundButtons = document.createElement('div');
+    soundButtons.style.cssText = 'display: flex; gap: 5px;';
+
+    const soundOnBtn = document.createElement('button');
+    soundOnBtn.textContent = 'ON';
+    soundOnBtn.style.cssText = `
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #ff8844;
+        border-radius: 6px;
+        background: #ff8844;
+        color: #000;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        font-weight: bold;
+        transition: all 0.2s;
+    `;
+
+    const soundOffBtn = document.createElement('button');
+    soundOffBtn.textContent = 'OFF';
+    soundOffBtn.style.cssText = `
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #ff8844;
+        border-radius: 6px;
+        background: transparent;
+        color: #ff8844;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        transition: all 0.2s;
+    `;
+
+    function updateSoundButtons() {
+        if (soundEnabled) {
+            soundOnBtn.style.background = '#ff8844';
+            soundOnBtn.style.color = '#000';
+            soundOnBtn.style.fontWeight = 'bold';
+            soundOffBtn.style.background = 'transparent';
+            soundOffBtn.style.color = '#ff8844';
+            soundOffBtn.style.fontWeight = 'normal';
+        } else {
+            soundOffBtn.style.background = '#ff8844';
+            soundOffBtn.style.color = '#000';
+            soundOffBtn.style.fontWeight = 'bold';
+            soundOnBtn.style.background = 'transparent';
+            soundOnBtn.style.color = '#ff8844';
+            soundOnBtn.style.fontWeight = 'normal';
+        }
+    }
+
+    soundOnBtn.addEventListener('click', () => {
+        soundEnabled = true;
+        updateSoundButtons();
+    });
+
+    soundOffBtn.addEventListener('click', () => {
+        soundEnabled = false;
+        updateSoundButtons();
+    });
+
+    soundButtons.appendChild(soundOnBtn);
+    soundButtons.appendChild(soundOffBtn);
+    soundToggle.appendChild(soundButtons);
+
+    document.body.appendChild(soundToggle);
 
     // === SHIP CONTROL PAD (D-pad style) ===
     const shipControlPad = document.createElement('div');
