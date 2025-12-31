@@ -968,7 +968,7 @@ function createAsteroid() {
     fill.position.z = 0.03;
     healthBarGroup.add(fill);
 
-    healthBarGroup.position.y = size + 1.5;
+    healthBarGroup.position.y = -(size + 0.8); // Position below asteroid
     asteroidGroup.add(healthBarGroup);
     asteroidGroup.userData.healthBar = healthBarGroup;
     asteroidGroup.userData.healthFill = fill;
@@ -3117,11 +3117,6 @@ function animate() {
         asteroid.rotation.x += rotSpeed.x * delta;
         asteroid.rotation.y += rotSpeed.y * delta;
         asteroid.rotation.z += rotSpeed.z * delta;
-
-        // Make health bar always face camera (billboard effect)
-        if (asteroid.userData.healthBar) {
-            asteroid.userData.healthBar.quaternion.copy(camera.quaternion);
-        }
 
         // Check collision with Earth
         const distanceToEarth = asteroid.position.length();
