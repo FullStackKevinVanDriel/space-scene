@@ -1932,8 +1932,8 @@ function createControlUI() {
     modeToggle.id = 'modeToggle';
     modeToggle.style.cssText = `
         position: fixed;
-        top: 10px;
-        right: 10px;
+        bottom: 10px;
+        left: 10px;
         background: rgba(0, 30, 15, 0.95);
         border: 1px solid #44ff88;
         border-radius: 8px;
@@ -2026,8 +2026,8 @@ function createControlUI() {
     hamburgerBtn.innerHTML = '☰';
     hamburgerBtn.style.cssText = `
         position: fixed;
-        bottom: 10px;
-        left: 10px;
+        top: 10px;
+        right: 10px;
         background: rgba(20, 20, 30, 0.95);
         border: 1px solid #888;
         border-radius: 8px;
@@ -2050,8 +2050,8 @@ function createControlUI() {
     const settingsPanel = document.createElement('div');
     settingsPanel.style.cssText = `
         position: fixed;
-        bottom: 60px;
-        left: 10px;
+        top: 60px;
+        right: 10px;
         background: rgba(20, 20, 30, 0.98);
         border: 1px solid #888;
         border-radius: 8px;
@@ -2061,6 +2061,8 @@ function createControlUI() {
         flex-direction: column;
         gap: 10px;
         box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+        max-height: 70vh;
+        overflow-y: auto;
     `;
 
     // Sound toggle in settings
