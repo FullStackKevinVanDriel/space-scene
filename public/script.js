@@ -5,6 +5,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+// Enable shadow mapping for eclipses (disabled temporarily for debugging)
+renderer.shadowMap.enabled = false;
+// renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // Increase pixel ratio for higher fidelity renders while capping to avoid extreme GPU load.
 const MAX_PIXEL_RATIO = 3; // safety cap
 function updatePixelRatio() {
@@ -33,6 +36,19 @@ scene.add(ambientLight);
 // Directional light FROM the sun
 const directionalLight = new THREE.DirectionalLight(0xfffaf0, 2.0);
 directionalLight.position.copy(SUN_POSITION);
+// Enable shadow casting for eclipse effects
+directionalLight.castShadow = true;
+// Configure shadow camera to cover the scene (Earth-Moon system)
+directionalLight.shadow.mapSize.width = 2048;
+directionalLight.shadow.mapSize.height = 2048;
+// Distance from sun to origin is ~85, so set near/far to encompass the scene
+directionalLight.shadow.camera.near = 0.5;
+directionalLight.shadow.camera.far = 200;
+directionalLight.shadow.camera.left = -15;
+directionalLight.shadow.camera.right = 15;
+directionalLight.shadow.camera.top = 15;
+directionalLight.shadow.camera.bottom = -15;
+directionalLight.shadow.bias = -0.0005;
 scene.add(directionalLight);
 scene.add(directionalLight.target);
 
@@ -98,11 +114,12 @@ let shipOrbitDirection = 1; // 1 = clockwise, -1 = counterclockwise
 // Texture loader with error handling
 const textureLoader = new THREE.TextureLoader();
 
-const EARTH_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-blue-marble.jpg';
-const EARTH_BUMP_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-topology.png';
-const EARTH_SPECULAR_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-water.png';
-const CLOUDS_TEXTURE_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-clouds.png';
-const EARTH_NIGHT_URL = 'https://unpkg.com/three-globe@2.31.0/example/img/earth-night.jpg';
+// Earth textures from reliable CDN sources
+const EARTH_TEXTURE_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_atmos_2048.jpg';
+const EARTH_BUMP_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_normal_2048.jpg';
+const EARTH_SPECULAR_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_specular_2048.jpg';
+const CLOUDS_TEXTURE_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_clouds_1024.png';
+const EARTH_NIGHT_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/textures/planets/earth_lights_2048.png';
 
 // Loading indicator
 const loadingDiv = document.createElement('div');
@@ -221,6 +238,8 @@ const earthMaterial = new THREE.ShaderMaterial({
 });
 
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+// Earth casts shadow on moon (lunar eclipse)
+earth.castShadow = true;
 scene.add(earth);
 
 // Cloud layer
@@ -232,6 +251,8 @@ const cloudMaterial = new THREE.MeshPhongMaterial({
     depthWrite: false
 });
 const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+// Clouds receive shadow from moon (solar eclipse)
+clouds.receiveShadow = true;
 scene.add(clouds);
 
 // Atmosphere glow
@@ -256,10 +277,15 @@ const moonGeometry = new THREE.SphereGeometry(0.5, 64, 64);
 const moonMaterial = new THREE.MeshPhongMaterial({
     map: moonTexture,
     shininess: 5,
-    specular: new THREE.Color(0x222222)
+    specular: new THREE.Color(0x222222),
+    emissive: new THREE.Color(0x000000)
 });
 
 const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+// Moon casts shadow on Earth (solar eclipse)
+moon.castShadow = true;
+// Moon receives shadow from Earth (lunar eclipse handled separately via shader)
+moon.receiveShadow = true;
 scene.add(moon);
 
 // Add a subtle light that follows the moon to ensure it's visible
@@ -269,7 +295,11 @@ scene.add(moonLight);
 // Moon orbital parameters
 const MOON_ORBIT_RADIUS = 6;
 const MOON_ORBIT_SPEED = 0.15;
+// Realistic orbital inclination: Moon's orbit is inclined ~5.14° to ecliptic
+const MOON_ORBIT_INCLINATION = 5.14 * (Math.PI / 180); // Convert to radians
 let moonOrbitAngle = 0;
+// Longitude of ascending node (rotates slowly - simplified for demo)
+let moonAscendingNode = 0;
 
 // Space skybox using equirectangular milky way star map (hosted locally)
 const spaceTexture = textureLoader.load('skybox/stars.jpg', (texture) => {
@@ -462,16 +492,13 @@ function createSpaceShip() {
         color: 0x88aacc,
         metalness: 0.1,
         roughness: 0.05,
-        transmission: 0.7,
-        thickness: 0.5,
         envMap: cubeRenderTarget.texture,
         envMapIntensity: 1.5,
         clearcoat: 1.0,
         clearcoatRoughness: 0.02,
         reflectivity: 1.0,
-        ior: 1.52,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.75,
         side: THREE.DoubleSide
     });
     const canopy = new THREE.Mesh(canopyGeo, canopyMat);
@@ -1388,17 +1415,87 @@ function animate() {
     clouds.rotation.x = EARTH_TILT;
     atmosphere.rotation.x = EARTH_TILT;
 
-    // Moon orbit around Earth
+    // Moon orbit around Earth with realistic 5.14° inclination
     moonOrbitAngle += MOON_ORBIT_SPEED * delta;
-    moon.position.x = Math.cos(moonOrbitAngle) * MOON_ORBIT_RADIUS;
-    moon.position.z = Math.sin(moonOrbitAngle) * MOON_ORBIT_RADIUS;
-    moon.position.y = Math.sin(moonOrbitAngle * 0.5) * 0.5; // Slight orbital inclination
+    // Slowly rotate the ascending node (in reality ~18.6 year cycle, sped up for demo)
+    moonAscendingNode += 0.01 * delta;
+
+    // Calculate moon position with inclined orbit
+    // Position in orbital plane (before inclination)
+    const moonX = Math.cos(moonOrbitAngle) * MOON_ORBIT_RADIUS;
+    const moonZ = Math.sin(moonOrbitAngle) * MOON_ORBIT_RADIUS;
+
+    // Apply orbital inclination (rotation around the line of nodes)
+    // The ascending node determines where the orbital plane intersects the ecliptic
+    const cosInc = Math.cos(MOON_ORBIT_INCLINATION);
+    const sinInc = Math.sin(MOON_ORBIT_INCLINATION);
+    const cosNode = Math.cos(moonAscendingNode);
+    const sinNode = Math.sin(moonAscendingNode);
+
+    // Rotate orbital position: first around Y (node), then tilt (inclination)
+    moon.position.x = moonX * cosNode - moonZ * sinNode * cosInc;
+    moon.position.z = moonX * sinNode + moonZ * cosNode * cosInc;
+    moon.position.y = moonZ * sinInc;
 
     // Moon rotation (tidally locked - same face always toward Earth)
     moon.rotation.y = -moonOrbitAngle + Math.PI;
 
     // Position moon light near the moon for visibility
     moonLight.position.copy(moon.position);
+
+    // === LUNAR ECLIPSE DETECTION ===
+    // Check if moon is in Earth's shadow (opposite side from sun)
+    const sunDir = SUN_POSITION.clone().normalize();
+    const moonDir = moon.position.clone().normalize();
+    // Dot product: -1 means moon is directly behind Earth from sun's view
+    const sunMoonDot = sunDir.dot(moonDir);
+
+    // Calculate how close moon is to being perfectly aligned for lunar eclipse
+    // Umbra cone angle depends on relative sizes - simplified for visual effect
+    const EARTH_RADIUS = 2;
+    const umbraAngle = Math.atan(EARTH_RADIUS / SUN_POSITION.length());
+    const moonAngularPos = Math.acos(-sunMoonDot); // Angle from anti-sun direction
+
+    // Determine eclipse intensity (0 = no eclipse, 1 = total eclipse)
+    let lunarEclipseIntensity = 0;
+    if (sunMoonDot < -0.7) { // Moon is roughly behind Earth
+        // Check vertical alignment (moon must be near ecliptic plane)
+        const verticalOffset = Math.abs(moon.position.y);
+        const maxVerticalForEclipse = 0.8; // Some tolerance for partial eclipse
+
+        if (verticalOffset < maxVerticalForEclipse) {
+            // Calculate intensity based on alignment
+            const alignmentFactor = 1 - (verticalOffset / maxVerticalForEclipse);
+            const depthFactor = Math.min(1, (-sunMoonDot - 0.7) / 0.3);
+            lunarEclipseIntensity = alignmentFactor * depthFactor;
+        }
+    }
+
+    // Apply lunar eclipse effect - darken moon and add red tint (like real eclipses)
+    // Safely update moon material (check if properties exist)
+    if (moonMaterial && moonMaterial.color) {
+        if (lunarEclipseIntensity > 0) {
+            // During lunar eclipse, moon gets dark reddish color
+            const eclipseBrightness = 1 - lunarEclipseIntensity * 0.85;
+            const redTint = lunarEclipseIntensity * 0.3;
+            moonMaterial.color.setRGB(
+                eclipseBrightness + redTint,
+                eclipseBrightness * 0.7,
+                eclipseBrightness * 0.6
+            );
+            if (moonMaterial.emissive) {
+                moonMaterial.emissive.setRGB(redTint * 0.3, 0, 0);
+            }
+            moonLight.intensity = 0.3 * (1 - lunarEclipseIntensity * 0.9);
+        } else {
+            // Normal moon appearance
+            moonMaterial.color.setRGB(1, 1, 1);
+            if (moonMaterial.emissive) {
+                moonMaterial.emissive.setRGB(0, 0, 0);
+            }
+            moonLight.intensity = 0.3;
+        }
+    }
 
     // Ship orbit
     orbitAngle -= shipOrbitSpeed * shipOrbitDirection * delta;
