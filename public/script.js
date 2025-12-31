@@ -1734,7 +1734,7 @@ function createControlUI() {
         border: 1px solid #4488ff;
         border-radius: 12px;
         padding: 15px 25px;
-        display: flex;
+        display: none;
         gap: 30px;
         font-family: 'Courier New', monospace;
         color: #4488ff;
@@ -1994,7 +1994,6 @@ function createControlUI() {
             shipModeBtn.style.color = '#44ff88';
             shipModeBtn.style.fontWeight = 'normal';
             shipControlPad.style.display = 'none';
-            container.style.display = 'flex'; // Show planet/moon controls in camera mode
         } else {
             shipModeBtn.style.background = '#44ff88';
             shipModeBtn.style.color = '#000';
@@ -2003,7 +2002,6 @@ function createControlUI() {
             cameraModeBtn.style.color = '#44ff88';
             cameraModeBtn.style.fontWeight = 'normal';
             shipControlPad.style.display = 'flex';
-            container.style.display = 'none'; // Hide planet/moon controls in ship mode
         }
     }
 
@@ -2143,6 +2141,101 @@ function createControlUI() {
     soundSetting.appendChild(soundLabel);
     soundSetting.appendChild(soundButtons);
     settingsPanel.appendChild(soundSetting);
+
+    // === ORBIT CONTROLS IN SETTINGS ===
+    // Planet rotation control
+    const planetSetting = document.createElement('div');
+    planetSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
+
+    const planetHeader = document.createElement('div');
+    planetHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
+    planetHeader.textContent = '🌍 PLANET ROTATION';
+    planetSetting.appendChild(planetHeader);
+
+    const planetSlider = document.createElement('input');
+    planetSlider.type = 'range';
+    planetSlider.min = '-100';
+    planetSlider.max = '100';
+    planetSlider.value = '25';
+    planetSlider.style.cssText = 'width: 100%; cursor: pointer;';
+    planetSetting.appendChild(planetSlider);
+
+    const planetValue = document.createElement('div');
+    planetValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
+    planetValue.textContent = 'CW 0.12';
+    planetSetting.appendChild(planetValue);
+    settingsPanel.appendChild(planetSetting);
+
+    // Moon orbit control
+    const moonSetting = document.createElement('div');
+    moonSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
+
+    const moonHeader = document.createElement('div');
+    moonHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
+    moonHeader.textContent = '🌙 MOON ORBIT';
+    moonSetting.appendChild(moonHeader);
+
+    const moonSlider = document.createElement('input');
+    moonSlider.type = 'range';
+    moonSlider.min = '-100';
+    moonSlider.max = '100';
+    moonSlider.value = '30';
+    moonSlider.style.cssText = 'width: 100%; cursor: pointer;';
+    moonSetting.appendChild(moonSlider);
+
+    const moonValue = document.createElement('div');
+    moonValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
+    moonValue.textContent = 'CW 0.15';
+    moonSetting.appendChild(moonValue);
+    settingsPanel.appendChild(moonSetting);
+
+    // Ship orbit control
+    const shipOrbitSetting = document.createElement('div');
+    shipOrbitSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
+
+    const shipHeader = document.createElement('div');
+    shipHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
+    shipHeader.textContent = '🚀 SHIP ORBIT';
+    shipOrbitSetting.appendChild(shipHeader);
+
+    const shipOrbitSlider = document.createElement('input');
+    shipOrbitSlider.type = 'range';
+    shipOrbitSlider.min = '-100';
+    shipOrbitSlider.max = '100';
+    shipOrbitSlider.value = '50';
+    shipOrbitSlider.style.cssText = 'width: 100%; cursor: pointer;';
+    shipOrbitSetting.appendChild(shipOrbitSlider);
+
+    const shipOrbitValue = document.createElement('div');
+    shipOrbitValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
+    shipOrbitValue.textContent = 'CW 0.25';
+    shipOrbitSetting.appendChild(shipOrbitValue);
+    settingsPanel.appendChild(shipOrbitSetting);
+
+    // Event handlers for orbit controls
+    planetSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        planetRotationSpeed = Math.abs(val) / 400;
+        planetRotationDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        planetValue.textContent = `${dir} ${planetRotationSpeed.toFixed(2)}`;
+    });
+
+    moonSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        moonOrbitSpeed = Math.abs(val) / 200;
+        moonOrbitDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        moonValue.textContent = `${dir} ${moonOrbitSpeed.toFixed(2)}`;
+    });
+
+    shipOrbitSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        shipOrbitSpeed = Math.abs(val) / 200;
+        shipOrbitDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        shipOrbitValue.textContent = `${dir} ${shipOrbitSpeed.toFixed(2)}`;
+    });
 
     // Toggle settings panel
     let settingsPanelOpen = false;
