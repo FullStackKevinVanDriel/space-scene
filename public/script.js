@@ -1285,6 +1285,9 @@ let orbitRadius = 4.5;
 let orbitPerigee = 4.5;  // Closest point (can be adjusted)
 let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
 let orbitInclination = 0; // Degrees of orbital tilt
+
+// Control mode: 'camera' or 'ship'
+let controlMode = 'ship'; // Start in ship mode for gameplay
 const orbitY = 1.5;
 
 // Ship starts already partway through entry for immediate action
@@ -1292,12 +1295,18 @@ let shipPhase = 'orbit'; // Start directly in orbit for smooth experience
 let orbitAngle = Math.PI * 1.5; // Starting angle
 
 // Ship orientation (pitch, yaw, roll offsets)
-let shipPitch = 0;
-let shipYaw = 0;
-let shipRoll = 0;
+let shipPitch = 0;  // Vertical aim (up/down)
+let shipYaw = 0;    // Horizontal aim (left/right)
+let shipRoll = 0;   // Roll (banking)
 
-// Control mode: 'camera' or 'ship'
-let controlMode = 'camera';
+// Ship control input state
+const shipInput = {
+    pitchUp: false,
+    pitchDown: false,
+    yawLeft: false,
+    yawRight: false
+};
+const SHIP_ROTATION_SPEED = 1.5; // Radians per second
 
 spaceShip.position.set(
     Math.cos(orbitAngle) * orbitRadius,
@@ -1535,132 +1544,255 @@ function createControlUI() {
 
     document.body.appendChild(container);
 
-    // === SHIP CONTROLS PANEL (always visible) ===
-    const shipControlsDiv = document.createElement('div');
-    shipControlsDiv.id = 'shipControls';
-    shipControlsDiv.style.cssText = `
+    // === MODE TOGGLE (Camera/Ship) ===
+    const modeToggle = document.createElement('div');
+    modeToggle.id = 'modeToggle';
+    modeToggle.style.cssText = `
         position: fixed;
         top: 20px;
         right: 20px;
         background: rgba(0, 30, 15, 0.9);
         border: 1px solid #44ff88;
         border-radius: 12px;
-        padding: 15px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+        padding: 10px 15px;
         font-family: 'Courier New', monospace;
         color: #44ff88;
         box-shadow: 0 0 20px rgba(68, 255, 136, 0.2);
-        min-width: 180px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
     `;
 
-    const shipTitle = document.createElement('div');
-    shipTitle.textContent = 'SHIP CONTROLS';
-    shipTitle.style.cssText = 'font-size: 12px; letter-spacing: 2px; text-align: center; border-bottom: 1px solid #44ff88; padding-bottom: 8px;';
-    shipControlsDiv.appendChild(shipTitle);
+    const modeLabel = document.createElement('div');
+    modeLabel.textContent = 'CONTROL MODE';
+    modeLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7; text-align: center;';
+    modeToggle.appendChild(modeLabel);
 
-    // Inclination control
-    const incDiv = document.createElement('div');
-    incDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">INCLINATION</div>';
-    const incSlider = document.createElement('input');
-    incSlider.type = 'range';
-    incSlider.min = '-45';
-    incSlider.max = '45';
-    incSlider.value = '0';
-    incSlider.style.cssText = 'width: 100%;';
-    const incValue = document.createElement('div');
-    incValue.style.cssText = 'font-size: 10px; text-align: center;';
-    incValue.textContent = '0°';
-    incSlider.addEventListener('input', (e) => {
-        orbitInclination = parseInt(e.target.value);
-        incValue.textContent = `${orbitInclination}°`;
+    const modeButtons = document.createElement('div');
+    modeButtons.style.cssText = 'display: flex; gap: 5px;';
+
+    const cameraModeBtn = document.createElement('button');
+    cameraModeBtn.textContent = 'CAMERA';
+    cameraModeBtn.style.cssText = `
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #44ff88;
+        border-radius: 6px;
+        background: transparent;
+        color: #44ff88;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        transition: all 0.2s;
+    `;
+
+    const shipModeBtn = document.createElement('button');
+    shipModeBtn.textContent = 'SHIP';
+    shipModeBtn.style.cssText = `
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #44ff88;
+        border-radius: 6px;
+        background: #44ff88;
+        color: #000;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 11px;
+        font-weight: bold;
+        transition: all 0.2s;
+    `;
+
+    function updateModeButtons() {
+        if (controlMode === 'camera') {
+            cameraModeBtn.style.background = '#44ff88';
+            cameraModeBtn.style.color = '#000';
+            cameraModeBtn.style.fontWeight = 'bold';
+            shipModeBtn.style.background = 'transparent';
+            shipModeBtn.style.color = '#44ff88';
+            shipModeBtn.style.fontWeight = 'normal';
+            shipControlPad.style.display = 'none';
+        } else {
+            shipModeBtn.style.background = '#44ff88';
+            shipModeBtn.style.color = '#000';
+            shipModeBtn.style.fontWeight = 'bold';
+            cameraModeBtn.style.background = 'transparent';
+            cameraModeBtn.style.color = '#44ff88';
+            cameraModeBtn.style.fontWeight = 'normal';
+            shipControlPad.style.display = 'flex';
+        }
+    }
+
+    cameraModeBtn.addEventListener('click', () => {
+        controlMode = 'camera';
+        updateModeButtons();
     });
-    incDiv.appendChild(incSlider);
-    incDiv.appendChild(incValue);
-    shipControlsDiv.appendChild(incDiv);
 
-    // Perigee control
-    const periDiv = document.createElement('div');
-    periDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">PERIGEE (closest)</div>';
-    const periSlider = document.createElement('input');
-    periSlider.type = 'range';
-    periSlider.min = '25';
-    periSlider.max = '80';
-    periSlider.value = '45';
-    periSlider.style.cssText = 'width: 100%;';
-    const periValue = document.createElement('div');
-    periValue.style.cssText = 'font-size: 10px; text-align: center;';
-    periValue.textContent = '4.5';
-    periSlider.addEventListener('input', (e) => {
-        orbitPerigee = parseInt(e.target.value) / 10;
-        periValue.textContent = orbitPerigee.toFixed(1);
+    shipModeBtn.addEventListener('click', () => {
+        controlMode = 'ship';
+        updateModeButtons();
     });
-    periDiv.appendChild(periSlider);
-    periDiv.appendChild(periValue);
-    shipControlsDiv.appendChild(periDiv);
 
-    // Apogee control
-    const apoDiv = document.createElement('div');
-    apoDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">APOGEE (farthest)</div>';
-    const apoSlider = document.createElement('input');
-    apoSlider.type = 'range';
-    apoSlider.min = '25';
-    apoSlider.max = '80';
-    apoSlider.value = '45';
-    apoSlider.style.cssText = 'width: 100%;';
-    const apoValue = document.createElement('div');
-    apoValue.style.cssText = 'font-size: 10px; text-align: center;';
-    apoValue.textContent = '4.5';
-    apoSlider.addEventListener('input', (e) => {
-        orbitApogee = parseInt(e.target.value) / 10;
-        apoValue.textContent = orbitApogee.toFixed(1);
+    modeButtons.appendChild(cameraModeBtn);
+    modeButtons.appendChild(shipModeBtn);
+    modeToggle.appendChild(modeButtons);
+
+    // Mode hint
+    const modeHint = document.createElement('div');
+    modeHint.style.cssText = 'font-size: 9px; opacity: 0.6; text-align: center; margin-top: 4px;';
+    modeHint.innerHTML = 'SHIP: Arrows/WASD/Touch<br>CAMERA: Drag to orbit';
+    modeToggle.appendChild(modeHint);
+
+    document.body.appendChild(modeToggle);
+
+    // === SHIP CONTROL PAD (D-pad style) ===
+    const shipControlPad = document.createElement('div');
+    shipControlPad.id = 'shipControlPad';
+    shipControlPad.style.cssText = `
+        position: fixed;
+        bottom: 100px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        z-index: 1000;
+    `;
+
+    const createDpadButton = (direction, symbol) => {
+        const btn = document.createElement('button');
+        btn.innerHTML = symbol;
+        btn.style.cssText = `
+            width: 50px;
+            height: 50px;
+            border: 2px solid #44ff88;
+            border-radius: 8px;
+            background: rgba(0, 30, 15, 0.8);
+            color: #44ff88;
+            font-size: 24px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: none;
+            user-select: none;
+            transition: all 0.1s;
+        `;
+
+        const activate = () => {
+            btn.style.background = '#44ff88';
+            btn.style.color = '#000';
+            shipInput[direction] = true;
+        };
+
+        const deactivate = () => {
+            btn.style.background = 'rgba(0, 30, 15, 0.8)';
+            btn.style.color = '#44ff88';
+            shipInput[direction] = false;
+        };
+
+        // Mouse events
+        btn.addEventListener('mousedown', activate);
+        btn.addEventListener('mouseup', deactivate);
+        btn.addEventListener('mouseleave', deactivate);
+
+        // Touch events
+        btn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            activate();
+        });
+        btn.addEventListener('touchend', deactivate);
+        btn.addEventListener('touchcancel', deactivate);
+
+        return btn;
+    };
+
+    const upBtn = createDpadButton('pitchUp', '&#9650;'); // ▲
+    const downBtn = createDpadButton('pitchDown', '&#9660;'); // ▼
+    const leftBtn = createDpadButton('yawLeft', '&#9664;'); // ◀
+    const rightBtn = createDpadButton('yawRight', '&#9654;'); // ▶
+
+    const topRow = document.createElement('div');
+    topRow.appendChild(upBtn);
+
+    const middleRow = document.createElement('div');
+    middleRow.style.cssText = 'display: flex; gap: 50px;';
+    middleRow.appendChild(leftBtn);
+    middleRow.appendChild(rightBtn);
+
+    const bottomRow = document.createElement('div');
+    bottomRow.appendChild(downBtn);
+
+    shipControlPad.appendChild(topRow);
+    shipControlPad.appendChild(middleRow);
+    shipControlPad.appendChild(bottomRow);
+
+    // D-pad label
+    const dpadLabel = document.createElement('div');
+    dpadLabel.textContent = 'AIM SHIP';
+    dpadLabel.style.cssText = `
+        font-family: 'Courier New', monospace;
+        font-size: 10px;
+        color: #44ff88;
+        letter-spacing: 2px;
+        margin-top: 8px;
+        opacity: 0.7;
+    `;
+    shipControlPad.appendChild(dpadLabel);
+
+    document.body.appendChild(shipControlPad);
+
+    // === KEYBOARD CONTROLS FOR SHIP ===
+    window.addEventListener('keydown', (e) => {
+        if (controlMode !== 'ship') return;
+
+        switch (e.code) {
+            case 'ArrowUp':
+            case 'KeyW':
+                shipInput.pitchUp = true;
+                e.preventDefault();
+                break;
+            case 'ArrowDown':
+            case 'KeyS':
+                shipInput.pitchDown = true;
+                e.preventDefault();
+                break;
+            case 'ArrowLeft':
+            case 'KeyA':
+                shipInput.yawLeft = true;
+                e.preventDefault();
+                break;
+            case 'ArrowRight':
+            case 'KeyD':
+                shipInput.yawRight = true;
+                e.preventDefault();
+                break;
+        }
     });
-    apoDiv.appendChild(apoSlider);
-    apoDiv.appendChild(apoValue);
-    shipControlsDiv.appendChild(apoDiv);
 
-    // Pitch control
-    const pitchDiv = document.createElement('div');
-    pitchDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">PITCH</div>';
-    const pitchSlider = document.createElement('input');
-    pitchSlider.type = 'range';
-    pitchSlider.min = '-30';
-    pitchSlider.max = '30';
-    pitchSlider.value = '0';
-    pitchSlider.style.cssText = 'width: 100%;';
-    const pitchValue = document.createElement('div');
-    pitchValue.style.cssText = 'font-size: 10px; text-align: center;';
-    pitchValue.textContent = '0°';
-    pitchSlider.addEventListener('input', (e) => {
-        shipPitch = parseInt(e.target.value) * Math.PI / 180;
-        pitchValue.textContent = `${e.target.value}°`;
+    window.addEventListener('keyup', (e) => {
+        switch (e.code) {
+            case 'ArrowUp':
+            case 'KeyW':
+                shipInput.pitchUp = false;
+                break;
+            case 'ArrowDown':
+            case 'KeyS':
+                shipInput.pitchDown = false;
+                break;
+            case 'ArrowLeft':
+            case 'KeyA':
+                shipInput.yawLeft = false;
+                break;
+            case 'ArrowRight':
+            case 'KeyD':
+                shipInput.yawRight = false;
+                break;
+        }
     });
-    pitchDiv.appendChild(pitchSlider);
-    pitchDiv.appendChild(pitchValue);
-    shipControlsDiv.appendChild(pitchDiv);
 
-    // Roll control
-    const rollDiv = document.createElement('div');
-    rollDiv.innerHTML = '<div style="font-size:10px;opacity:0.7;margin-bottom:4px;">ROLL</div>';
-    const rollSlider = document.createElement('input');
-    rollSlider.type = 'range';
-    rollSlider.min = '-45';
-    rollSlider.max = '45';
-    rollSlider.value = '0';
-    rollSlider.style.cssText = 'width: 100%;';
-    const rollValue = document.createElement('div');
-    rollValue.style.cssText = 'font-size: 10px; text-align: center;';
-    rollValue.textContent = '0°';
-    rollSlider.addEventListener('input', (e) => {
-        shipRoll = parseInt(e.target.value) * Math.PI / 180;
-        rollValue.textContent = `${e.target.value}°`;
-    });
-    rollDiv.appendChild(rollSlider);
-    rollDiv.appendChild(rollValue);
-    shipControlsDiv.appendChild(rollDiv);
-
-    document.body.appendChild(shipControlsDiv);
+    // Initialize mode button states
+    setTimeout(updateModeButtons, 0);
 
     // === GAME STATUS PANEL (top left) ===
     const gamePanel = document.createElement('div');
@@ -1980,17 +2112,27 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
         return;
     }
 
-    // Orbit
+    // Single pointer drag
     if (pointerState.prevSingle) {
-        const spherical = new THREE.Spherical().setFromVector3(
-            camera.position.clone().sub(cameraTarget)
-        );
-        spherical.theta -= deltaX * rotationSpeed;
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+        if (controlMode === 'ship') {
+            // Ship mode: drag to aim the ship
+            const aimSensitivity = 0.005;
+            shipYaw -= deltaX * aimSensitivity;
+            shipPitch -= deltaY * aimSensitivity;
+            // Clamp pitch
+            shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
+        } else {
+            // Camera mode: orbit around scene
+            const spherical = new THREE.Spherical().setFromVector3(
+                camera.position.clone().sub(cameraTarget)
+            );
+            spherical.theta -= deltaX * rotationSpeed;
+            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
 
-        const newPos = new THREE.Vector3().setFromSpherical(spherical);
-        camera.position.copy(cameraTarget).add(newPos);
-        camera.lookAt(cameraTarget);
+            const newPos = new THREE.Vector3().setFromSpherical(spherical);
+            camera.position.copy(cameraTarget).add(newPos);
+            camera.lookAt(cameraTarget);
+        }
         pointerState.prevSingle = { x: ev.clientX, y: ev.clientY };
     }
 });
@@ -2041,20 +2183,30 @@ renderer.domElement.addEventListener('touchmove', (event) => {
     event.preventDefault();
     const touches = Array.from(event.touches);
 
-    // One finger: Orbit
+    // One finger: Ship aim or Camera orbit depending on mode
     if (touches.length === 1 && touchState.prevPosition) {
         const deltaX = touches[0].clientX - touchState.prevPosition.x;
         const deltaY = touches[0].clientY - touchState.prevPosition.y;
 
-        const spherical = new THREE.Spherical().setFromVector3(
-            camera.position.clone().sub(cameraTarget)
-        );
-        spherical.theta -= deltaX * rotationSpeed;
-        spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+        if (controlMode === 'ship') {
+            // Ship mode: drag to aim the ship
+            const aimSensitivity = 0.005;
+            shipYaw -= deltaX * aimSensitivity;
+            shipPitch -= deltaY * aimSensitivity;
+            // Clamp pitch
+            shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
+        } else {
+            // Camera mode: orbit around scene
+            const spherical = new THREE.Spherical().setFromVector3(
+                camera.position.clone().sub(cameraTarget)
+            );
+            spherical.theta -= deltaX * rotationSpeed;
+            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
 
-        const newPos = new THREE.Vector3().setFromSpherical(spherical);
-        camera.position.copy(cameraTarget).add(newPos);
-        camera.lookAt(cameraTarget);
+            const newPos = new THREE.Vector3().setFromSpherical(spherical);
+            camera.position.copy(cameraTarget).add(newPos);
+            camera.lookAt(cameraTarget);
+        }
 
         touchState.prevPosition = { x: touches[0].clientX, y: touches[0].clientY };
     }
@@ -2378,7 +2530,19 @@ function animate() {
     spaceShip.lookAt(forward);
     spaceShip.rotateY(Math.PI);
 
+    // Update ship rotation from input (only in ship mode)
+    if (controlMode === 'ship') {
+        if (shipInput.pitchUp) shipPitch -= SHIP_ROTATION_SPEED * delta;
+        if (shipInput.pitchDown) shipPitch += SHIP_ROTATION_SPEED * delta;
+        if (shipInput.yawLeft) shipYaw -= SHIP_ROTATION_SPEED * delta;
+        if (shipInput.yawRight) shipYaw += SHIP_ROTATION_SPEED * delta;
+
+        // Clamp pitch to prevent flipping
+        shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
+    }
+
     // Apply custom pitch, yaw, roll orientation offsets
+    spaceShip.rotateY(shipYaw);
     spaceShip.rotateX(shipPitch);
     spaceShip.rotateZ(shipRoll);
 
