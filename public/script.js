@@ -5,9 +5,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-// Enable shadow mapping for eclipses (disabled temporarily for debugging)
-renderer.shadowMap.enabled = false;
-// renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Enable shadow mapping for solar eclipse (moon shadow on Earth)
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // Increase pixel ratio for higher fidelity renders while capping to avoid extreme GPU load.
 const MAX_PIXEL_RATIO = 3; // safety cap
 function updatePixelRatio() {
