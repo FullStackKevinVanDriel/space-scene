@@ -897,14 +897,10 @@ function createAsteroid() {
         spawnDistance * Math.cos(spawnPhi)
     );
 
-    // Velocity: moves toward Earth (origin) with slight random offset
+    // Velocity: moves directly toward Earth (origin at 0,0,0)
     const speed = getAsteroidSpeed();
-    const targetOffset = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2
-    );
-    const direction = targetOffset.sub(asteroidGroup.position).normalize();
+    const earthPosition = new THREE.Vector3(0, 0, 0); // Earth is at origin
+    const direction = earthPosition.sub(asteroidGroup.position).normalize();
 
     // Store asteroid data
     asteroidGroup.userData = {
@@ -1529,23 +1525,6 @@ function updateTargetingHUD() {
             `;
             crosshair.style.cssText = `position:absolute;width:100%;height:100%;`;
             reticle.appendChild(crosshair);
-
-            // Health indicator (for multi-hit asteroids)
-            if (asteroid.userData.maxHealth > 1) {
-                const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
-                const healthIndicator = document.createElement('div');
-                healthIndicator.style.cssText = `
-                    position: absolute;
-                    bottom: -12px;
-                    left: 10%;
-                    width: 80%;
-                    height: 4px;
-                    background: rgba(0,0,0,0.5);
-                    border-radius: 2px;
-                `;
-                healthIndicator.innerHTML = `<div style="width:${healthPct}%;height:100%;background:#ff4444;border-radius:2px;"></div>`;
-                reticle.appendChild(healthIndicator);
-            }
 
             // Distance indicator
             const distLabel = document.createElement('div');
@@ -3135,13 +3114,21 @@ function animate() {
         const hitRadius = EARTH_RADIUS + asteroid.userData.size * 0.5;
 
         if (distanceToEarth < hitRadius) {
-            // Asteroid hit Earth!
-            const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
-            earthHealth -= damage;
-            updateHealthDisplay();
-
-            // Create explosion at impact point
-            createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            // Check if this is an angel asteroid
+            if (asteroid.userData.isAngel) {
+                // Angel hit Earth - restore health!
+                earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                updateHealthDisplay();
+                createAngelExplosion(asteroid.position.clone());
+                showNotification('+25 HEALTH!', '#88ffaa');
+            } else {
+                // Regular asteroid hit Earth - damage!
+                const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
+                earthHealth -= damage;
+                updateHealthDisplay();
+                // Create explosion at impact point
+                createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            }
 
             // Remove asteroid
             scene.remove(asteroid);
@@ -3241,6 +3228,38 @@ function animate() {
                 laserBolts.splice(i, 1);
                 hitAsteroid = true;
                 break;
+            }
+        }
+
+        // Check collision with Earth (friendly fire!)
+        if (!hitAsteroid) {
+            const distanceToEarth = bolt.position.length();
+            if (distanceToEarth < EARTH_RADIUS + 0.3) {
+                // Laser hit Earth!
+                const damage = 2; // Small damage per laser hit
+                earthHealth -= damage;
+                updateHealthDisplay();
+
+                // Create small impact explosion on Earth
+                createExplosion(bolt.position.clone(), 0.3);
+
+                // Flash the Earth briefly
+                earth.material.emissive.setHex(0xff4444);
+                setTimeout(() => {
+                    earth.material.emissive.setHex(0x000000);
+                }, 50);
+
+                // Remove bolt
+                scene.remove(bolt);
+                laserBolts.splice(i, 1);
+                hitAsteroid = true; // Prevent further checks
+
+                // Check game over
+                if (earthHealth <= 0) {
+                    earthHealth = 0;
+                    gameActive = false;
+                    showGameOver();
+                }
             }
         }
 
