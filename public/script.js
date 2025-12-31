@@ -712,6 +712,12 @@ scene.add(spaceShip);
 const laserBolts = [];
 const LASER_SPEED = 80;
 const LASER_MAX_DISTANCE = 150;
+const TARGET_SPAWN_DISTANCE = 120; // Distance where target spawns
+let laserAmmo = 1000;
+
+// Active targets and explosions
+const targets = [];
+const explosions = [];
 
 // Create laser bolt geometry and material (reusable)
 const laserGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 8);
@@ -722,10 +728,120 @@ const laserGlowMat = new THREE.MeshBasicMaterial({
     opacity: 0.6
 });
 
+// Create target (enemy ship/asteroid)
+function createTarget(position) {
+    const targetGroup = new THREE.Group();
+
+    // Simple enemy ship - angular design
+    const bodyGeo = new THREE.OctahedronGeometry(0.8, 0);
+    const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0x884422,
+        metalness: 0.6,
+        roughness: 0.4,
+        emissive: 0x221100,
+        emissiveIntensity: 0.3
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.scale.set(1, 0.5, 1.5);
+    targetGroup.add(body);
+
+    // Engine glow
+    const engineGlow = new THREE.Mesh(
+        new THREE.SphereGeometry(0.3, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 })
+    );
+    engineGlow.position.z = 0.8;
+    targetGroup.add(engineGlow);
+
+    // Red running lights
+    [-0.6, 0.6].forEach(x => {
+        const light = new THREE.Mesh(
+            new THREE.SphereGeometry(0.08, 6, 6),
+            new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        );
+        light.position.set(x, 0, -0.5);
+        targetGroup.add(light);
+    });
+
+    targetGroup.position.copy(position);
+    targetGroup.userData.health = 1;
+    targetGroup.userData.createdAt = Date.now();
+
+    scene.add(targetGroup);
+    targets.push(targetGroup);
+    return targetGroup;
+}
+
+// Create explosion effect
+function createExplosion(position) {
+    const explosionGroup = new THREE.Group();
+    explosionGroup.position.copy(position);
+
+    // Multiple expanding spheres for explosion
+    const colors = [0xff4400, 0xff8800, 0xffcc00, 0xffffff];
+    for (let i = 0; i < 8; i++) {
+        const size = 0.2 + Math.random() * 0.4;
+        const geo = new THREE.SphereGeometry(size, 8, 8);
+        const mat = new THREE.MeshBasicMaterial({
+            color: colors[Math.floor(Math.random() * colors.length)],
+            transparent: true,
+            opacity: 1
+        });
+        const sphere = new THREE.Mesh(geo, mat);
+
+        // Random offset
+        sphere.position.set(
+            (Math.random() - 0.5) * 0.5,
+            (Math.random() - 0.5) * 0.5,
+            (Math.random() - 0.5) * 0.5
+        );
+        sphere.userData.velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 8,
+            (Math.random() - 0.5) * 8
+        );
+        sphere.userData.initialScale = size;
+        explosionGroup.add(sphere);
+    }
+
+    // Bright flash
+    const flash = new THREE.PointLight(0xff8800, 3, 20);
+    explosionGroup.add(flash);
+    explosionGroup.userData.flash = flash;
+
+    explosionGroup.userData.createdAt = Date.now();
+    explosionGroup.userData.duration = 800; // ms
+
+    scene.add(explosionGroup);
+    explosions.push(explosionGroup);
+    return explosionGroup;
+}
+
+// Update ammo display
+function updateAmmoDisplay() {
+    const ammoEl = document.getElementById('ammoCount');
+    if (ammoEl) {
+        ammoEl.textContent = laserAmmo;
+        ammoEl.style.color = laserAmmo < 100 ? '#ff4444' : laserAmmo < 300 ? '#ffaa00' : '#44ff88';
+    }
+}
+
 function fireLasers() {
+    // Check ammo
+    if (laserAmmo <= 0) return;
+
     // Get ship's forward direction (negative Z in local space)
     const shipDirection = new THREE.Vector3(0, 0, -1);
     shipDirection.applyQuaternion(spaceShip.quaternion);
+
+    // Spawn a target in the distance (guaranteed hit)
+    const targetPos = spaceShip.position.clone().add(
+        shipDirection.clone().multiplyScalar(TARGET_SPAWN_DISTANCE + Math.random() * 10)
+    );
+    // Add slight random offset so it's not perfectly centered
+    targetPos.x += (Math.random() - 0.5) * 2;
+    targetPos.y += (Math.random() - 0.5) * 2;
+    createTarget(targetPos);
 
     // Cannon positions (2 weapon pods on sides)
     const cannonOffsets = [
@@ -769,6 +885,10 @@ function fireLasers() {
         scene.add(bolt);
         laserBolts.push(bolt);
     });
+
+    // Decrement ammo (one shot = 2 bolts from 2 cannons)
+    laserAmmo--;
+    updateAmmoDisplay();
 }
 
 // Spacebar listener for firing
@@ -1016,45 +1136,30 @@ function createControlUI() {
     laserDiv.appendChild(laserBtn);
     container.appendChild(laserDiv);
 
-    // === MODE TOGGLE BUTTON ===
-    const modeDiv = document.createElement('div');
-    modeDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 8px;';
+    // === AMMO COUNTER ===
+    const ammoDiv = document.createElement('div');
+    ammoDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 4px;';
 
-    const modeLabel = document.createElement('div');
-    modeLabel.textContent = 'MODE';
-    modeLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
-    modeDiv.appendChild(modeLabel);
+    const ammoLabel = document.createElement('div');
+    ammoLabel.textContent = 'AMMO';
+    ammoLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
+    ammoDiv.appendChild(ammoLabel);
 
-    const modeBtn = document.createElement('button');
-    modeBtn.textContent = 'CAMERA';
-    modeBtn.style.cssText = `
-        background: linear-gradient(180deg, #4488ff 0%, #2255aa 100%);
-        border: 2px solid #4488ff;
-        border-radius: 8px;
-        color: white;
-        font-family: 'Courier New', monospace;
-        font-size: 11px;
+    const ammoCount = document.createElement('div');
+    ammoCount.id = 'ammoCount';
+    ammoCount.textContent = '1000';
+    ammoCount.style.cssText = `
+        font-size: 20px;
         font-weight: bold;
-        letter-spacing: 1px;
-        padding: 8px 12px;
-        cursor: pointer;
-        min-width: 80px;
+        color: #44ff88;
+        text-shadow: 0 0 10px #44ff88;
     `;
-    modeBtn.addEventListener('click', () => {
-        controlMode = controlMode === 'camera' ? 'ship' : 'camera';
-        modeBtn.textContent = controlMode.toUpperCase();
-        modeBtn.style.background = controlMode === 'camera'
-            ? 'linear-gradient(180deg, #4488ff 0%, #2255aa 100%)'
-            : 'linear-gradient(180deg, #44ff88 0%, #22aa55 100%)';
-        modeBtn.style.borderColor = controlMode === 'camera' ? '#4488ff' : '#44ff88';
-        shipControlsDiv.style.display = controlMode === 'ship' ? 'flex' : 'none';
-    });
-    modeDiv.appendChild(modeBtn);
-    container.appendChild(modeDiv);
+    ammoDiv.appendChild(ammoCount);
+    container.appendChild(ammoDiv);
 
     document.body.appendChild(container);
 
-    // === SHIP CONTROLS PANEL (hidden by default) ===
+    // === SHIP CONTROLS PANEL (always visible) ===
     const shipControlsDiv = document.createElement('div');
     shipControlsDiv.id = 'shipControls';
     shipControlsDiv.style.cssText = `
@@ -1065,7 +1170,7 @@ function createControlUI() {
         border: 1px solid #44ff88;
         border-radius: 12px;
         padding: 15px;
-        display: none;
+        display: flex;
         flex-direction: column;
         gap: 12px;
         font-family: 'Courier New', monospace;
@@ -1826,7 +1931,7 @@ function animate() {
         }
     });
 
-    // === LASER BOLT ANIMATION ===
+    // === LASER BOLT ANIMATION & COLLISION DETECTION ===
     for (let i = laserBolts.length - 1; i >= 0; i--) {
         const bolt = laserBolts[i];
 
@@ -1835,10 +1940,69 @@ function animate() {
         bolt.position.add(movement);
         bolt.userData.distanceTraveled += movement.length();
 
-        // Remove if traveled too far
-        if (bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
+        // Check collision with targets
+        let hitTarget = false;
+        for (let j = targets.length - 1; j >= 0; j--) {
+            const target = targets[j];
+            const distance = bolt.position.distanceTo(target.position);
+
+            if (distance < 2.0) { // Hit radius
+                // Create explosion at target position
+                createExplosion(target.position.clone());
+
+                // Remove target
+                scene.remove(target);
+                targets.splice(j, 1);
+
+                // Remove bolt
+                scene.remove(bolt);
+                laserBolts.splice(i, 1);
+                hitTarget = true;
+                break;
+            }
+        }
+
+        // Remove if traveled too far (and didn't hit anything)
+        if (!hitTarget && bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
             scene.remove(bolt);
             laserBolts.splice(i, 1);
+        }
+    }
+
+    // === EXPLOSION ANIMATION ===
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        const explosion = explosions[i];
+        const age = Date.now() - explosion.userData.createdAt;
+        const progress = age / explosion.userData.duration;
+
+        if (progress >= 1) {
+            // Remove explosion
+            scene.remove(explosion);
+            explosions.splice(i, 1);
+        } else {
+            // Animate explosion particles
+            explosion.children.forEach(child => {
+                if (child.userData.velocity) {
+                    child.position.add(child.userData.velocity.clone().multiplyScalar(delta));
+                    child.material.opacity = 1 - progress;
+                    const scale = child.userData.initialScale * (1 + progress * 3);
+                    child.scale.set(scale, scale, scale);
+                }
+            });
+            // Fade flash
+            if (explosion.userData.flash) {
+                explosion.userData.flash.intensity = 3 * (1 - progress);
+            }
+        }
+    }
+
+    // === TARGET CLEANUP (old unfired targets) ===
+    for (let i = targets.length - 1; i >= 0; i--) {
+        const target = targets[i];
+        const age = Date.now() - target.userData.createdAt;
+        if (age > 5000) { // Remove after 5 seconds if not hit
+            scene.remove(target);
+            targets.splice(i, 1);
         }
     }
 
