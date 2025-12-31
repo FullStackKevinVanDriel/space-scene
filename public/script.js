@@ -1925,56 +1925,55 @@ function createControlUI() {
     modeToggle.id = 'modeToggle';
     modeToggle.style.cssText = `
         position: fixed;
-        top: 20px;
-        right: 20px;
-        background: rgba(0, 30, 15, 0.9);
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 30, 15, 0.95);
         border: 1px solid #44ff88;
-        border-radius: 12px;
-        padding: 10px 15px;
+        border-radius: 8px;
+        padding: 6px 8px;
         font-family: 'Courier New', monospace;
         color: #44ff88;
-        box-shadow: 0 0 20px rgba(68, 255, 136, 0.2);
+        box-shadow: 0 0 15px rgba(68, 255, 136, 0.3);
         z-index: 1000;
         display: flex;
-        flex-direction: column;
-        gap: 8px;
+        flex-direction: row;
+        gap: 4px;
+        align-items: center;
     `;
 
     const modeLabel = document.createElement('div');
-    modeLabel.textContent = 'CONTROL MODE';
-    modeLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7; text-align: center;';
+    modeLabel.textContent = 'MODE';
+    modeLabel.style.cssText = 'font-size: 8px; letter-spacing: 1px; opacity: 0.6; margin-right: 4px;';
     modeToggle.appendChild(modeLabel);
 
     const modeButtons = document.createElement('div');
-    modeButtons.style.cssText = 'display: flex; gap: 5px;';
+    modeButtons.style.cssText = 'display: flex; gap: 3px;';
 
     const cameraModeBtn = document.createElement('button');
-    cameraModeBtn.textContent = 'CAMERA';
+    cameraModeBtn.textContent = 'CAM';
     cameraModeBtn.style.cssText = `
-        flex: 1;
-        padding: 8px 12px;
+        padding: 4px 8px;
         border: 1px solid #44ff88;
-        border-radius: 6px;
+        border-radius: 4px;
         background: transparent;
         color: #44ff88;
         cursor: pointer;
         font-family: 'Courier New', monospace;
-        font-size: 11px;
+        font-size: 9px;
         transition: all 0.2s;
     `;
 
     const shipModeBtn = document.createElement('button');
     shipModeBtn.textContent = 'SHIP';
     shipModeBtn.style.cssText = `
-        flex: 1;
-        padding: 8px 12px;
+        padding: 4px 8px;
         border: 1px solid #44ff88;
-        border-radius: 6px;
+        border-radius: 4px;
         background: #44ff88;
         color: #000;
         cursor: pointer;
         font-family: 'Courier New', monospace;
-        font-size: 11px;
+        font-size: 9px;
         font-weight: bold;
         transition: all 0.2s;
     `;
@@ -1988,6 +1987,7 @@ function createControlUI() {
             shipModeBtn.style.color = '#44ff88';
             shipModeBtn.style.fontWeight = 'normal';
             shipControlPad.style.display = 'none';
+            container.style.display = 'flex'; // Show planet/moon controls in camera mode
         } else {
             shipModeBtn.style.background = '#44ff88';
             shipModeBtn.style.color = '#000';
@@ -1996,6 +1996,7 @@ function createControlUI() {
             cameraModeBtn.style.color = '#44ff88';
             cameraModeBtn.style.fontWeight = 'normal';
             shipControlPad.style.display = 'flex';
+            container.style.display = 'none'; // Hide planet/moon controls in ship mode
         }
     }
 
@@ -2013,12 +2014,6 @@ function createControlUI() {
     modeButtons.appendChild(shipModeBtn);
     modeToggle.appendChild(modeButtons);
 
-    // Mode hint
-    const modeHint = document.createElement('div');
-    modeHint.style.cssText = 'font-size: 9px; opacity: 0.6; text-align: center; margin-top: 4px;';
-    modeHint.innerHTML = 'SHIP: Arrows/WASD/Touch<br>CAMERA: Drag to orbit';
-    modeToggle.appendChild(modeHint);
-
     document.body.appendChild(modeToggle);
 
     // === SOUND TOGGLE ===
@@ -2026,41 +2021,41 @@ function createControlUI() {
     soundToggle.id = 'soundToggle';
     soundToggle.style.cssText = `
         position: fixed;
-        bottom: 20px;
-        left: 20px;
-        background: rgba(30, 15, 0, 0.9);
+        bottom: 10px;
+        left: 10px;
+        background: rgba(30, 15, 0, 0.95);
         border: 1px solid #ff8844;
-        border-radius: 12px;
-        padding: 10px 15px;
+        border-radius: 8px;
+        padding: 6px 8px;
         font-family: 'Courier New', monospace;
         color: #ff8844;
-        box-shadow: 0 0 20px rgba(255, 136, 68, 0.2);
+        box-shadow: 0 0 15px rgba(255, 136, 68, 0.3);
         z-index: 1000;
         display: flex;
-        flex-direction: column;
-        gap: 8px;
+        flex-direction: row;
+        gap: 4px;
+        align-items: center;
     `;
 
     const soundLabel = document.createElement('div');
-    soundLabel.textContent = 'SOUND';
-    soundLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7; text-align: center;';
+    soundLabel.textContent = '🔊';
+    soundLabel.style.cssText = 'font-size: 12px; margin-right: 2px;';
     soundToggle.appendChild(soundLabel);
 
     const soundButtons = document.createElement('div');
-    soundButtons.style.cssText = 'display: flex; gap: 5px;';
+    soundButtons.style.cssText = 'display: flex; gap: 3px;';
 
     const soundOnBtn = document.createElement('button');
     soundOnBtn.textContent = 'ON';
     soundOnBtn.style.cssText = `
-        flex: 1;
-        padding: 8px 12px;
+        padding: 4px 8px;
         border: 1px solid #ff8844;
-        border-radius: 6px;
+        border-radius: 4px;
         background: #ff8844;
         color: #000;
         cursor: pointer;
         font-family: 'Courier New', monospace;
-        font-size: 11px;
+        font-size: 9px;
         font-weight: bold;
         transition: all 0.2s;
     `;
@@ -2068,15 +2063,14 @@ function createControlUI() {
     const soundOffBtn = document.createElement('button');
     soundOffBtn.textContent = 'OFF';
     soundOffBtn.style.cssText = `
-        flex: 1;
-        padding: 8px 12px;
+        padding: 4px 8px;
         border: 1px solid #ff8844;
-        border-radius: 6px;
+        border-radius: 4px;
         background: transparent;
         color: #ff8844;
         cursor: pointer;
         font-family: 'Courier New', monospace;
-        font-size: 11px;
+        font-size: 9px;
         transition: all 0.2s;
     `;
 
@@ -2196,19 +2190,6 @@ function createControlUI() {
     shipControlPad.appendChild(middleRow);
     shipControlPad.appendChild(bottomRow);
 
-    // D-pad label
-    const dpadLabel = document.createElement('div');
-    dpadLabel.textContent = 'AIM SHIP';
-    dpadLabel.style.cssText = `
-        font-family: 'Courier New', monospace;
-        font-size: 10px;
-        color: #44ff88;
-        letter-spacing: 2px;
-        margin-top: 8px;
-        opacity: 0.7;
-    `;
-    shipControlPad.appendChild(dpadLabel);
-
     document.body.appendChild(shipControlPad);
 
     // === KEYBOARD CONTROLS FOR SHIP ===
@@ -2268,28 +2249,28 @@ function createControlUI() {
     gamePanel.id = 'gamePanel';
     gamePanel.style.cssText = `
         position: fixed;
-        top: 20px;
-        left: 20px;
-        background: rgba(0, 20, 40, 0.9);
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 20, 40, 0.95);
         border: 1px solid #44aaff;
-        border-radius: 12px;
-        padding: 15px;
+        border-radius: 8px;
+        padding: 8px 10px;
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 6px;
         font-family: 'Courier New', monospace;
         color: #44aaff;
-        box-shadow: 0 0 20px rgba(68, 170, 255, 0.2);
-        min-width: 180px;
+        box-shadow: 0 0 15px rgba(68, 170, 255, 0.3);
+        min-width: 140px;
         z-index: 1000;
     `;
 
-    // Level selector
+    // Level selector - more compact
     const levelDiv = document.createElement('div');
-    levelDiv.innerHTML = '<div style="font-size: 12px; letter-spacing: 2px; margin-bottom: 8px;">DIFFICULTY LEVEL</div>';
+    levelDiv.innerHTML = '<div style="font-size: 9px; letter-spacing: 1px; margin-bottom: 4px; opacity: 0.8;">LVL</div>';
 
     const levelRow = document.createElement('div');
-    levelRow.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+    levelRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
 
     const levelSlider = document.createElement('input');
     levelSlider.type = 'range';
@@ -2306,23 +2287,23 @@ function createControlUI() {
     const levelValue = document.createElement('div');
     levelValue.id = 'levelValue';
     levelValue.textContent = '1';
-    levelValue.style.cssText = 'font-size: 24px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff; min-width: 30px; text-align: center;';
+    levelValue.style.cssText = 'font-size: 18px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff; min-width: 24px; text-align: center;';
 
     levelRow.appendChild(levelSlider);
     levelRow.appendChild(levelValue);
     levelDiv.appendChild(levelRow);
     gamePanel.appendChild(levelDiv);
 
-    // Earth health bar
+    // Earth health bar - more compact
     const healthDiv = document.createElement('div');
-    healthDiv.innerHTML = '<div style="font-size: 10px; letter-spacing: 2px; opacity: 0.7; margin-bottom: 4px;">EARTH HEALTH</div>';
+    healthDiv.innerHTML = '<div style="font-size: 8px; letter-spacing: 1px; opacity: 0.6; margin-bottom: 3px;">HEALTH</div>';
 
     const healthBarContainer = document.createElement('div');
     healthBarContainer.style.cssText = `
         width: 100%;
-        height: 20px;
+        height: 14px;
         background: rgba(0, 0, 0, 0.5);
-        border-radius: 10px;
+        border-radius: 7px;
         overflow: hidden;
         border: 1px solid #44ff88;
     `;
@@ -2340,69 +2321,31 @@ function createControlUI() {
     const healthText = document.createElement('div');
     healthText.id = 'healthText';
     healthText.textContent = '100';
-    healthText.style.cssText = 'font-size: 14px; text-align: center; margin-top: 4px; color: #44ff88;';
+    healthText.style.cssText = 'font-size: 11px; text-align: center; margin-top: 2px; color: #44ff88;';
 
     healthDiv.appendChild(healthBarContainer);
     healthDiv.appendChild(healthText);
     gamePanel.appendChild(healthDiv);
 
-    // Score display
-    const scoreDiv = document.createElement('div');
-    scoreDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #44aaff; padding-top: 10px; margin-top: 5px;';
+    // Stats row - combine score/threats/destroyed in compact format
+    const statsRow = document.createElement('div');
+    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
 
-    const scoreLabel = document.createElement('div');
-    scoreLabel.textContent = 'SCORE';
-    scoreLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
-
-    const scoreValue = document.createElement('div');
-    scoreValue.id = 'scoreValue';
-    scoreValue.textContent = '0';
-    scoreValue.style.cssText = 'font-size: 20px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 10px #ffaa00;';
-
-    scoreDiv.appendChild(scoreLabel);
-    scoreDiv.appendChild(scoreValue);
-    gamePanel.appendChild(scoreDiv);
-
-    // Asteroid count display
-    const asteroidDiv = document.createElement('div');
-    asteroidDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
-
-    const asteroidLabel = document.createElement('div');
-    asteroidLabel.textContent = 'THREATS';
-    asteroidLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
-
-    const asteroidValue = document.createElement('div');
-    asteroidValue.id = 'asteroidCount';
-    asteroidValue.textContent = '0';
-    asteroidValue.style.cssText = 'font-size: 16px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;';
-
-    asteroidDiv.appendChild(asteroidLabel);
-    asteroidDiv.appendChild(asteroidValue);
-    gamePanel.appendChild(asteroidDiv);
-
-    // Destroyed counter
-    const killDiv = document.createElement('div');
-    killDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
-
-    const killLabel = document.createElement('div');
-    killLabel.textContent = 'DESTROYED';
-    killLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
-
-    const killValue = document.createElement('div');
-    killValue.id = 'killCount';
-    killValue.textContent = '0';
-    killValue.style.cssText = 'font-size: 16px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;';
-
-    killDiv.appendChild(killLabel);
-    killDiv.appendChild(killValue);
-    gamePanel.appendChild(killDiv);
-
-    // Next angel indicator
-    const angelDiv = document.createElement('div');
-    angelDiv.id = 'angelIndicator';
-    angelDiv.style.cssText = 'font-size: 9px; text-align: center; opacity: 0.7; color: #88ffaa; margin-top: 5px;';
-    angelDiv.textContent = 'Next heal in 3 kills';
-    gamePanel.appendChild(angelDiv);
+    statsRow.innerHTML = `
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">SCORE</div>
+            <div id="scoreValue" style="font-size: 14px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">THREATS</div>
+            <div id="asteroidCount" style="font-size: 14px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;">0</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">KILLS</div>
+            <div id="killCount" style="font-size: 14px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+        </div>
+    `;
+    gamePanel.appendChild(statsRow);
 
     document.body.appendChild(gamePanel);
 
