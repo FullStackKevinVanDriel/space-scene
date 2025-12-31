@@ -258,13 +258,10 @@ const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
 clouds.receiveShadow = true;
 scene.add(clouds);
 
-// Shadow overlay sphere - shows intense moon shadow during solar eclipse
+// Shadow-only overlay - transparent but darkens where moon shadow falls
 const shadowOverlayGeometry = new THREE.SphereGeometry(2.015, 64, 64);
-const shadowOverlayMaterial = new THREE.MeshLambertMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.5,
-    depthWrite: false
+const shadowOverlayMaterial = new THREE.ShadowMaterial({
+    opacity: 0.7  // How dark the eclipse shadow appears
 });
 const shadowOverlay = new THREE.Mesh(shadowOverlayGeometry, shadowOverlayMaterial);
 shadowOverlay.receiveShadow = true;
