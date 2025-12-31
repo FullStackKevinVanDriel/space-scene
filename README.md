@@ -1,108 +1,60 @@
-# Space Scene Project — FULL DETAILED PLAN RESTORED (One Block)
+ # Space Scene
 
-**Goal**  
-Public 3D web app:  
-- Wireframe Earth sphere rotating in space (speed + direction controllable via API)  
-- Simple space plane flying in from top-left of camera view  
-- Starfield background  
-- Three.js client-side  
+Interactive browser-based 3D space scene (Earth, Moon, starfield, spaceship) using Three.js with a small API to control animation state.
 
-**API**  
-- GET /api/state → { "speed": number, "direction": "cw"|"ccw" }  
-- POST /api/update → JSON body { "speed": number, "direction": "cw"|"ccw" }  
-- Frontend polls /api/state every few seconds to update animation  
-- In-memory state (no DB for prototype)  
+Key points
+- Frontend: `public/index.html`, `public/script.js`, `public/style.css` — Three.js renders Earth, moon, starfield and a flying spaceship.
+- Backend: `server.js` — simple Express server that serves `public/` and exposes a small in-memory API.
+- Serverless-ready: `api/state.js` and `api/update.js` provide Vercel-style handlers if you deploy to Vercel.
+- Assets: `public/skybox/` and `public/spaceship/` contain images used by the scene.
 
-**Deploy**  
-Vercel first (GitHub repo `space-scene`). Later optional vandromeda.com (restore SSH key, Cloudflare DNS, separate server, existing DB/API if persistence needed).
+Run locally
 
-**Dev Environment**  
-Ubuntu latest host. VS Code on host. Docker container for isolation. VS Code Remote-Containers attaches to container. All AI CLI work inside container.
+- Install dependencies:
 
-**API Keys**  
-.env file in project root. npm install dotenv. .gitignore includes .env.
+	npm install
 
-**Multi-AI CLI Agents & Orchestration**  
-Use all available agentic CLIs in parallel terminals inside container for planning, code generation, reviews. Combine best outputs. Aider as main orchestrator (model switching). CrewAI/AutoGen for advanced coordination (role-based or conversational agents).
+- Start the server (use this explicit command; `package.json` scripts point to `index.js` which is not present):
 
-**Tools**  
-- Grok CLI (@superagent/grok-cli or current)  
-- Claude Code CLI  
-- Gemini CLI  
-- Aider  
-- Codex CLI (OpenAI)  
-- Ollama (local models)  
-- GitHub Copilot CLI  
-- CrewAI & AutoGen (Python)  
+	node server.js
 
-**Three.js Animation**  
-Manual requestAnimationFrame loop + THREE.Clock.getDelta() for frame-rate independent rotation. Plane fly-in manual or GSAP CDN. Stars PointsMaterial with random positions.
+- Open the app in your browser:
 
-**Project Structure**  
-space-scene/  
-├── api/state.js  
-├── api/update.js  
-├── public/index.html  
-├── public/style.css  
-├── public/script.js  
-├── Dockerfile  
-├── vercel.json  
-├── .env  
-├── package.json  
-├── .gitignore  
+	http://localhost:3000/
 
-**Full Setup Steps**
+API
 
-**Host**  
-sudo apt update && sudo apt upgrade -y  
-sudo apt install docker.io git curl -y  
-sudo usermod -aG docker $USER  # logout/login  
+- Get current animation state:
 
-sudo snap install --classic code  
+	curl http://localhost:3000/api/state
 
-code --install-extension ms-vscode-remote.remote-containers  
-code --install-extension ms-azuretools.vscode-docker  
-code --install-extension ms-vscode.live-server  
-code --install-extension esbenp.prettier-vscode  
-code --install-extension dbaeumer.vscode-eslint  
-code --install-extension ms-vscode.vscode-typescript-next  
-code --install-extension aerokaido.three-js-snippets  
-code --install-extension frenco.vscode-vercel  
-code --install-extension github.copilot  
-code --install-extension github.copilot-chat  
+- Update animation state (JSON body):
 
-git clone https://github.com/YOURUSERNAME/space-scene.git  
-cd space-scene  
-npm init -y  
-npm install express dotenv  
-mkdir -p public api  
-touch public/index.html public/style.css public/script.js api/state.js api/update.js vercel.json .gitignore .env  
-echo "node_modules/\n.env" > .gitignore  
-echo "OPENAI_API_KEY=\nANTHROPIC_API_KEY=\nXAI_API_KEY=\nGOOGLE_API_KEY=" > .env  
+	curl -X POST -H "Content-Type: application/json" \
+		-d '{"speed":2,"direction":"ccw"}' \
+		http://localhost:3000/api/update
 
-cat > Dockerfile << 'EOF'  
-FROM ubuntu:24.10  
-RUN apt update && apt install -y curl git nodejs npm python3 python3-pip gh  
-RUN npm install -g vercel  
-WORKDIR /app  
-COPY . /app  
-CMD ["bash"]  
-EOF  
+Notes
 
-docker build -t space-dev .  
-docker run -it -v $(pwd):/app space-dev  
+- The server keeps state in memory (no database); restarting the server resets `speed` and `direction` to defaults.
+- The `api/*.js` files are written as serverless handlers and also document the same API used by `server.js`.
+- `Dockerfile` exists for creating a dev container, but its `CMD` is `bash` — if you build the image, run the container and then start the server inside it (e.g., `node server.js`).
 
-**Inside Container**  
-npm install  
-pip install aider-chat crewai autogen  
-curl -fsSL https://ollama.com/install.sh | sh  
-ollama pull llama3  
-gh extension install github/gh-copilot  
-npm install -g @superagent/grok-cli  
+Development
 
-**Attach VS Code**  
-code . → Remote-Containers → Attach to Running Container → space-dev  
+- Tweak visuals in `public/script.js` and swap textures in `public/`.
+- Assets used by the scene live under `public/skybox` and `public/spaceship`.
 
-**Workflow**  
-Multiple terminals in attached VS Code. Run parallel AI CLIs on same task/files. Combine code. Backend first, then Three.js. Test vercel dev. git push → Vercel live.
+Deployment
+
+- Deploy to Vercel (project includes `vercel.json` and `api/` handlers) or any static + Node host. On Vercel the `api/` handlers will be used as serverless endpoints.
+
+Contributing
+
+- Open an issue or PR describing the change. Small improvements: update `public/script.js`, add textures to `public/`, or add persistence for the API state.
+
+License
+
+- No license provided — add a `LICENSE` file if you want to set one.
+
 
