@@ -2026,7 +2026,7 @@ function createControlUI() {
     soundToggle.id = 'soundToggle';
     soundToggle.style.cssText = `
         position: fixed;
-        top: 20px;
+        bottom: 20px;
         left: 20px;
         background: rgba(30, 15, 0, 0.9);
         border: 1px solid #ff8844;
