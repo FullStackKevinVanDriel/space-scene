@@ -724,7 +724,7 @@ const AMMO_REWARD_PER_KILL = 5; // Gain ammo when destroying asteroids
 const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
 // === SOUND SYSTEM ===
-let soundEnabled = true;
+let soundEnabled = localStorage.getItem('soundEnabled') !== 'false'; // Default true, persist across sessions
 let showDpadControls = false; // D-pad movement controls hidden by default
 let audioContext = null;
 let audioContextReady = false;
@@ -2054,6 +2054,7 @@ function createControlUI() {
 
     soundToggleBtn.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
+        localStorage.setItem('soundEnabled', soundEnabled);
         updateSoundToggle();
     });
 
@@ -2061,6 +2062,7 @@ function createControlUI() {
     soundSetting.appendChild(soundLabel);
     soundSetting.appendChild(soundToggleBtn);
     settingsPanel.appendChild(soundSetting);
+    updateSoundToggle(); // Set initial state from localStorage
 
     // D-pad controls toggle in settings
     const dpadSetting = document.createElement('div');
