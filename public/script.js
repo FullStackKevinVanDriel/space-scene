@@ -1519,6 +1519,54 @@ function restartGame() {
     updateLevelDisplay();
 }
 
+// Show level-up notification
+function showLevelUpNotification(level) {
+    const notification = document.createElement('div');
+    notification.id = 'levelUpNotification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) scale(0.5);
+        background: rgba(0, 20, 40, 0.95);
+        border: 3px solid #44ff88;
+        border-radius: 20px;
+        padding: 40px 60px;
+        z-index: 9999;
+        font-family: 'Courier New', monospace;
+        text-align: center;
+        box-shadow: 0 0 50px rgba(68, 255, 136, 0.5), inset 0 0 30px rgba(68, 255, 136, 0.1);
+        opacity: 0;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    `;
+    notification.innerHTML = `
+        <div style="font-size: 18px; color: #44aaff; letter-spacing: 3px; margin-bottom: 10px;">LEVEL COMPLETE</div>
+        <div style="font-size: 72px; font-weight: bold; color: #44ff88; text-shadow: 0 0 30px #44ff88, 0 0 60px #44ff88;">
+            ${level}
+        </div>
+        <div style="font-size: 16px; color: #ffffff; margin-top: 10px; opacity: 0.9;">
+            Destroy ${level} asteroid${level > 1 ? 's' : ''}!
+        </div>
+        <div style="font-size: 12px; color: #44aaff; margin-top: 15px; opacity: 0.7;">
+            Ammo reloaded
+        </div>
+    `;
+    document.body.appendChild(notification);
+
+    // Animate in
+    requestAnimationFrame(() => {
+        notification.style.opacity = '1';
+        notification.style.transform = 'translate(-50%, -50%) scale(1)';
+    });
+
+    // Animate out and remove
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translate(-50%, -50%) scale(1.2)';
+        setTimeout(() => notification.remove(), 400);
+    }, 2000);
+}
+
 // Start a new level
 function startLevel(level) {
     gameLevel = level;
@@ -1541,6 +1589,11 @@ function startLevel(level) {
 
     updateLevelDisplay();
     updateAmmoDisplay();
+
+    // Show level-up notification (skip for level 1 on game start)
+    if (level > 1) {
+        showLevelUpNotification(level);
+    }
 
     console.log(`Level ${level} started - Destroy ${level} asteroids!`);
 }
@@ -2504,6 +2557,48 @@ function createControlUI() {
         min-width: 140px;
         z-index: 1000;
     `;
+
+    // Header row with info button
+    const headerRow = document.createElement('div');
+    headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding-bottom: 4px; border-bottom: 1px solid rgba(68, 170, 255, 0.3); margin-bottom: 2px;';
+
+    const titleLabel = document.createElement('div');
+    titleLabel.textContent = 'EARTH DEFENDER';
+    titleLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; font-weight: bold; color: #44ff88;';
+
+    const infoBtn = document.createElement('button');
+    infoBtn.textContent = '?';
+    infoBtn.style.cssText = `
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 1px solid #44aaff;
+        background: rgba(68, 170, 255, 0.2);
+        color: #44aaff;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+    `;
+    infoBtn.addEventListener('mouseenter', () => {
+        infoBtn.style.background = 'rgba(68, 170, 255, 0.4)';
+        infoBtn.style.boxShadow = '0 0 10px rgba(68, 170, 255, 0.5)';
+    });
+    infoBtn.addEventListener('mouseleave', () => {
+        infoBtn.style.background = 'rgba(68, 170, 255, 0.2)';
+        infoBtn.style.boxShadow = 'none';
+    });
+    infoBtn.addEventListener('click', () => {
+        showInstructions(true);
+    });
+
+    headerRow.appendChild(titleLabel);
+    headerRow.appendChild(infoBtn);
+    gamePanel.appendChild(headerRow);
 
     // Level selector - more compact
     const levelDiv = document.createElement('div');
@@ -3695,8 +3790,14 @@ function animate() {
     }
 }
 
-// Show game instructions
-function showInstructions() {
+// Show game instructions (isResume = true when called from info button)
+function showInstructions(isResume = false) {
+    // Pause game if resuming
+    const wasPaused = !gameActive;
+    if (isResume) {
+        gameActive = false;
+    }
+
     const overlay = document.createElement('div');
     overlay.id = 'instructionsOverlay';
     overlay.style.cssText = `
@@ -3717,7 +3818,7 @@ function showInstructions() {
     overlay.innerHTML = `
         <div style="max-width: 600px; padding: 40px;">
             <h1 style="color: #44ff88; font-size: 36px; text-align: center; margin-bottom: 30px;">
-                🛸 EARTH DEFENDER 🌍
+                EARTH DEFENDER
             </h1>
 
             <div style="font-size: 18px; line-height: 1.8; margin-bottom: 30px;">
@@ -3754,13 +3855,17 @@ function showInstructions() {
                 box-shadow: 0 0 20px rgba(68, 255, 136, 0.5);
                 display: block;
                 margin: 0 auto;
-            ">START GAME</button>
+            ">${isResume ? 'RESUME GAME' : 'START GAME'}</button>
         </div>
     `;
     document.body.appendChild(overlay);
 
     document.getElementById('startGameBtn').addEventListener('click', () => {
         overlay.remove();
+        // Resume game if it wasn't already paused
+        if (isResume && !wasPaused) {
+            gameActive = true;
+        }
     });
 }
 
