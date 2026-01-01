@@ -2735,10 +2735,8 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 
         if (pointerState.prevDistance != null) {
             const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 3;
-            const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-            const currentDist = camera.position.distanceTo(cameraTarget);
-            const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
-            camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+            orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+            updateCameraFromOrbit();
         }
 
         pointerState.prevMidpoint = mid;
@@ -2912,12 +2910,10 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
         cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
 
-        // Zoom (pinch) - 6x multiplier for responsive pinch
+        // Zoom (pinch) - update orbitRadius
         const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 3;
-        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-        const currentDist = camera.position.distanceTo(cameraTarget);
-        const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
-        camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+        updateCameraFromOrbit();
 
         touchState.prevMidpoint = midpoint;
         touchState.prevDistance = distance;
@@ -2966,13 +2962,10 @@ renderer.domElement.addEventListener('wheel', (event) => {
         cameraTarget.addScaledVector(cameraRight, panX);
         cameraTarget.addScaledVector(cameraUp, panY);
     } else {
-        // Zoom (mouse wheel or Ctrl/Meta+gesture)
+        // Zoom (mouse wheel or Ctrl/Meta+gesture) - update orbitRadius
         const zoomAmount = event.deltaY * zoomSpeed;
-        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-        const distance = camera.position.distanceTo(cameraTarget);
-        const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
-
-        camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomAmount));
+        updateCameraFromOrbit();
     }
 }, { passive: false });
 
@@ -3509,19 +3502,10 @@ function animate() {
 
     // Update orientation indicator (human figure matches camera view direction)
     if (window.orientationHuman && window.orientationRenderer) {
-        // Get camera direction relative to target
-        const cameraDir = camera.position.clone().sub(cameraTarget).normalize();
-
-        // Calculate spherical angles from camera position
-        const spherical = new THREE.Spherical().setFromVector3(
-            camera.position.clone().sub(cameraTarget)
-        );
-
-        // Rotate human to show which direction we're viewing from
-        // The human should face the direction the camera is looking
+        // Use persistent orbit angles for smooth continuous rotation display
         window.orientationHuman.rotation.set(0, 0, 0);
-        window.orientationHuman.rotation.y = -spherical.theta + Math.PI;
-        window.orientationHuman.rotation.x = spherical.phi - Math.PI / 2;
+        window.orientationHuman.rotation.y = -orbitTheta + Math.PI;
+        window.orientationHuman.rotation.x = orbitPhi - Math.PI / 2;
 
         window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
     }
