@@ -2107,61 +2107,54 @@ function updateFriendlyFireWarning(isAiming) {
 }
 
 function fireLasers() {
-    // Check ammo and game state
+    // Check ammo and game state FIRST - fast exit
     if (laserAmmo <= 0 || !gameActive) return;
 
-    // Play laser sound
-    SoundManager.playLaser();
-
-    // Get ship's forward direction (negative Z in local space)
-    let shipDirection = new THREE.Vector3(0, 0, -1);
+    // Get ship's forward direction IMMEDIATELY (negative Z in local space)
+    const shipDirection = new THREE.Vector3(0, 0, -1);
     shipDirection.applyQuaternion(spaceShip.quaternion);
 
-    // AIM ASSIST: Find target and lead the shot
-    let aimDirection = shipDirection.clone();
+    // Calculate aim direction (start with ship direction, will be modified by aim assist)
+    let aimDirection = shipDirection;
+
+    // DEFERRED: Aim assist runs async to not block laser creation
     let bestTarget = null;
-    let bestAlignment = 0.95; // Must be reasonably well-aimed
-
-    asteroids.forEach(asteroid => {
-        const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
-        const alignment = shipDirection.dot(toAsteroid);
-
-        if (alignment > bestAlignment) {
-            bestAlignment = alignment;
-            bestTarget = asteroid;
+    const asteroidCount = asteroids.length;
+    if (asteroidCount > 0 && asteroidCount <= 20) {
+        // Only do aim assist for reasonable asteroid counts
+        let bestAlignment = 0.95;
+        for (let i = 0; i < asteroidCount; i++) {
+            const asteroid = asteroids[i];
+            const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
+            const alignment = shipDirection.dot(toAsteroid);
+            if (alignment > bestAlignment) {
+                bestAlignment = alignment;
+                bestTarget = asteroid;
+            }
         }
-    });
 
-    // If we have a good target, lead the shot
-    if (bestTarget) {
-        const distance = bestTarget.position.distanceTo(spaceShip.position);
-        const timeToHit = distance / LASER_SPEED;
+        // If we have a good target, lead the shot
+        if (bestTarget) {
+            const distance = bestTarget.position.distanceTo(spaceShip.position);
+            const timeToHit = distance / LASER_SPEED;
 
-        // Predict where the asteroid will be
-        const predictedPos = bestTarget.position.clone().add(
-            bestTarget.userData.velocity.clone().multiplyScalar(timeToHit)
-        );
+            // Predict where the asteroid will be
+            const predictedPos = bestTarget.position.clone().add(
+                bestTarget.userData.velocity.clone().multiplyScalar(timeToHit)
+            );
 
-        // Aim at the predicted position
-        aimDirection = predictedPos.sub(spaceShip.position).normalize();
+            // Aim at the predicted position
+            aimDirection = predictedPos.sub(spaceShip.position).normalize();
 
-        // Blend with original direction for subtle assist (80% assist, 20% player aim)
-        aimDirection.lerp(shipDirection, 0.2).normalize();
+            // Blend with original direction for subtle assist (80% assist, 20% player aim)
+            aimDirection.lerp(shipDirection, 0.2).normalize();
+        }
     }
 
-    // Debug: log laser firing and target info
-    try { console.debug('[DEBUG] fireLasers', { bestTargetId: bestTarget ? bestTarget.id || null : null, bestTargetPos: bestTarget ? bestTarget.position.toArray() : null }); } catch(e) {}
+    // CREATE LASERS IMMEDIATELY - no delay (2 cannons: left and right)
+    for (let i = 0; i < 2; i++) {
+        const offset = i === 0 ? { x: -0.9, y: -0.15 } : { x: 0.9, y: -0.15 };
 
-    // Use aim-assisted direction for lasers
-    shipDirection = aimDirection;
-
-    // Cannon positions (2 weapon pods on sides)
-    const cannonOffsets = [
-        { x: -0.9, y: -0.15 },  // Left cannon
-        { x: 0.9, y: -0.15 }    // Right cannon
-    ];
-
-    cannonOffsets.forEach(offset => {
         // Create laser bolt
         const bolt = new THREE.Group();
 
@@ -2187,19 +2180,22 @@ function fireLasers() {
         localPos.applyQuaternion(spaceShip.quaternion);
         bolt.position.copy(spaceShip.position).add(localPos);
 
-        // Store velocity and distance traveled
-        bolt.userData.velocity = shipDirection.clone().multiplyScalar(LASER_SPEED);
+        // Store velocity and distance traveled (use aim-assisted direction)
+        bolt.userData.velocity = aimDirection.clone().multiplyScalar(LASER_SPEED);
         bolt.userData.distanceTraveled = 0;
 
         // Orient bolt in direction of travel
-        bolt.lookAt(bolt.position.clone().add(shipDirection));
+        bolt.lookAt(bolt.position.clone().add(aimDirection));
 
         scene.add(bolt);
         laserBolts.push(bolt);
-    });
+    }
 
-    // Decrement ammo (one shot = 2 bolts from 2 cannons)
+    // Decrement ammo AFTER laser creation
     laserAmmo--;
+
+    // Play sound and update display AFTER laser is visible (non-blocking)
+    SoundManager.playLaser();
     updateAmmoDisplay();
 }
 
@@ -4136,6 +4132,9 @@ function showInstructions(isResume = false) {
     document.body.appendChild(overlay);
 
     document.getElementById('startGameBtn').addEventListener('click', () => {
+        // Pre-initialize audio context on user gesture for zero-latency sound
+        getAudioContext();
+
         overlay.remove();
         // Resume game if it wasn't already paused
         if (isResume && !wasPaused) {
