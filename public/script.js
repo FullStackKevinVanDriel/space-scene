@@ -708,6 +708,9 @@ function createSpaceShip() {
 const spaceShip = createSpaceShip();
 scene.add(spaceShip);
 
+// Populate occluding objects for reticle occlusion detection
+occludingObjects = [earth, moon, spaceShip];
+
 // === GAME STATE ===
 let gameLevel = 1; // 1-10, controls asteroid spawn rate
 let earthHealth = 100;
@@ -794,6 +797,10 @@ let laserAmmo = 1000;
 // Active asteroids and explosions
 const asteroids = [];
 const explosions = [];
+
+// Occlusion detection for targeting reticles (reused every frame for performance)
+const occlusionRaycaster = new THREE.Raycaster();
+let occludingObjects = []; // Will be populated after earth, moon, spaceShip are created
 
 // Asteroid spawn settings
 const ASTEROID_SPAWN_MIN_DISTANCE = 120;
@@ -1445,10 +1452,6 @@ function updateTargetingHUD() {
     // Track if we have a locked target
     let lockedTarget = null;
 
-    // Create raycaster for occlusion detection
-    const raycaster = new THREE.Raycaster();
-    const occludingObjects = [earth, moon, spaceShip];
-
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
         const screenPos = projectToScreen(asteroid.position);
@@ -1463,10 +1466,10 @@ function updateTargetingHUD() {
 
             // Check for occlusion - cast ray from camera to asteroid
             const direction = asteroid.position.clone().sub(camera.position).normalize();
-            raycaster.set(camera.position, direction);
-            raycaster.far = distance; // Only check up to the asteroid's distance
+            occlusionRaycaster.set(camera.position, direction);
+            occlusionRaycaster.far = distance; // Only check up to the asteroid's distance
 
-            const intersections = raycaster.intersectObjects(occludingObjects, true);
+            const intersections = occlusionRaycaster.intersectObjects(occludingObjects, true);
             const isOccluded = intersections.length > 0;
 
             // Debug: log occlusion events (remove this after testing)
