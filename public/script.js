@@ -1442,6 +1442,9 @@ function updateTargetingHUD() {
     // Update alignment line (dotted line showing where ship is aiming)
     updateAlignmentLine(shipDirection);
 
+    // Track if we have a locked target
+    let lockedTarget = null;
+
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
         const screenPos = projectToScreen(asteroid.position);
@@ -1458,6 +1461,11 @@ function updateTargetingHUD() {
             const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
             const alignment = shipDirection.dot(toAsteroid);
             const isAligned = alignment > 0.98; // Within ~11 degrees
+
+            // If aligned, this is our locked target
+            if (isAligned) {
+                lockedTarget = asteroid;
+            }
 
             // Create targeting reticle
             const reticle = document.createElement('div');
@@ -1498,37 +1506,46 @@ function updateTargetingHUD() {
             distLabel.textContent = Math.round(distance) + 'm';
             reticle.appendChild(distLabel);
 
-            // Health bar (underneath the reticle)
-            const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
-            const healthBar = document.createElement('div');
-            healthBar.style.cssText = `
-                position: absolute;
-                bottom: -16px;
-                left: 50%;
-                transform: translateX(-50%);
-                width: ${size * 0.8}px;
-                height: 6px;
-                background: rgba(0, 0, 0, 0.8);
-                border: 1px solid ${isAligned ? '#ff4444' : '#44aaff'};
-                border-radius: 3px;
-                overflow: hidden;
-            `;
-
-            // Health fill
-            const healthFill = document.createElement('div');
-            const healthColor = healthPct > 50 ? '#00ff00' : healthPct > 25 ? '#ffaa00' : '#ff0000';
-            healthFill.style.cssText = `
-                width: ${healthPct}%;
-                height: 100%;
-                background: ${healthColor};
-                transition: width 0.1s;
-            `;
-            healthBar.appendChild(healthFill);
-            reticle.appendChild(healthBar);
-
             hudContainer.appendChild(reticle);
         }
     });
+
+    // Update static target health bar (fixed position at bottom center of screen)
+    let targetHealthBar = document.getElementById('targetHealthBar');
+    if (!targetHealthBar) {
+        targetHealthBar = document.createElement('div');
+        targetHealthBar.id = 'targetHealthBar';
+        targetHealthBar.style.cssText = `
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #44aaff;
+            border-radius: 4px;
+            overflow: hidden;
+            z-index: 101;
+            display: none;
+        `;
+        document.body.appendChild(targetHealthBar);
+    }
+
+    // Show/hide and update health bar based on locked target
+    if (lockedTarget) {
+        targetHealthBar.style.display = 'block';
+        targetHealthBar.style.borderColor = '#ff4444';
+
+        const healthPct = (lockedTarget.userData.health / lockedTarget.userData.maxHealth) * 100;
+        const healthColor = healthPct > 50 ? '#00ff00' : healthPct > 25 ? '#ffaa00' : '#ff0000';
+
+        targetHealthBar.innerHTML = `
+            <div style="width:${healthPct}%;height:100%;background:${healthColor};transition:width 0.1s;"></div>
+        `;
+    } else {
+        targetHealthBar.style.display = 'none';
+    }
 }
 
 // Project 3D position to screen coordinates
