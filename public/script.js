@@ -1447,9 +1447,14 @@ function updateTargetingHUD() {
     // Track if we have a locked target
     let lockedTarget = null;
 
-    // Create raycaster for occlusion detection
-    const raycaster = new THREE.Raycaster();
+    // Create/reuse a Raycaster for occlusion detection and limit checks frequency
+    if (!window._hudRaycaster) window._hudRaycaster = new THREE.Raycaster();
+    const raycaster = window._hudRaycaster;
     const occludingObjects = [earth, moon, spaceShip];
+    // Frame-based throttling to avoid heavy per-frame work
+    if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
+    window._hudFrameCount++;
+    const HUD_OCCLUSION_EVERY_N_FRAMES = 5; // only run occlusion check every 5 frames
 
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
@@ -1463,27 +1468,36 @@ function updateTargetingHUD() {
             const baseSize = 40 + asteroid.userData.size * 20;
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
 
-            // Check for occlusion - cast ray from camera to asteroid
-            const direction = asteroid.position.clone().sub(camera.position).normalize();
-            raycaster.set(camera.position, direction);
-            raycaster.far = distance; // Only check up to the asteroid's distance
+            let isOccluded = false;
+            // Only perform raycast occasionally to reduce CPU load
+            if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
+                try {
+                    // Check for occlusion - cast ray from camera to asteroid
+                    const direction = asteroid.position.clone().sub(camera.position).normalize();
+                    raycaster.set(camera.position, direction);
+                    raycaster.near = 0.01;
+                    raycaster.far = Math.max(0.1, distance - 0.01);
 
-            const intersections = raycaster.intersectObjects(occludingObjects, true);
-            const isOccluded = intersections.length > 0;
+                    const intersections = raycaster.intersectObjects(occludingObjects, true);
+                    isOccluded = intersections.length > 0;
 
-            // Debug: log occlusion events (remove this after testing)
-            if (isOccluded && Math.random() < 0.01) { // Log 1% of occlusions to avoid spam
-                const occludingObject = intersections[0].object.parent || intersections[0].object;
-                const objectName = occludingObject === earth ? 'Earth' :
-                                 occludingObject === moon ? 'Moon' :
-                                 occludingObject.parent === spaceShip ? 'Ship' : 'Unknown';
-                console.log(`Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+                    // Debug: occasional occlusion logging
+                    if (isOccluded && Math.random() < 0.01) {
+                        const occludingObject = intersections[0].object.parent || intersections[0].object;
+                        const objectName = occludingObject === earth ? 'Earth' :
+                                         occludingObject === moon ? 'Moon' :
+                                         (occludingObject.parent === spaceShip ? 'Ship' : 'Unknown');
+                        console.log(`[DEBUG] Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+                    }
+                } catch (e) {
+                    // Fail-safe: don't block HUD if raycast errors
+                    console.warn('[DEBUG] occlusion raycast failed', e);
+                    isOccluded = false;
+                }
             }
 
-            // Skip rendering reticle if asteroid is occluded
-            if (isOccluded) {
-                return;
-            }
+            // If occlusion was recently checked and true, skip
+            if (isOccluded) return;
 
             // Check if asteroid is aligned with ship direction
             const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
