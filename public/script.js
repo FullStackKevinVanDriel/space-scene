@@ -899,8 +899,8 @@ function createAsteroid() {
 
     // Velocity: moves directly toward Earth (origin at 0,0,0)
     const speed = getAsteroidSpeed();
-    const earthPosition = new THREE.Vector3(0, 0, 0); // Earth is at origin
-    const direction = earthPosition.sub(asteroidGroup.position).normalize();
+    // Calculate direction FROM asteroid TO Earth (explicit subtraction)
+    const direction = new THREE.Vector3(0, 0, 0).sub(asteroidGroup.position).normalize();
 
     // Store asteroid data
     asteroidGroup.userData = {
@@ -1607,8 +1607,43 @@ function fireLasers() {
     SoundManager.playLaser();
 
     // Get ship's forward direction (negative Z in local space)
-    const shipDirection = new THREE.Vector3(0, 0, -1);
+    let shipDirection = new THREE.Vector3(0, 0, -1);
     shipDirection.applyQuaternion(spaceShip.quaternion);
+
+    // AIM ASSIST: Find target and lead the shot
+    let aimDirection = shipDirection.clone();
+    let bestTarget = null;
+    let bestAlignment = 0.95; // Must be reasonably well-aimed
+
+    asteroids.forEach(asteroid => {
+        const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
+        const alignment = shipDirection.dot(toAsteroid);
+
+        if (alignment > bestAlignment) {
+            bestAlignment = alignment;
+            bestTarget = asteroid;
+        }
+    });
+
+    // If we have a good target, lead the shot
+    if (bestTarget) {
+        const distance = bestTarget.position.distanceTo(spaceShip.position);
+        const timeToHit = distance / LASER_SPEED;
+
+        // Predict where the asteroid will be
+        const predictedPos = bestTarget.position.clone().add(
+            bestTarget.userData.velocity.clone().multiplyScalar(timeToHit)
+        );
+
+        // Aim at the predicted position
+        aimDirection = predictedPos.sub(spaceShip.position).normalize();
+
+        // Blend with original direction for subtle assist (80% assist, 20% player aim)
+        aimDirection.lerp(shipDirection, 0.2).normalize();
+    }
+
+    // Use aim-assisted direction for lasers
+    shipDirection = aimDirection;
 
     // Cannon positions (2 weapon pods on sides)
     const cannonOffsets = [
