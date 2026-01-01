@@ -1467,6 +1467,11 @@ function updateTargetingHUD() {
                 lockedTarget = asteroid;
             }
 
+            // Skip if occluded by Earth, Moon, or the ship (realistic visibility)
+            if (isOccluded(asteroid.position)) {
+                return; // don't render a reticle for this asteroid
+            }
+
             // Create targeting reticle
             const reticle = document.createElement('div');
             reticle.style.cssText = `
@@ -1548,6 +1553,24 @@ function projectToScreen(position) {
         y: (-vector.y * 0.5 + 0.5) * window.innerHeight,
         z: vector.z
     };
+}
+
+// Determine if a world position is occluded from the camera by Earth, Moon or the ship
+function isOccluded(targetPos) {
+    // Ray from camera to target
+    const origin = camera.position.clone();
+    const direction = targetPos.clone().sub(origin);
+    const distance = direction.length();
+    direction.normalize();
+
+    const raycaster = new THREE.Raycaster(origin, direction, 0.01, distance - 0.01);
+
+    // Objects that can occlude the target
+    const occluders = [earth, moon, spaceShip];
+
+    // Intersect (recursive for ship children)
+    const intersects = raycaster.intersectObjects(occluders, true);
+    return intersects.length > 0;
 }
 
 // Create alignment line element
