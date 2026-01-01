@@ -3441,12 +3441,6 @@ function animate() {
                 // Create small impact explosion on Earth
                 createExplosion(bolt.position.clone(), 0.3);
 
-                // Flash the Earth briefly
-                earth.material.emissive.setHex(0xff4444);
-                setTimeout(() => {
-                    earth.material.emissive.setHex(0x000000);
-                }, 50);
-
                 // Remove bolt
                 scene.remove(bolt);
                 laserBolts.splice(i, 1);
