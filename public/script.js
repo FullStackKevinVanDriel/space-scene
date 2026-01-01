@@ -708,6 +708,10 @@ function createSpaceShip() {
 const spaceShip = createSpaceShip();
 scene.add(spaceShip);
 
+// Populate occluding objects for reticle occlusion detection
+occludingObjects = [earth, moon, spaceShip];
+console.log('✓ Occlusion system initialized:', { earth: !!earth, moon: !!moon, spaceShip: !!spaceShip, count: occludingObjects.length });
+
 // === GAME STATE ===
 let gameLevel = 1; // 1-10, controls asteroid spawn rate
 let earthHealth = 100;
@@ -794,6 +798,10 @@ let laserAmmo = 1000;
 // Active asteroids and explosions
 const asteroids = [];
 const explosions = [];
+
+// Occlusion detection for targeting reticles (reused every frame for performance)
+const occlusionRaycaster = new THREE.Raycaster();
+let occludingObjects = []; // Will be populated after earth, moon, spaceShip are created
 
 // Asteroid spawn settings
 const ASTEROID_SPAWN_MIN_DISTANCE = 120;
