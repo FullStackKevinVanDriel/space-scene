@@ -1698,11 +1698,14 @@ let canFire = true;
 const FIRE_COOLDOWN = 150; // ms between shots
 
 window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && canFire) {
+    if (e.code === 'Space') {
         e.preventDefault();
-        fireLasers();
-        canFire = false;
-        setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+        e.stopPropagation();
+        if (canFire) {
+            fireLasers();
+            canFire = false;
+            setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+        }
     }
 });
 
