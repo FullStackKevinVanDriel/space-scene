@@ -3235,8 +3235,8 @@ function animate() {
                         asteroidsDestroyed++;
                         updateKillCountDisplay();
 
-                        // Every 3 kills, spawn an angel asteroid
-                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0) {
+                        // Every 3 kills, spawn an angel asteroid (only if not at full health)
+                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0 && earthHealth < maxEarthHealth) {
                             spawnAngelAsteroid();
                         }
 
