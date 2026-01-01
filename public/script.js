@@ -2014,54 +2014,32 @@ function createControlUI() {
         overflow-y: auto;
     `;
 
-    // Sound toggle in settings
-    const soundSetting = document.createElement('div');
-    soundSetting.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-    const soundIcon = document.createElement('div');
-    soundIcon.textContent = '🔊';
-    soundIcon.style.cssText = 'font-size: 16px;';
-
-    const soundLabel = document.createElement('div');
-    soundLabel.textContent = 'Sound';
-    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
-
-    const soundToggleBtn = document.createElement('button');
-    soundToggleBtn.textContent = 'OFF'; // Start with sound ON, so button shows "OFF" (what you'll switch to)
-    soundToggleBtn.style.cssText = `
-        padding: 8px 16px;
-        border: 2px solid #44ff88;
-        border-radius: 6px;
-        background: #44ff88;
-        color: #000;
+    // Sound toggle in settings - icon is the toggle
+    const soundToggle = document.createElement('div');
+    soundToggle.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
         cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        font-weight: bold;
+        padding: 8px;
+        border-radius: 6px;
         transition: all 0.2s;
-        min-width: 60px;
+        user-select: none;
     `;
 
     function updateSoundToggle() {
-        if (soundEnabled) {
-            // Sound is ON, button shows "OFF" (tap to turn off)
-            soundToggleBtn.textContent = 'OFF';
-        } else {
-            // Sound is OFF, button shows "ON" (tap to turn on)
-            soundToggleBtn.textContent = 'ON';
-        }
+        soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
+        soundToggle.title = soundEnabled ? 'Sound On (click to mute)' : 'Sound Off (click to unmute)';
     }
 
-    soundToggleBtn.addEventListener('click', () => {
+    soundToggle.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
         localStorage.setItem('soundEnabled', soundEnabled);
         updateSoundToggle();
     });
 
-    soundSetting.appendChild(soundIcon);
-    soundSetting.appendChild(soundLabel);
-    soundSetting.appendChild(soundToggleBtn);
-    settingsPanel.appendChild(soundSetting);
+    settingsPanel.appendChild(soundToggle);
     updateSoundToggle(); // Set initial state from localStorage
 
     // D-pad controls toggle in settings
