@@ -727,16 +727,26 @@ const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 let soundEnabled = true;
 let showDpadControls = false; // D-pad movement controls hidden by default
 let audioContext = null;
+let audioContextReady = false;
 
 // Lazy-initialize AudioContext on first user gesture
 function getAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioContextReady = audioContext.state === 'running';
+        } catch (e) {
+            return null;
+        }
     }
     if (audioContext.state === 'suspended') {
-        audioContext.resume();
+        audioContext.resume().then(() => {
+            audioContextReady = true;
+        }).catch(() => {});
+    } else if (audioContext.state === 'running') {
+        audioContextReady = true;
     }
-    return audioContext;
+    return audioContextReady ? audioContext : null;
 }
 
 // Sound manager with synthesized sounds
@@ -744,6 +754,7 @@ const SoundManager = {
     playLaser() {
         if (!soundEnabled) return;
         const ctx = getAudioContext();
+        if (!ctx) return; // Audio not ready yet
 
         const oscillator = ctx.createOscillator();
         const gainNode = ctx.createGain();
@@ -766,6 +777,7 @@ const SoundManager = {
     playExplosion(size = 1) {
         if (!soundEnabled) return;
         const ctx = getAudioContext();
+        if (!ctx) return; // Audio not ready yet
 
         // White noise for explosion
         const bufferSize = ctx.sampleRate * 0.5; // 0.5 second
@@ -2749,7 +2761,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 
         if (pointerState.prevDistance != null) {
             const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 3;
-            orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+            cameraOrbitRadius = Math.max(3, Math.min(50, cameraOrbitRadius + zoomDelta));
             updateCameraFromOrbit();
         }
 
@@ -2924,9 +2936,9 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
         cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
 
-        // Zoom (pinch) - update orbitRadius
+        // Zoom (pinch) - update cameraOrbitRadius
         const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 3;
-        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+        cameraOrbitRadius = Math.max(3, Math.min(50, cameraOrbitRadius + zoomDelta));
         updateCameraFromOrbit();
 
         touchState.prevMidpoint = midpoint;
@@ -2976,9 +2988,9 @@ renderer.domElement.addEventListener('wheel', (event) => {
         cameraTarget.addScaledVector(cameraRight, panX);
         cameraTarget.addScaledVector(cameraUp, panY);
     } else {
-        // Zoom (mouse wheel or Ctrl/Meta+gesture) - update orbitRadius
+        // Zoom (mouse wheel or Ctrl/Meta+gesture) - update cameraOrbitRadius
         const zoomAmount = event.deltaY * zoomSpeed;
-        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomAmount));
+        cameraOrbitRadius = Math.max(3, Math.min(50, cameraOrbitRadius + zoomAmount));
         updateCameraFromOrbit();
     }
 }, { passive: false });
