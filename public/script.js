@@ -709,10 +709,6 @@ const spaceShip = createSpaceShip();
 spaceShip.scale.set(0.5, 0.5, 0.5); // Make ship smaller
 scene.add(spaceShip);
 
-// Populate occluding objects for reticle occlusion detection
-occludingObjects = [earth, moon, spaceShip];
-console.log('✓ Occlusion system initialized:', { earth: !!earth, moon: !!moon, spaceShip: !!spaceShip, count: occludingObjects.length });
-
 // === GAME STATE ===
 let gameLevel = 1; // 1-10
 let earthHealth = 100;
