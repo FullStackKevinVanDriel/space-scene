@@ -1466,28 +1466,31 @@ function updateTargetingHUD() {
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
 
             // Check for occlusion - cast ray from camera to asteroid
-            const direction = asteroid.position.clone().sub(camera.position).normalize();
-            occlusionRaycaster.set(camera.position, direction);
-            occlusionRaycaster.far = distance; // Only check up to the asteroid's distance
+            let isOccluded = false;
+            if (occludingObjects.length > 0) {
+                const direction = asteroid.position.clone().sub(camera.position).normalize();
+                occlusionRaycaster.set(camera.position, direction);
+                occlusionRaycaster.far = distance; // Only check up to the asteroid's distance
 
-            const intersections = occlusionRaycaster.intersectObjects(occludingObjects, true);
-            const isOccluded = intersections.length > 0;
+                const intersections = occlusionRaycaster.intersectObjects(occludingObjects, true);
+                isOccluded = intersections.length > 0;
 
-            // Debug: log occlusion events (remove this after testing)
-            if (isOccluded && Math.random() < 0.01) { // Log 1% of occlusions to avoid spam
-                // Traverse up the hierarchy to find which root object is occluding
-                let obj = intersections[0].object;
-                let objectName = 'Unknown';
+                // Debug: log occlusion events (remove this after testing)
+                if (isOccluded && Math.random() < 0.01) { // Log 1% of occlusions to avoid spam
+                    // Traverse up the hierarchy to find which root object is occluding
+                    let obj = intersections[0].object;
+                    let objectName = 'Unknown';
 
-                // Walk up the hierarchy to find the root occluding object
-                while (obj) {
-                    if (obj === earth) { objectName = 'Earth'; break; }
-                    if (obj === moon) { objectName = 'Moon'; break; }
-                    if (obj === spaceShip) { objectName = 'Ship'; break; }
-                    obj = obj.parent;
+                    // Walk up the hierarchy to find the root occluding object
+                    while (obj) {
+                        if (obj === earth) { objectName = 'Earth'; break; }
+                        if (obj === moon) { objectName = 'Moon'; break; }
+                        if (obj === spaceShip) { objectName = 'Ship'; break; }
+                        obj = obj.parent;
+                    }
+
+                    console.log(`Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m (asteroid at ${distance.toFixed(1)}m)`);
                 }
-
-                console.log(`Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m (asteroid at ${distance.toFixed(1)}m)`);
             }
 
             // Skip rendering reticle if asteroid is occluded
