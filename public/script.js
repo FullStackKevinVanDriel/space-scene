@@ -2908,26 +2908,30 @@ function createControlUI() {
     healthDiv.appendChild(healthText);
     gamePanel.appendChild(healthDiv);
 
-    // Stats row - score/threats/kills/ammo in compact format
+    // Stats row - score/best/threats/kills/ammo in compact format
     const statsRow = document.createElement('div');
-    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
+    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 3px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
 
     statsRow.innerHTML = `
         <div style="text-align: center;">
-            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">SCORE</div>
-            <div id="scoreValue" style="font-size: 12px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
+            <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">SCORE</div>
+            <div id="scoreValue" style="font-size: 11px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
         </div>
         <div style="text-align: center;">
-            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">BEST</div>
-            <div id="highScoreValue" style="font-size: 12px; font-weight: bold; color: #ff44ff; text-shadow: 0 0 8px #ff44ff;">${highScore}</div>
+            <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">BEST</div>
+            <div id="highScoreValue" style="font-size: 11px; font-weight: bold; color: #ff44ff; text-shadow: 0 0 8px #ff44ff;">${highScore}</div>
         </div>
         <div style="text-align: center;">
-            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">KILLS</div>
-            <div id="killCount" style="font-size: 12px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+            <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">THREATS</div>
+            <div id="asteroidCount" style="font-size: 11px; font-weight: bold; color: #ff4444;">0</div>
         </div>
         <div style="text-align: center;">
-            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">AMMO</div>
-            <div id="ammoCount" style="font-size: 12px; font-weight: bold; color: #44aaff; text-shadow: 0 0 8px #44aaff;">1000</div>
+            <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">KILLS</div>
+            <div id="killCount" style="font-size: 11px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">AMMO</div>
+            <div id="ammoCount" style="font-size: 11px; font-weight: bold; color: #44aaff; text-shadow: 0 0 8px #44aaff;">1000</div>
         </div>
     `;
     gamePanel.appendChild(statsRow);
