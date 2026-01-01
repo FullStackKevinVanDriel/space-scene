@@ -899,8 +899,8 @@ function createAsteroid() {
 
     // Velocity: moves directly toward Earth (origin at 0,0,0)
     const speed = getAsteroidSpeed();
-    const earthPosition = new THREE.Vector3(0, 0, 0); // Earth is at origin
-    const direction = earthPosition.sub(asteroidGroup.position).normalize();
+    // Calculate direction FROM asteroid TO Earth (explicit subtraction)
+    const direction = new THREE.Vector3(0, 0, 0).sub(asteroidGroup.position).normalize();
 
     // Store asteroid data
     asteroidGroup.userData = {
@@ -918,6 +918,8 @@ function createAsteroid() {
 
     scene.add(asteroidGroup);
     asteroids.push(asteroidGroup);
+    // Debug: log asteroid spawn
+    try { console.debug('[DEBUG] Asteroid spawned', { position: asteroidGroup.position.toArray(), size, health }); } catch(e) {}
     return asteroidGroup;
 }
 
@@ -1445,6 +1447,15 @@ function updateTargetingHUD() {
     // Track if we have a locked target
     let lockedTarget = null;
 
+    // Create/reuse a Raycaster for occlusion detection and limit checks frequency
+    if (!window._hudRaycaster) window._hudRaycaster = new THREE.Raycaster();
+    const raycaster = window._hudRaycaster;
+    const occludingObjects = [earth, moon, spaceShip];
+    // Frame-based throttling to avoid heavy per-frame work
+    if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
+    window._hudFrameCount++;
+    const HUD_OCCLUSION_EVERY_N_FRAMES = 5; // only run occlusion check every 5 frames
+
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
         const screenPos = projectToScreen(asteroid.position);
@@ -1456,6 +1467,37 @@ function updateTargetingHUD() {
             const distance = camera.position.distanceTo(asteroid.position);
             const baseSize = 40 + asteroid.userData.size * 20;
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
+
+            let isOccluded = false;
+            // Only perform raycast occasionally to reduce CPU load
+            if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
+                try {
+                    // Check for occlusion - cast ray from camera to asteroid
+                    const direction = asteroid.position.clone().sub(camera.position).normalize();
+                    raycaster.set(camera.position, direction);
+                    raycaster.near = 0.01;
+                    raycaster.far = Math.max(0.1, distance - 0.01);
+
+                    const intersections = raycaster.intersectObjects(occludingObjects, true);
+                    isOccluded = intersections.length > 0;
+
+                    // Debug: occasional occlusion logging
+                    if (isOccluded && Math.random() < 0.01) {
+                        const occludingObject = intersections[0].object.parent || intersections[0].object;
+                        const objectName = occludingObject === earth ? 'Earth' :
+                                         occludingObject === moon ? 'Moon' :
+                                         (occludingObject.parent === spaceShip ? 'Ship' : 'Unknown');
+                        console.log(`[DEBUG] Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+                    }
+                } catch (e) {
+                    // Fail-safe: don't block HUD if raycast errors
+                    console.warn('[DEBUG] occlusion raycast failed', e);
+                    isOccluded = false;
+                }
+            }
+
+            // If occlusion was recently checked and true, skip
+            if (isOccluded) return;
 
             // Check if asteroid is aligned with ship direction
             const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
@@ -1667,8 +1709,46 @@ function fireLasers() {
     SoundManager.playLaser();
 
     // Get ship's forward direction (negative Z in local space)
-    const shipDirection = new THREE.Vector3(0, 0, -1);
+    let shipDirection = new THREE.Vector3(0, 0, -1);
     shipDirection.applyQuaternion(spaceShip.quaternion);
+
+    // AIM ASSIST: Find target and lead the shot
+    let aimDirection = shipDirection.clone();
+    let bestTarget = null;
+    let bestAlignment = 0.95; // Must be reasonably well-aimed
+
+    asteroids.forEach(asteroid => {
+        const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
+        const alignment = shipDirection.dot(toAsteroid);
+
+        if (alignment > bestAlignment) {
+            bestAlignment = alignment;
+            bestTarget = asteroid;
+        }
+    });
+
+    // If we have a good target, lead the shot
+    if (bestTarget) {
+        const distance = bestTarget.position.distanceTo(spaceShip.position);
+        const timeToHit = distance / LASER_SPEED;
+
+        // Predict where the asteroid will be
+        const predictedPos = bestTarget.position.clone().add(
+            bestTarget.userData.velocity.clone().multiplyScalar(timeToHit)
+        );
+
+        // Aim at the predicted position
+        aimDirection = predictedPos.sub(spaceShip.position).normalize();
+
+        // Blend with original direction for subtle assist (80% assist, 20% player aim)
+        aimDirection.lerp(shipDirection, 0.2).normalize();
+    }
+
+    // Debug: log laser firing and target info
+    try { console.debug('[DEBUG] fireLasers', { bestTargetId: bestTarget ? bestTarget.id || null : null, bestTargetPos: bestTarget ? bestTarget.position.toArray() : null }); } catch(e) {}
+
+    // Use aim-assisted direction for lasers
+    shipDirection = aimDirection;
 
     // Cannon positions (2 weapon pods on sides)
     const cannonOffsets = [
@@ -1723,16 +1803,19 @@ let canFire = true;
 const FIRE_COOLDOWN = 150; // ms between shots
 
 window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && canFire) {
+    if (e.code === 'Space') {
         e.preventDefault();
-        fireLasers();
-        canFire = false;
-        setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+        e.stopPropagation();
+        if (canFire) {
+            fireLasers();
+            canFire = false;
+            setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+        }
     }
 });
 
 // === ORBIT PARAMETERS ===
-let orbitRadius = 4.5;
+let shipOrbitRadius = 4.5;
 let orbitPerigee = 4.5;  // Closest point (can be adjusted)
 let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
 let orbitInclination = 0; // Degrees of orbital tilt
@@ -1760,9 +1843,9 @@ const shipInput = {
 const SHIP_ROTATION_SPEED = 1.5; // Radians per second
 
 spaceShip.position.set(
-    Math.cos(orbitAngle) * orbitRadius,
+    Math.cos(orbitAngle) * shipOrbitRadius,
     orbitY,
-    Math.sin(orbitAngle) * orbitRadius
+    Math.sin(orbitAngle) * shipOrbitRadius
 );
 
 // Camera control variables
@@ -2422,7 +2505,94 @@ function createControlUI() {
     `;
     gamePanel.appendChild(statsRow);
 
+    // === ORIENTATION INDICATOR (3D human figure) - inside dashboard ===
+    const orientationDiv = document.createElement('div');
+    orientationDiv.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding-top: 6px;
+        border-top: 1px solid rgba(68, 170, 255, 0.3);
+    `;
+
+    const orientationContainer = document.createElement('div');
+    orientationContainer.id = 'orientationIndicator';
+    orientationContainer.style.cssText = `
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgba(68, 170, 255, 0.5);
+        overflow: hidden;
+    `;
+    orientationDiv.appendChild(orientationContainer);
+    gamePanel.appendChild(orientationDiv);
+
     document.body.appendChild(gamePanel);
+
+    // Create mini scene for orientation
+    window.orientationScene = new THREE.Scene();
+    window.orientationCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    window.orientationCamera.position.set(0, 0, 3.5);
+    window.orientationCamera.lookAt(0, 0, 0);
+
+    window.orientationRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    window.orientationRenderer.setSize(60, 60);
+    window.orientationRenderer.setClearColor(0x000000, 0);
+    orientationContainer.appendChild(window.orientationRenderer.domElement);
+
+    // Create simple human figure
+    const humanGroup = new THREE.Group();
+    const humanMaterial = new THREE.MeshBasicMaterial({ color: 0x44aaff });
+
+    // Head
+    const headGeom = new THREE.SphereGeometry(0.2, 16, 16);
+    const head = new THREE.Mesh(headGeom, humanMaterial);
+    head.position.y = 0.75;
+    humanGroup.add(head);
+
+    // Body (torso)
+    const bodyGeom = new THREE.CylinderGeometry(0.12, 0.16, 0.5, 8);
+    const body = new THREE.Mesh(bodyGeom, humanMaterial);
+    body.position.y = 0.35;
+    humanGroup.add(body);
+
+    // Arms
+    const armGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8);
+    const leftArm = new THREE.Mesh(armGeom, humanMaterial);
+    leftArm.position.set(-0.25, 0.4, 0);
+    leftArm.rotation.z = Math.PI / 4;
+    humanGroup.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeom, humanMaterial);
+    rightArm.position.set(0.25, 0.4, 0);
+    rightArm.rotation.z = -Math.PI / 4;
+    humanGroup.add(rightArm);
+
+    // Legs
+    const legGeom = new THREE.CylinderGeometry(0.06, 0.05, 0.5, 8);
+    const leftLeg = new THREE.Mesh(legGeom, humanMaterial);
+    leftLeg.position.set(-0.1, -0.15, 0);
+    humanGroup.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeom, humanMaterial);
+    rightLeg.position.set(0.1, -0.15, 0);
+    humanGroup.add(rightLeg);
+
+    // Add direction indicator (nose/front marker)
+    const noseGeom = new THREE.ConeGeometry(0.06, 0.12, 8);
+    const noseMaterial = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+    const nose = new THREE.Mesh(noseGeom, noseMaterial);
+    nose.position.set(0, 0.75, 0.25);
+    nose.rotation.x = Math.PI / 2;
+    humanGroup.add(nose);
+
+    window.orientationScene.add(humanGroup);
+    window.orientationHuman = humanGroup;
+
+    // Add subtle lighting
+    const orientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    window.orientationScene.add(orientLight);
 
     // Slider styling and threat animation
     const style = document.createElement('style');
@@ -2526,6 +2696,37 @@ function createControlUI() {
 
 createControlUI();
 
+// === CAMERA ORBIT STATE (persistent angles for gyroscope-like rotation) ===
+// Store cumulative angles to allow unlimited rotation in all directions
+let orbitTheta = 0;  // Horizontal angle (longitude)
+let orbitPhi = Math.PI / 2;  // Vertical angle (latitude) - start at equator
+let cameraOrbitRadius = 15;  // Distance from target
+
+// Initialize from current camera position
+(function initOrbitAngles() {
+    const spherical = new THREE.Spherical().setFromVector3(
+        camera.position.clone().sub(cameraTarget)
+    );
+    orbitTheta = spherical.theta;
+    orbitPhi = spherical.phi;
+    cameraOrbitRadius = spherical.radius;
+})();
+
+// Update camera position from orbit angles (handles any angle values)
+function updateCameraFromOrbit() {
+    // Use sin/cos directly - they handle any angle value naturally
+    const x = cameraOrbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+    const y = cameraOrbitRadius * Math.cos(orbitPhi);
+    const z = cameraOrbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+
+        camera.position.set(
+        cameraTarget.x + x,
+        cameraTarget.y + y,
+        cameraTarget.z + z
+    );
+    camera.lookAt(cameraTarget);
+}
+
 // === POINTER EVENTS UNIFIED INPUT ===
 // Use pointer events to handle mouse, touch, and stylus uniformly. Behavior:
 // - Single pointer: orbit (left-drag) by default. If Shift held => pan, Ctrl held => vertical drag zoom.
@@ -2594,10 +2795,8 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 
         if (pointerState.prevDistance != null) {
             const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 3;
-            const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-            const currentDist = camera.position.distanceTo(cameraTarget);
-            const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
-            camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+            orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+            updateCameraFromOrbit();
         }
 
         pointerState.prevMidpoint = mid;
@@ -2663,16 +2862,10 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
             // Clamp pitch
             shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
         } else {
-            // Camera mode: orbit around scene
-            const spherical = new THREE.Spherical().setFromVector3(
-                camera.position.clone().sub(cameraTarget)
-            );
-            spherical.theta -= deltaX * rotationSpeed;
-            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
-
-            const newPos = new THREE.Vector3().setFromSpherical(spherical);
-            camera.position.copy(cameraTarget).add(newPos);
-            camera.lookAt(cameraTarget);
+            // Camera mode: orbit around scene using persistent angles
+            orbitTheta -= deltaX * rotationSpeed;
+            orbitPhi -= deltaY * rotationSpeed;
+            updateCameraFromOrbit();
         }
         pointerState.prevSingle = { x: ev.clientX, y: ev.clientY };
     }
@@ -2743,16 +2936,10 @@ renderer.domElement.addEventListener('touchmove', (event) => {
             // Clamp pitch
             shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
         } else {
-            // Camera mode: orbit around scene
-            const spherical = new THREE.Spherical().setFromVector3(
-                camera.position.clone().sub(cameraTarget)
-            );
-            spherical.theta -= deltaX * rotationSpeed;
-            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
-
-            const newPos = new THREE.Vector3().setFromSpherical(spherical);
-            camera.position.copy(cameraTarget).add(newPos);
-            camera.lookAt(cameraTarget);
+            // Camera mode: orbit around scene using persistent angles
+            orbitTheta -= deltaX * rotationSpeed;
+            orbitPhi -= deltaY * rotationSpeed;
+            updateCameraFromOrbit();
         }
 
         touchState.prevPosition = { x: touches[0].clientX, y: touches[0].clientY };
@@ -2783,12 +2970,10 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
         cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
 
-        // Zoom (pinch) - 6x multiplier for responsive pinch
+        // Zoom (pinch) - update orbitRadius
         const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 3;
-        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-        const currentDist = camera.position.distanceTo(cameraTarget);
-        const newDist = Math.max(3, Math.min(50, currentDist + zoomDelta));
-        camera.position.copy(cameraTarget).addScaledVector(direction, newDist);
+        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+        updateCameraFromOrbit();
 
         touchState.prevMidpoint = midpoint;
         touchState.prevDistance = distance;
@@ -2837,13 +3022,10 @@ renderer.domElement.addEventListener('wheel', (event) => {
         cameraTarget.addScaledVector(cameraRight, panX);
         cameraTarget.addScaledVector(cameraUp, panY);
     } else {
-        // Zoom (mouse wheel or Ctrl/Meta+gesture)
+        // Zoom (mouse wheel or Ctrl/Meta+gesture) - update orbitRadius
         const zoomAmount = event.deltaY * zoomSpeed;
-        const direction = new THREE.Vector3().subVectors(camera.position, cameraTarget).normalize();
-        const distance = camera.position.distanceTo(cameraTarget);
-        const newDistance = Math.max(3, Math.min(50, distance + zoomAmount));
-
-        camera.position.copy(cameraTarget).addScaledVector(direction, newDistance);
+        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomAmount));
+        updateCameraFromOrbit();
     }
 }, { passive: false });
 
@@ -2882,9 +3064,6 @@ function animate() {
 
     // Arrow key controls with modifiers
     // Plain arrows: Orbit | Shift+arrows: Pan | Ctrl+arrows: Zoom
-    const spherical = new THREE.Spherical().setFromVector3(
-        camera.position.clone().sub(cameraTarget)
-    );
     let cameraChanged = false;
 
     const hasArrow = keys['ArrowLeft'] || keys['ArrowRight'] || keys['ArrowUp'] || keys['ArrowDown'];
@@ -2913,43 +3092,40 @@ function animate() {
             camera.position.addScaledVector(cameraUp, -keyPanSpeed);
             cameraTarget.addScaledVector(cameraUp, -keyPanSpeed);
         }
-        cameraChanged = true;
     } else if (hasArrow && keys.ctrl && !keys.shift) {
         // CTRL + Up/Down: Zoom
         if (keys['ArrowUp']) {
-            spherical.radius = Math.max(3, spherical.radius - 0.3);
+            cameraOrbitRadius = Math.max(3, cameraOrbitRadius - 0.3);
             cameraChanged = true;
         }
         if (keys['ArrowDown']) {
-            spherical.radius = Math.min(50, spherical.radius + 0.3);
+            cameraOrbitRadius = Math.min(50, cameraOrbitRadius + 0.3);
             cameraChanged = true;
         }
-        // CTRL + Left/Right: Also orbit (or could be something else)
-        if (keys['ArrowLeft']) { spherical.theta += keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowRight']) { spherical.theta -= keyRotationSpeed; cameraChanged = true; }
+        // CTRL + Left/Right: Also orbit
+        if (keys['ArrowLeft']) { orbitTheta += keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowRight']) { orbitTheta -= keyRotationSpeed; cameraChanged = true; }
     } else if (hasArrow) {
-        // Plain arrows: Orbit
-        if (keys['ArrowLeft']) { spherical.theta += keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowRight']) { spherical.theta -= keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowUp']) { spherical.phi = Math.max(0.1, spherical.phi - keyRotationSpeed); cameraChanged = true; }
-        if (keys['ArrowDown']) { spherical.phi = Math.min(Math.PI - 0.1, spherical.phi + keyRotationSpeed); cameraChanged = true; }
+        // Plain arrows: Orbit using persistent angles (no limits)
+        if (keys['ArrowLeft']) { orbitTheta += keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowRight']) { orbitTheta -= keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowUp']) { orbitPhi -= keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowDown']) { orbitPhi += keyRotationSpeed; cameraChanged = true; }
     }
 
     // +/= and -/_ keys: Zoom (always)
     if (keys['Equal'] || keys['NumpadAdd']) {
-        spherical.radius = Math.max(3, spherical.radius - 0.3);
+        cameraOrbitRadius = Math.max(3, cameraOrbitRadius - 0.3);
         cameraChanged = true;
     }
     if (keys['Minus'] || keys['NumpadSubtract']) {
-        spherical.radius = Math.min(50, spherical.radius + 0.3);
+        cameraOrbitRadius = Math.min(50, cameraOrbitRadius + 0.3);
         cameraChanged = true;
     }
 
     // Apply camera changes
     if (cameraChanged) {
-        const newPos = new THREE.Vector3().setFromSpherical(spherical);
-        camera.position.copy(cameraTarget).add(newPos);
-        camera.lookAt(cameraTarget);
+        updateCameraFromOrbit();
     }
 
     // Rotate Earth
@@ -3168,6 +3344,11 @@ function animate() {
         const movement = asteroid.userData.velocity.clone().multiplyScalar(delta);
         asteroid.position.add(movement);
 
+        // Debug: occasional log for asteroid movement
+        if (Math.random() < 0.004) {
+            try { console.debug('[DEBUG] Asteroid move', { idx: i, pos: asteroid.position.toArray(), vel: asteroid.userData.velocity.toArray() }); } catch(e) {}
+        }
+
         // Rotate asteroid
         const rotSpeed = asteroid.userData.rotationSpeed;
         asteroid.rotation.x += rotSpeed.x * delta;
@@ -3260,8 +3441,8 @@ function animate() {
                         asteroidsDestroyed++;
                         updateKillCountDisplay();
 
-                        // Every 3 kills, spawn an angel asteroid
-                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0) {
+                        // Every 3 kills, spawn an angel asteroid (only if not at full health)
+                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0 && earthHealth < maxEarthHealth) {
                             spawnAngelAsteroid();
                         }
 
@@ -3378,6 +3559,16 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
+
+    // Update orientation indicator (human figure matches camera view direction)
+    if (window.orientationHuman && window.orientationRenderer) {
+        // Use persistent orbit angles for smooth continuous rotation display
+        window.orientationHuman.rotation.set(0, 0, 0);
+        window.orientationHuman.rotation.y = -orbitTheta + Math.PI;
+        window.orientationHuman.rotation.x = orbitPhi - Math.PI / 2;
+
+        window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
+    }
 
     if (composer) {
         composer.render();
