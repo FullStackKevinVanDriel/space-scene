@@ -1,11 +1,17 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/**/*.js", "use": "@vercel/node" },
-    { "src": "public/**/*", "use": "@vercel/static" }
+    {
+      "src": "api/leaderboard.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
   ],
   "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/api/leaderboard", "dest": "/api/leaderboard.js" },
     { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }
