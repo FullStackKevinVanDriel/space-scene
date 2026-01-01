@@ -1447,9 +1447,14 @@ function updateTargetingHUD() {
     // Track if we have a locked target
     let lockedTarget = null;
 
-    // Create raycaster for occlusion detection
-    const raycaster = new THREE.Raycaster();
+    // Create/reuse a Raycaster for occlusion detection and limit checks frequency
+    if (!window._hudRaycaster) window._hudRaycaster = new THREE.Raycaster();
+    const raycaster = window._hudRaycaster;
     const occludingObjects = [earth, moon, spaceShip];
+    // Frame-based throttling to avoid heavy per-frame work
+    if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
+    window._hudFrameCount++;
+    const HUD_OCCLUSION_EVERY_N_FRAMES = 5; // only run occlusion check every 5 frames
 
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
@@ -1463,27 +1468,36 @@ function updateTargetingHUD() {
             const baseSize = 40 + asteroid.userData.size * 20;
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
 
-            // Check for occlusion - cast ray from camera to asteroid
-            const direction = asteroid.position.clone().sub(camera.position).normalize();
-            raycaster.set(camera.position, direction);
-            raycaster.far = distance; // Only check up to the asteroid's distance
+            let isOccluded = false;
+            // Only perform raycast occasionally to reduce CPU load
+            if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
+                try {
+                    // Check for occlusion - cast ray from camera to asteroid
+                    const direction = asteroid.position.clone().sub(camera.position).normalize();
+                    raycaster.set(camera.position, direction);
+                    raycaster.near = 0.01;
+                    raycaster.far = Math.max(0.1, distance - 0.01);
 
-            const intersections = raycaster.intersectObjects(occludingObjects, true);
-            const isOccluded = intersections.length > 0;
+                    const intersections = raycaster.intersectObjects(occludingObjects, true);
+                    isOccluded = intersections.length > 0;
 
-            // Debug: log occlusion events (remove this after testing)
-            if (isOccluded && Math.random() < 0.01) { // Log 1% of occlusions to avoid spam
-                const occludingObject = intersections[0].object.parent || intersections[0].object;
-                const objectName = occludingObject === earth ? 'Earth' :
-                                 occludingObject === moon ? 'Moon' :
-                                 occludingObject.parent === spaceShip ? 'Ship' : 'Unknown';
-                console.log(`Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+                    // Debug: occasional occlusion logging
+                    if (isOccluded && Math.random() < 0.01) {
+                        const occludingObject = intersections[0].object.parent || intersections[0].object;
+                        const objectName = occludingObject === earth ? 'Earth' :
+                                         occludingObject === moon ? 'Moon' :
+                                         (occludingObject.parent === spaceShip ? 'Ship' : 'Unknown');
+                        console.log(`[DEBUG] Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+                    }
+                } catch (e) {
+                    // Fail-safe: don't block HUD if raycast errors
+                    console.warn('[DEBUG] occlusion raycast failed', e);
+                    isOccluded = false;
+                }
             }
 
-            // Skip rendering reticle if asteroid is occluded
-            if (isOccluded) {
-                return;
-            }
+            // If occlusion was recently checked and true, skip
+            if (isOccluded) return;
 
             // Check if asteroid is aligned with ship direction
             const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
@@ -1741,7 +1755,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // === ORBIT PARAMETERS ===
-let orbitRadius = 4.5;
+let shipOrbitRadius = 4.5;
 let orbitPerigee = 4.5;  // Closest point (can be adjusted)
 let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
 let orbitInclination = 0; // Degrees of orbital tilt
@@ -1769,9 +1783,9 @@ const shipInput = {
 const SHIP_ROTATION_SPEED = 1.5; // Radians per second
 
 spaceShip.position.set(
-    Math.cos(orbitAngle) * orbitRadius,
+    Math.cos(orbitAngle) * shipOrbitRadius,
     orbitY,
-    Math.sin(orbitAngle) * orbitRadius
+    Math.sin(orbitAngle) * shipOrbitRadius
 );
 
 // Camera control variables
@@ -2626,7 +2640,7 @@ createControlUI();
 // Store cumulative angles to allow unlimited rotation in all directions
 let orbitTheta = 0;  // Horizontal angle (longitude)
 let orbitPhi = Math.PI / 2;  // Vertical angle (latitude) - start at equator
-let orbitRadius = 15;  // Distance from target
+let cameraOrbitRadius = 15;  // Distance from target
 
 // Initialize from current camera position
 (function initOrbitAngles() {
@@ -2635,17 +2649,17 @@ let orbitRadius = 15;  // Distance from target
     );
     orbitTheta = spherical.theta;
     orbitPhi = spherical.phi;
-    orbitRadius = spherical.radius;
+    cameraOrbitRadius = spherical.radius;
 })();
 
 // Update camera position from orbit angles (handles any angle values)
 function updateCameraFromOrbit() {
     // Use sin/cos directly - they handle any angle value naturally
-    const x = orbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
-    const y = orbitRadius * Math.cos(orbitPhi);
-    const z = orbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+    const x = cameraOrbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+    const y = cameraOrbitRadius * Math.cos(orbitPhi);
+    const z = cameraOrbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
 
-    camera.position.set(
+        camera.position.set(
         cameraTarget.x + x,
         cameraTarget.y + y,
         cameraTarget.z + z
@@ -3028,11 +3042,11 @@ function animate() {
     } else if (hasArrow && keys.ctrl && !keys.shift) {
         // CTRL + Up/Down: Zoom
         if (keys['ArrowUp']) {
-            orbitRadius = Math.max(3, orbitRadius - 0.3);
+            cameraOrbitRadius = Math.max(3, cameraOrbitRadius - 0.3);
             cameraChanged = true;
         }
         if (keys['ArrowDown']) {
-            orbitRadius = Math.min(50, orbitRadius + 0.3);
+            cameraOrbitRadius = Math.min(50, cameraOrbitRadius + 0.3);
             cameraChanged = true;
         }
         // CTRL + Left/Right: Also orbit
@@ -3048,11 +3062,11 @@ function animate() {
 
     // +/= and -/_ keys: Zoom (always)
     if (keys['Equal'] || keys['NumpadAdd']) {
-        orbitRadius = Math.max(3, orbitRadius - 0.3);
+        cameraOrbitRadius = Math.max(3, cameraOrbitRadius - 0.3);
         cameraChanged = true;
     }
     if (keys['Minus'] || keys['NumpadSubtract']) {
-        orbitRadius = Math.min(50, orbitRadius + 0.3);
+        cameraOrbitRadius = Math.min(50, cameraOrbitRadius + 0.3);
         cameraChanged = true;
     }
 
