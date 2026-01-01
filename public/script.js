@@ -719,7 +719,7 @@ let gameActive = true;
 // NEW: Fixed asteroid count per level (level = number of targets)
 let levelAsteroidsRemaining = 0; // Targets left to destroy in current level
 let levelAsteroidsTotal = 0; // Total targets for current level
-const AMMO_PER_LEVEL = 100; // Laser ammo given at start of each level
+const AMMO_PER_ASTEROID = 200; // Laser ammo given per asteroid in level
 
 // Track destroyed asteroids for rewards
 let asteroidsDestroyed = 0;
@@ -1548,7 +1548,7 @@ function showLevelUpNotification(level) {
             Destroy ${level} asteroid${level > 1 ? 's' : ''}!
         </div>
         <div style="font-size: 12px; color: #44aaff; margin-top: 15px; opacity: 0.7;">
-            Ammo reloaded
+            +${AMMO_PER_ASTEROID * level} ammo
         </div>
     `;
     document.body.appendChild(notification);
@@ -1575,8 +1575,8 @@ function startLevel(level) {
     levelAsteroidsTotal = level;
     levelAsteroidsRemaining = level;
 
-    // Reload ammo for new level
-    laserAmmo = AMMO_PER_LEVEL;
+    // Reload ammo for new level (200 per asteroid)
+    laserAmmo = AMMO_PER_ASTEROID * level;
 
     // Clear any existing asteroids
     asteroids.forEach(a => scene.remove(a));
@@ -3828,7 +3828,7 @@ function showInstructions(isResume = false) {
                 <p style="margin-top: 20px;"><strong style="color: #ffff44;">LEVEL SYSTEM:</strong></p>
                 <p>• Level 1 = 1 asteroid, Level 2 = 2 asteroids, ..., Level 10 = 10 asteroids</p>
                 <p>• Destroy all targets to advance to the next level</p>
-                <p>• Each level reloads your laser ammo (100 shots)</p>
+                <p>• Each level gives 200 ammo per asteroid (Level 5 = 1000 ammo)</p>
 
                 <p style="margin-top: 20px;"><strong style="color: #ffff44;">CONTROLS:</strong></p>
                 <p>• <strong>Mouse/Touch:</strong> Aim and rotate ship or camera</p>
