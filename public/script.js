@@ -1470,6 +1470,8 @@ function updateTargetingHUD() {
     if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
     window._hudFrameCount++;
     const HUD_OCCLUSION_EVERY_N_FRAMES = 5; // only run occlusion check every 5 frames
+    // Persistent occlusion state map (keyed by asteroid UUID)
+    if (!window._asteroidOcclusionState) window._asteroidOcclusionState = new Map();
 
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
@@ -1483,7 +1485,9 @@ function updateTargetingHUD() {
             const baseSize = 40 + asteroid.userData.size * 20;
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
 
-            let isOccluded = false;
+            // Get persisted occlusion state, default to false
+            let isOccluded = window._asteroidOcclusionState.get(asteroid.uuid) || false;
+
             // Only perform raycast occasionally to reduce CPU load
             if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
                 try {
@@ -1496,22 +1500,17 @@ function updateTargetingHUD() {
                     const intersections = raycaster.intersectObjects(occludingObjects, true);
                     isOccluded = intersections.length > 0;
 
-                    // Debug: occasional occlusion logging
-                    if (isOccluded && Math.random() < 0.01) {
-                        const occludingObject = intersections[0].object.parent || intersections[0].object;
-                        const objectName = occludingObject === earth ? 'Earth' :
-                                         occludingObject === moon ? 'Moon' :
-                                         (occludingObject.parent === spaceShip ? 'Ship' : 'Unknown');
-                        console.log(`[DEBUG] Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
-                    }
+                    // Persist the occlusion state
+                    window._asteroidOcclusionState.set(asteroid.uuid, isOccluded);
                 } catch (e) {
                     // Fail-safe: don't block HUD if raycast errors
                     console.warn('[DEBUG] occlusion raycast failed', e);
                     isOccluded = false;
+                    window._asteroidOcclusionState.set(asteroid.uuid, false);
                 }
             }
 
-            // If occlusion was recently checked and true, skip
+            // If asteroid is occluded, skip drawing reticle
             if (isOccluded) return;
 
             // Check if asteroid is aligned with ship direction
