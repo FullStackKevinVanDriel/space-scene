@@ -1445,6 +1445,10 @@ function updateTargetingHUD() {
     // Track if we have a locked target
     let lockedTarget = null;
 
+    // Create raycaster for occlusion detection
+    const raycaster = new THREE.Raycaster();
+    const occludingObjects = [earth, moon, spaceShip];
+
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
         const screenPos = projectToScreen(asteroid.position);
@@ -1456,6 +1460,28 @@ function updateTargetingHUD() {
             const distance = camera.position.distanceTo(asteroid.position);
             const baseSize = 40 + asteroid.userData.size * 20;
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
+
+            // Check for occlusion - cast ray from camera to asteroid
+            const direction = asteroid.position.clone().sub(camera.position).normalize();
+            raycaster.set(camera.position, direction);
+            raycaster.far = distance; // Only check up to the asteroid's distance
+
+            const intersections = raycaster.intersectObjects(occludingObjects, true);
+            const isOccluded = intersections.length > 0;
+
+            // Debug: log occlusion events (remove this after testing)
+            if (isOccluded && Math.random() < 0.01) { // Log 1% of occlusions to avoid spam
+                const occludingObject = intersections[0].object.parent || intersections[0].object;
+                const objectName = occludingObject === earth ? 'Earth' :
+                                 occludingObject === moon ? 'Moon' :
+                                 occludingObject.parent === spaceShip ? 'Ship' : 'Unknown';
+                console.log(`Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+            }
+
+            // Skip rendering reticle if asteroid is occluded
+            if (isOccluded) {
+                return;
+            }
 
             // Check if asteroid is aligned with ship direction
             const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
