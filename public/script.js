@@ -706,6 +706,7 @@ function createSpaceShip() {
 }
 
 const spaceShip = createSpaceShip();
+spaceShip.scale.set(0.5, 0.5, 0.5); // Make ship smaller
 scene.add(spaceShip);
 
 // Populate occluding objects for reticle occlusion detection
@@ -730,19 +731,29 @@ const AMMO_REWARD_PER_KILL = 5; // Gain ammo when destroying asteroids
 const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
 // === SOUND SYSTEM ===
-let soundEnabled = true;
+let soundEnabled = localStorage.getItem('soundEnabled') !== 'false'; // Default true, persist across sessions
 let showDpadControls = false; // D-pad movement controls hidden by default
 let audioContext = null;
+let audioContextReady = false;
 
 // Lazy-initialize AudioContext on first user gesture
 function getAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioContextReady = audioContext.state === 'running';
+        } catch (e) {
+            return null;
+        }
     }
     if (audioContext.state === 'suspended') {
-        audioContext.resume();
+        audioContext.resume().then(() => {
+            audioContextReady = true;
+        }).catch(() => {});
+    } else if (audioContext.state === 'running') {
+        audioContextReady = true;
     }
-    return audioContext;
+    return audioContextReady ? audioContext : null;
 }
 
 // Sound manager with synthesized sounds
@@ -750,6 +761,7 @@ const SoundManager = {
     playLaser() {
         if (!soundEnabled) return;
         const ctx = getAudioContext();
+        if (!ctx) return; // Audio not ready yet
 
         const oscillator = ctx.createOscillator();
         const gainNode = ctx.createGain();
@@ -772,6 +784,7 @@ const SoundManager = {
     playExplosion(size = 1) {
         if (!soundEnabled) return;
         const ctx = getAudioContext();
+        if (!ctx) return; // Audio not ready yet
 
         // White noise for explosion
         const bufferSize = ctx.sampleRate * 0.5; // 0.5 second
@@ -1595,6 +1608,8 @@ function updateTargetingHUD() {
     if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
     window._hudFrameCount++;
     const HUD_OCCLUSION_EVERY_N_FRAMES = 5; // only run occlusion check every 5 frames
+    // Persistent occlusion state map (keyed by asteroid UUID)
+    if (!window._asteroidOcclusionState) window._asteroidOcclusionState = new Map();
 
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
@@ -1608,7 +1623,9 @@ function updateTargetingHUD() {
             const baseSize = 40 + asteroid.userData.size * 20;
             const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
 
-            let isOccluded = false;
+            // Get persisted occlusion state, default to false
+            let isOccluded = window._asteroidOcclusionState.get(asteroid.uuid) || false;
+
             // Only perform raycast occasionally to reduce CPU load
             if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
                 try {
@@ -1621,22 +1638,17 @@ function updateTargetingHUD() {
                     const intersections = raycaster.intersectObjects(occludingObjects, true);
                     isOccluded = intersections.length > 0;
 
-                    // Debug: occasional occlusion logging
-                    if (isOccluded && Math.random() < 0.01) {
-                        const occludingObject = intersections[0].object.parent || intersections[0].object;
-                        const objectName = occludingObject === earth ? 'Earth' :
-                                         occludingObject === moon ? 'Moon' :
-                                         (occludingObject.parent === spaceShip ? 'Ship' : 'Unknown');
-                        console.log(`[DEBUG] Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
-                    }
+                    // Persist the occlusion state
+                    window._asteroidOcclusionState.set(asteroid.uuid, isOccluded);
                 } catch (e) {
                     // Fail-safe: don't block HUD if raycast errors
                     console.warn('[DEBUG] occlusion raycast failed', e);
                     isOccluded = false;
+                    window._asteroidOcclusionState.set(asteroid.uuid, false);
                 }
             }
 
-            // If occlusion was recently checked and true, skip
+            // If asteroid is occluded, skip drawing reticle
             if (isOccluded) return;
 
             // Check if asteroid is aligned with ship direction
@@ -1918,9 +1930,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 // === ORBIT PARAMETERS ===
-let shipOrbitRadius = 4.5;
-let orbitPerigee = 4.5;  // Closest point (can be adjusted)
-let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
+let shipOrbitRadius = 7;
+let orbitPerigee = 7;  // Closest point (can be adjusted)
+let orbitApogee = 7;   // Farthest point (same as perigee = circular)
 let orbitInclination = 0; // Degrees of orbital tilt
 
 // Control mode: 'camera' or 'ship'
@@ -2151,53 +2163,33 @@ function createControlUI() {
         overflow-y: auto;
     `;
 
-    // Sound toggle in settings
-    const soundSetting = document.createElement('div');
-    soundSetting.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-    const soundIcon = document.createElement('div');
-    soundIcon.textContent = '🔊';
-    soundIcon.style.cssText = 'font-size: 16px;';
-
-    const soundLabel = document.createElement('div');
-    soundLabel.textContent = 'Sound';
-    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
-
-    const soundToggleBtn = document.createElement('button');
-    soundToggleBtn.textContent = 'OFF'; // Start with sound ON, so button shows "OFF" (what you'll switch to)
-    soundToggleBtn.style.cssText = `
-        padding: 8px 16px;
-        border: 2px solid #44ff88;
-        border-radius: 6px;
-        background: #44ff88;
-        color: #000;
+    // Sound toggle in settings - icon is the toggle
+    const soundToggle = document.createElement('div');
+    soundToggle.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
         cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        font-weight: bold;
+        padding: 8px;
+        border-radius: 6px;
         transition: all 0.2s;
-        min-width: 60px;
+        user-select: none;
     `;
 
     function updateSoundToggle() {
-        if (soundEnabled) {
-            // Sound is ON, button shows "OFF" (tap to turn off)
-            soundToggleBtn.textContent = 'OFF';
-        } else {
-            // Sound is OFF, button shows "ON" (tap to turn on)
-            soundToggleBtn.textContent = 'ON';
-        }
+        soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
+        soundToggle.title = soundEnabled ? 'Sound On (click to mute)' : 'Sound Off (click to unmute)';
     }
 
-    soundToggleBtn.addEventListener('click', () => {
+    soundToggle.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
+        localStorage.setItem('soundEnabled', soundEnabled);
         updateSoundToggle();
     });
 
-    soundSetting.appendChild(soundIcon);
-    soundSetting.appendChild(soundLabel);
-    soundSetting.appendChild(soundToggleBtn);
-    settingsPanel.appendChild(soundSetting);
+    settingsPanel.appendChild(soundToggle);
+    updateSoundToggle(); // Set initial state from localStorage
 
     // D-pad controls toggle in settings
     const dpadSetting = document.createElement('div');
@@ -2898,7 +2890,7 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 
         if (pointerState.prevDistance != null) {
             const zoomDelta = (pointerState.prevDistance - dist) * zoomSpeed * 3;
-            orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+            cameraOrbitRadius = Math.max(3, Math.min(50, cameraOrbitRadius + zoomDelta));
             updateCameraFromOrbit();
         }
 
@@ -3073,9 +3065,9 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         cameraTarget.addScaledVector(cameraRight, -panDeltaX * panSpeed);
         cameraTarget.addScaledVector(cameraUp, panDeltaY * panSpeed);
 
-        // Zoom (pinch) - update orbitRadius
+        // Zoom (pinch) - update cameraOrbitRadius
         const zoomDelta = (touchState.prevDistance - distance) * zoomSpeed * 3;
-        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomDelta));
+        cameraOrbitRadius = Math.max(3, Math.min(50, cameraOrbitRadius + zoomDelta));
         updateCameraFromOrbit();
 
         touchState.prevMidpoint = midpoint;
@@ -3125,9 +3117,9 @@ renderer.domElement.addEventListener('wheel', (event) => {
         cameraTarget.addScaledVector(cameraRight, panX);
         cameraTarget.addScaledVector(cameraUp, panY);
     } else {
-        // Zoom (mouse wheel or Ctrl/Meta+gesture) - update orbitRadius
+        // Zoom (mouse wheel or Ctrl/Meta+gesture) - update cameraOrbitRadius
         const zoomAmount = event.deltaY * zoomSpeed;
-        orbitRadius = Math.max(3, Math.min(50, orbitRadius + zoomAmount));
+        cameraOrbitRadius = Math.max(3, Math.min(50, cameraOrbitRadius + zoomAmount));
         updateCameraFromOrbit();
     }
 }, { passive: false });
@@ -3411,31 +3403,63 @@ function animate() {
     // === BLUE METHANE ENGINE FLAME ANIMATION ===
     const flameTime = clock.getElapsedTime();
     const engineNames = ['top', 'bot_left', 'bot_right'];
+
+    // Calculate thruster intensity based on ship orientation vs movement direction
+    // Ship's backward direction (where thrusters point) is local +Z
+    const shipBackward = new THREE.Vector3(0, 0, 1);
+    shipBackward.applyQuaternion(spaceShip.quaternion);
+
+    // Orbital tangent (movement direction)
+    const movementDir = new THREE.Vector3(
+        Math.sin(orbitAngle) * shipOrbitDirection,
+        0,
+        -Math.cos(orbitAngle) * shipOrbitDirection
+    ).normalize();
+
+    // Dot product: positive = thrusters facing movement (braking), negative = accelerating
+    const thrusterAlignment = shipBackward.dot(movementDir);
+    // Convert to throttle: -1 (full forward thrust) → 1.0 throttle, +1 (braking) → 0.0 throttle
+    const thrusterIntensity = Math.max(0, -thrusterAlignment);
+
     engineNames.forEach((pos, idx) => {
         const flame = spaceShip.getObjectByName(`engine_flame_${pos}`);
         const outer = spaceShip.getObjectByName(`engine_outer_${pos}`);
         const core = spaceShip.getObjectByName(`engine_core_${pos}`);
 
         if (flame && outer) {
-            // Flickering scale with multiple noise frequencies
-            const flicker1 = Math.sin(flameTime * 25 + idx * 2) * 0.15;
-            const flicker2 = Math.sin(flameTime * 40 + idx * 3) * 0.08;
-            const flicker3 = Math.sin(flameTime * 15) * 0.1;
-            const baseScale = 1 + flicker1 + flicker2 + flicker3;
+            if (thrusterIntensity < 0.1) {
+                // Engines off - hide flames
+                flame.visible = false;
+                outer.visible = false;
+            } else {
+                flame.visible = true;
+                outer.visible = true;
 
-            flame.scale.set(0.6 * baseScale, 1.2 * (1 + flicker1 * 1.5), 1);
-            outer.scale.set(0.9 * baseScale, 1.6 * (1 + flicker2 * 1.2), 1);
+                // Flickering scale with multiple noise frequencies, scaled by intensity
+                const flicker1 = Math.sin(flameTime * 25 + idx * 2) * 0.15;
+                const flicker2 = Math.sin(flameTime * 40 + idx * 3) * 0.08;
+                const flicker3 = Math.sin(flameTime * 15) * 0.1;
+                const baseScale = (1 + flicker1 + flicker2 + flicker3) * thrusterIntensity;
 
-            // Slight position jitter
-            const jitterZ = Math.sin(flameTime * 30 + idx * 4) * 0.03;
-            flame.position.z = 3.6 + jitterZ;
-            outer.position.z = 3.8 + jitterZ * 0.5;
+                flame.scale.set(0.6 * baseScale, 1.2 * (1 + flicker1 * 1.5) * thrusterIntensity, 1);
+                outer.scale.set(0.9 * baseScale, 1.6 * (1 + flicker2 * 1.2) * thrusterIntensity, 1);
+
+                // Slight position jitter
+                const jitterZ = Math.sin(flameTime * 30 + idx * 4) * 0.03;
+                flame.position.z = 3.6 + jitterZ;
+                outer.position.z = 3.8 + jitterZ * 0.5;
+            }
         }
 
         if (core) {
-            // Core brightness flicker
-            const coreFlicker = 0.9 + Math.sin(flameTime * 50 + idx) * 0.1;
-            core.material.opacity = coreFlicker;
+            if (thrusterIntensity < 0.1) {
+                core.visible = false;
+            } else {
+                core.visible = true;
+                // Core brightness flicker scaled by intensity
+                const coreFlicker = (0.9 + Math.sin(flameTime * 50 + idx) * 0.1) * thrusterIntensity;
+                core.material.opacity = coreFlicker;
+            }
         }
     });
 
@@ -3583,12 +3607,6 @@ function animate() {
 
                 // Create small impact explosion on Earth
                 createExplosion(bolt.position.clone(), 0.3);
-
-                // Flash the Earth briefly
-                earth.material.emissive.setHex(0xff4444);
-                setTimeout(() => {
-                    earth.material.emissive.setHex(0x000000);
-                }, 50);
 
                 // Remove bolt
                 scene.remove(bolt);
