@@ -729,6 +729,213 @@ let asteroidsDestroyed = 0;
 const AMMO_REWARD_PER_KILL = 5; // Gain ammo when destroying asteroids
 const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
+// === GAME TIMER & LEADERBOARD ===
+let gameStartTime = null; // When the current game started
+let gameElapsedTime = 0; // Time in seconds
+let serverLeaderboard = []; // Top 10 from server
+let userLocation = null; // User's location for anonymous submissions
+let leaderboardChecked = false; // Prevent multiple submission prompts
+
+// Fetch user's approximate location (city/country) for anonymous submissions
+async function fetchUserLocation() {
+    try {
+        const response = await fetch('https://ipapi.co/json/');
+        const data = await response.json();
+        userLocation = `${data.city || 'Unknown'}, ${data.country_name || 'Unknown'}`;
+    } catch (e) {
+        userLocation = 'Unknown Location';
+    }
+}
+
+// Fetch leaderboard from server
+async function fetchLeaderboard() {
+    try {
+        const response = await fetch('/api/leaderboard');
+        const data = await response.json();
+        if (data.success) {
+            serverLeaderboard = data.leaderboard;
+            updateLeaderboardDisplay();
+        }
+    } catch (e) {
+        console.warn('Could not fetch leaderboard:', e);
+    }
+}
+
+// Submit score to server
+async function submitScore(name) {
+    const entry = {
+        name: name || 'Anonymous',
+        score: score,
+        time: gameElapsedTime,
+        location: name ? undefined : userLocation
+    };
+
+    try {
+        const response = await fetch('/api/leaderboard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(entry)
+        });
+        const data = await response.json();
+        if (data.success && data.qualified) {
+            serverLeaderboard = data.leaderboard;
+            updateLeaderboardDisplay();
+            showNotification(`#${data.rank} on leaderboard!`, '#ff44ff');
+        }
+        return data;
+    } catch (e) {
+        console.error('Could not submit score:', e);
+        return { success: false };
+    }
+}
+
+// Check if score qualifies for leaderboard
+function checkLeaderboardQualification() {
+    if (leaderboardChecked) return;
+
+    const minScore = serverLeaderboard.length >= 10 ? serverLeaderboard[9].score : 0;
+    if (score > minScore || serverLeaderboard.length < 10) {
+        leaderboardChecked = true;
+        showLeaderboardSubmitDialog();
+    }
+}
+
+// Show dialog to submit score to leaderboard
+function showLeaderboardSubmitDialog() {
+    const overlay = document.createElement('div');
+    overlay.id = 'leaderboardSubmitOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10001;
+        font-family: 'Courier New', monospace;
+    `;
+
+    const rank = serverLeaderboard.length < 10 ? serverLeaderboard.length + 1 :
+        serverLeaderboard.findIndex(e => score > e.score) + 1 || 10;
+
+    overlay.innerHTML = `
+        <div style="text-align: center; max-width: 450px; padding: 40px; background: rgba(0, 40, 80, 0.95); border: 2px solid #ff44ff; border-radius: 15px; box-shadow: 0 0 40px rgba(255, 68, 255, 0.4);">
+            <div style="color: #ff44ff; font-size: 28px; font-weight: bold; margin-bottom: 10px;">
+                NEW HIGH SCORE!
+            </div>
+            <div style="color: #44ff88; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #44ff88; margin-bottom: 5px;">
+                ${score}
+            </div>
+            <div style="color: #aaaaaa; font-size: 14px; margin-bottom: 20px;">
+                Time: ${formatTime(gameElapsedTime)} | Rank: #${rank}
+            </div>
+
+            <div style="color: #ffffff; font-size: 16px; margin-bottom: 15px;">
+                Enter your name for the leaderboard:
+            </div>
+
+            <input type="text" id="playerNameInput" maxlength="20" placeholder="Your name" style="
+                width: 80%;
+                padding: 12px 15px;
+                font-size: 18px;
+                font-family: 'Courier New', monospace;
+                background: rgba(0, 0, 0, 0.5);
+                border: 2px solid #44aaff;
+                border-radius: 8px;
+                color: #ffffff;
+                text-align: center;
+                outline: none;
+                margin-bottom: 20px;
+            " />
+
+            <div style="display: flex; gap: 15px; justify-content: center;">
+                <button id="submitScoreBtn" style="
+                    padding: 12px 30px;
+                    font-size: 16px;
+                    background: linear-gradient(135deg, #ff44ff, #aa22aa);
+                    color: #fff;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                    font-weight: bold;
+                ">SUBMIT</button>
+
+                <button id="skipScoreBtn" style="
+                    padding: 12px 30px;
+                    font-size: 16px;
+                    background: rgba(100, 100, 100, 0.5);
+                    color: #aaa;
+                    border: 1px solid #666;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                ">SKIP</button>
+            </div>
+
+            <div style="color: #666; font-size: 11px; margin-top: 15px;">
+                Leave blank to submit as "${userLocation || 'Anonymous'}"
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = document.getElementById('playerNameInput');
+    input.focus();
+
+    document.getElementById('submitScoreBtn').addEventListener('click', async () => {
+        const name = input.value.trim();
+        await submitScore(name || null);
+        overlay.remove();
+    });
+
+    document.getElementById('skipScoreBtn').addEventListener('click', () => {
+        overlay.remove();
+    });
+
+    // Enter key submits
+    input.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+            const name = input.value.trim();
+            await submitScore(name || null);
+            overlay.remove();
+        }
+    });
+}
+
+// Format time as MM:SS
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Update leaderboard display in dashboard
+function updateLeaderboardDisplay() {
+    const container = document.getElementById('leaderboardList');
+    if (!container) return;
+
+    if (serverLeaderboard.length === 0) {
+        container.innerHTML = '<div style="color: #666; font-size: 9px; text-align: center;">No scores yet</div>';
+        return;
+    }
+
+    container.innerHTML = serverLeaderboard.slice(0, 5).map((entry, i) => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 0; ${i === 0 ? 'color: #ffd700;' : i === 1 ? 'color: #c0c0c0;' : i === 2 ? 'color: #cd7f32;' : 'color: #888;'}">
+            <span style="font-size: 8px;">${i + 1}. ${entry.name.substring(0, 10)}</span>
+            <span style="font-size: 9px; font-weight: bold;">${entry.score}</span>
+        </div>
+    `).join('');
+}
+
+// Initialize leaderboard on load
+fetchUserLocation();
+fetchLeaderboard();
+
 // === SOUND SYSTEM ===
 let soundEnabled = localStorage.getItem('soundEnabled') !== 'false'; // Default true, persist across sessions
 let showDpadControls = false; // D-pad movement controls hidden by default
@@ -1422,6 +1629,9 @@ function updateLevelDisplay() {
 
 // Show game over screen
 function showGameOver() {
+    // Check leaderboard qualification before showing game over
+    setTimeout(() => checkLeaderboardQualification(), 500);
+
     const overlay = document.createElement('div');
     overlay.id = 'gameOverOverlay';
     overlay.style.cssText = `
@@ -1442,6 +1652,7 @@ function showGameOver() {
         <div style="color: #ff4444; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #ff0000;">GAME OVER</div>
         <div style="color: #ffffff; font-size: 24px; margin-top: 20px;">Earth has been destroyed</div>
         <div style="color: #44ff88; font-size: 20px; margin-top: 10px;">Final Score: ${score}</div>
+        <div style="color: #aaaaaa; font-size: 14px; margin-top: 5px;">Time: ${formatTime(gameElapsedTime)}</div>
         <button id="restartBtn" style="
             margin-top: 30px;
             padding: 15px 40px;
@@ -1468,6 +1679,9 @@ function showVictoryScreen() {
     gameActive = false;
     SoundManager.playVictory();
 
+    // Check leaderboard qualification
+    setTimeout(() => checkLeaderboardQualification(), 500);
+
     const overlay = document.createElement('div');
     overlay.id = 'victoryOverlay';
     overlay.style.cssText = `
@@ -1489,7 +1703,7 @@ function showVictoryScreen() {
         <div style="color: #ffffff; font-size: 32px; margin-top: 10px;">You've saved Earth!</div>
         <div style="color: #ffff44; font-size: 24px; margin-top: 30px;">All 10 levels completed</div>
         <div style="color: #44ff88; font-size: 28px; margin-top: 15px;">Final Score: ${score}</div>
-        <div style="color: #aaaaaa; font-size: 18px; margin-top: 10px;">Total Asteroids Destroyed: ${asteroidsDestroyed}</div>
+        <div style="color: #aaaaaa; font-size: 18px; margin-top: 10px;">Time: ${formatTime(gameElapsedTime)} | Kills: ${asteroidsDestroyed}</div>
         <button id="playAgainBtn" style="
             margin-top: 40px;
             padding: 20px 50px;
@@ -1520,6 +1734,11 @@ function restartGame() {
     gameLevel = 1;
     asteroidsDestroyed = 0;
     gameActive = true;
+
+    // Reset timer and leaderboard
+    gameStartTime = Date.now();
+    gameElapsedTime = 0;
+    leaderboardChecked = false;
 
     // Clear all asteroids
     asteroids.forEach(a => scene.remove(a));
@@ -2932,6 +3151,21 @@ function createControlUI() {
     `;
     gamePanel.appendChild(statsRow);
 
+    // === LEADERBOARD SECTION ===
+    const leaderboardDiv = document.createElement('div');
+    leaderboardDiv.style.cssText = 'padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3);';
+    leaderboardDiv.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <div style="font-size: 8px; letter-spacing: 1px; opacity: 0.6;">TOP SCORES</div>
+            <div id="gameTimer" style="font-size: 9px; color: #44aaff;">0:00</div>
+        </div>
+        <div id="leaderboardList" style="font-size: 8px;"></div>
+    `;
+    gamePanel.appendChild(leaderboardDiv);
+
+    // Initialize leaderboard display
+    setTimeout(updateLeaderboardDisplay, 100);
+
     // === ORIENTATION INDICATOR (3D human figure) - inside dashboard ===
     const orientationDiv = document.createElement('div');
     orientationDiv.style.cssText = `
@@ -3982,6 +4216,15 @@ function animate() {
     // === UPDATE HUD ===
     updateTargetingHUD();
 
+    // === UPDATE GAME TIMER ===
+    if (gameStartTime && gameActive) {
+        gameElapsedTime = Math.floor((Date.now() - gameStartTime) / 1000);
+        const timerEl = document.getElementById('gameTimer');
+        if (timerEl) {
+            timerEl.textContent = formatTime(gameElapsedTime);
+        }
+    }
+
     // === EXPLOSION ANIMATION ===
     for (let i = explosions.length - 1; i >= 0; i--) {
         const explosion = explosions[i];
@@ -4136,6 +4379,14 @@ function showInstructions(isResume = false) {
         getAudioContext();
 
         overlay.remove();
+
+        if (!isResume) {
+            // Starting new game - reset timer
+            gameStartTime = Date.now();
+            gameElapsedTime = 0;
+            leaderboardChecked = false;
+        }
+
         // Resume game if it wasn't already paused
         if (isResume && !wasPaused) {
             gameActive = true;
