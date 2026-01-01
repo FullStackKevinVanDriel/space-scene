@@ -2402,6 +2402,88 @@ function createControlUI() {
 
     document.body.appendChild(gamePanel);
 
+    // === ORIENTATION INDICATOR (3D human figure) ===
+    const orientationContainer = document.createElement('div');
+    orientationContainer.id = 'orientationIndicator';
+    orientationContainer.style.cssText = `
+        position: fixed;
+        top: 10px;
+        left: 170px;
+        width: 80px;
+        height: 80px;
+        background: rgba(0, 20, 40, 0.95);
+        border: 1px solid #44aaff;
+        border-radius: 8px;
+        box-shadow: 0 0 15px rgba(68, 170, 255, 0.3);
+        z-index: 1000;
+        overflow: hidden;
+    `;
+    document.body.appendChild(orientationContainer);
+
+    // Create mini scene for orientation
+    window.orientationScene = new THREE.Scene();
+    window.orientationCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    window.orientationCamera.position.set(0, 0, 4);
+    window.orientationCamera.lookAt(0, 0, 0);
+
+    window.orientationRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    window.orientationRenderer.setSize(80, 80);
+    window.orientationRenderer.setClearColor(0x000000, 0);
+    orientationContainer.appendChild(window.orientationRenderer.domElement);
+
+    // Create simple human figure
+    const humanGroup = new THREE.Group();
+    const humanMaterial = new THREE.MeshBasicMaterial({ color: 0x44aaff });
+
+    // Head
+    const headGeom = new THREE.SphereGeometry(0.25, 16, 16);
+    const head = new THREE.Mesh(headGeom, humanMaterial);
+    head.position.y = 0.9;
+    humanGroup.add(head);
+
+    // Body (torso)
+    const bodyGeom = new THREE.CylinderGeometry(0.15, 0.2, 0.6, 8);
+    const body = new THREE.Mesh(bodyGeom, humanMaterial);
+    body.position.y = 0.4;
+    humanGroup.add(body);
+
+    // Arms
+    const armGeom = new THREE.CylinderGeometry(0.06, 0.06, 0.5, 8);
+    const leftArm = new THREE.Mesh(armGeom, humanMaterial);
+    leftArm.position.set(-0.3, 0.5, 0);
+    leftArm.rotation.z = Math.PI / 4;
+    humanGroup.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeom, humanMaterial);
+    rightArm.position.set(0.3, 0.5, 0);
+    rightArm.rotation.z = -Math.PI / 4;
+    humanGroup.add(rightArm);
+
+    // Legs
+    const legGeom = new THREE.CylinderGeometry(0.08, 0.06, 0.6, 8);
+    const leftLeg = new THREE.Mesh(legGeom, humanMaterial);
+    leftLeg.position.set(-0.12, -0.2, 0);
+    humanGroup.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeom, humanMaterial);
+    rightLeg.position.set(0.12, -0.2, 0);
+    humanGroup.add(rightLeg);
+
+    // Add direction indicator (nose/front marker)
+    const noseGeom = new THREE.ConeGeometry(0.08, 0.15, 8);
+    const noseMaterial = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+    const nose = new THREE.Mesh(noseGeom, noseMaterial);
+    nose.position.set(0, 0.9, 0.3);
+    nose.rotation.x = Math.PI / 2;
+    humanGroup.add(nose);
+
+    window.orientationScene.add(humanGroup);
+    window.orientationHuman = humanGroup;
+
+    // Add subtle lighting
+    const orientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    window.orientationScene.add(orientLight);
+
     // Slider styling and threat animation
     const style = document.createElement('style');
     style.textContent = `
@@ -2503,6 +2585,21 @@ function createControlUI() {
 }
 
 createControlUI();
+
+// === CAMERA ROTATION HELPER (allows continuous rotation through poles) ===
+function wrapSphericalPhi(spherical) {
+    // Allow continuous rotation by wrapping phi when it crosses poles
+    while (spherical.phi < 0) {
+        spherical.phi = -spherical.phi;
+        spherical.theta += Math.PI;
+    }
+    while (spherical.phi > Math.PI) {
+        spherical.phi = 2 * Math.PI - spherical.phi;
+        spherical.theta += Math.PI;
+    }
+    // Normalize theta to [0, 2*PI)
+    spherical.theta = ((spherical.theta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+}
 
 // === POINTER EVENTS UNIFIED INPUT ===
 // Use pointer events to handle mouse, touch, and stylus uniformly. Behavior:
@@ -2646,7 +2743,8 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
                 camera.position.clone().sub(cameraTarget)
             );
             spherical.theta -= deltaX * rotationSpeed;
-            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+            spherical.phi -= deltaY * rotationSpeed;
+            wrapSphericalPhi(spherical);
 
             const newPos = new THREE.Vector3().setFromSpherical(spherical);
             camera.position.copy(cameraTarget).add(newPos);
@@ -2726,7 +2824,8 @@ renderer.domElement.addEventListener('touchmove', (event) => {
                 camera.position.clone().sub(cameraTarget)
             );
             spherical.theta -= deltaX * rotationSpeed;
-            spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi - deltaY * rotationSpeed));
+            spherical.phi -= deltaY * rotationSpeed;
+            wrapSphericalPhi(spherical);
 
             const newPos = new THREE.Vector3().setFromSpherical(spherical);
             camera.position.copy(cameraTarget).add(newPos);
@@ -2909,8 +3008,8 @@ function animate() {
         // Plain arrows: Orbit
         if (keys['ArrowLeft']) { spherical.theta += keyRotationSpeed; cameraChanged = true; }
         if (keys['ArrowRight']) { spherical.theta -= keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowUp']) { spherical.phi = Math.max(0.1, spherical.phi - keyRotationSpeed); cameraChanged = true; }
-        if (keys['ArrowDown']) { spherical.phi = Math.min(Math.PI - 0.1, spherical.phi + keyRotationSpeed); cameraChanged = true; }
+        if (keys['ArrowUp']) { spherical.phi -= keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowDown']) { spherical.phi += keyRotationSpeed; cameraChanged = true; }
     }
 
     // +/= and -/_ keys: Zoom (always)
@@ -2925,6 +3024,7 @@ function animate() {
 
     // Apply camera changes
     if (cameraChanged) {
+        wrapSphericalPhi(spherical);
         const newPos = new THREE.Vector3().setFromSpherical(spherical);
         camera.position.copy(cameraTarget).add(newPos);
         camera.lookAt(cameraTarget);
@@ -3356,6 +3456,25 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
+
+    // Update orientation indicator (human figure matches camera view direction)
+    if (window.orientationHuman && window.orientationRenderer) {
+        // Get camera direction relative to target
+        const cameraDir = camera.position.clone().sub(cameraTarget).normalize();
+
+        // Calculate spherical angles from camera position
+        const spherical = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(cameraTarget)
+        );
+
+        // Rotate human to show which direction we're viewing from
+        // The human should face the direction the camera is looking
+        window.orientationHuman.rotation.set(0, 0, 0);
+        window.orientationHuman.rotation.y = -spherical.theta + Math.PI;
+        window.orientationHuman.rotation.x = spherical.phi - Math.PI / 2;
+
+        window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
+    }
 
     if (composer) {
         composer.render();
