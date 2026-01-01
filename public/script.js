@@ -4062,42 +4062,61 @@ function showInstructions(isResume = false) {
         background: rgba(0, 0, 0, 0.95);
         display: flex;
         flex-direction: column;
-        justify-content: center;
+        justify-content: flex-start;
         align-items: center;
         z-index: 10000;
         font-family: 'Courier New', monospace;
         color: #ffffff;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        padding: 20px 10px;
+        box-sizing: border-box;
     `;
     overlay.innerHTML = `
-        <div style="max-width: 600px; padding: 40px;">
-            <h1 style="color: #44ff88; font-size: 36px; text-align: center; margin-bottom: 30px;">
+        <div style="
+            max-width: 600px;
+            width: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+        ">
+            <h1 style="
+                color: #44ff88;
+                font-size: clamp(24px, 6vw, 36px);
+                text-align: center;
+                margin-bottom: 20px;
+            ">
                 EARTH DEFENDER
             </h1>
 
-            <div style="font-size: 18px; line-height: 1.8; margin-bottom: 30px;">
+            <div style="
+                font-size: clamp(14px, 3.5vw, 18px);
+                line-height: 1.6;
+                margin-bottom: 20px;
+            ">
                 <p><strong style="color: #ffff44;">OBJECTIVE:</strong></p>
-                <p>Destroy all asteroids in each level to advance. Complete all 10 levels to win!</p>
+                <p style="margin: 5px 0;">Destroy all asteroids in each level to advance. Complete all 10 levels to win!</p>
 
-                <p style="margin-top: 20px;"><strong style="color: #ffff44;">LEVEL SYSTEM:</strong></p>
-                <p>• Level 1 = 1 asteroid, Level 2 = 2 asteroids, ..., Level 10 = 10 asteroids</p>
-                <p>• Destroy all targets to advance to the next level</p>
-                <p>• Each level gives 40 ammo per asteroid (Level 5 = 200 ammo)</p>
+                <p style="margin-top: 15px;"><strong style="color: #ffff44;">LEVEL SYSTEM:</strong></p>
+                <p style="margin: 5px 0;">• Level 1 = 1 asteroid, Level 2 = 2 asteroids, ..., Level 10 = 10 asteroids</p>
+                <p style="margin: 5px 0;">• Destroy all targets to advance to the next level</p>
+                <p style="margin: 5px 0;">• Each level gives 40 ammo per asteroid (Level 5 = 200 ammo)</p>
 
-                <p style="margin-top: 20px;"><strong style="color: #ffff44;">CONTROLS:</strong></p>
-                <p>• <strong>Mouse/Touch:</strong> Aim and rotate ship or camera</p>
-                <p>• <strong>Click/Tap:</strong> Fire lasers</p>
-                <p>• <strong>Arrow Keys:</strong> Rotate ship (WASD also works)</p>
-                <p>• <strong>Spacebar:</strong> Fire lasers</p>
-                <p>• <strong>Ship/Camera Toggle:</strong> Switch control modes</p>
+                <p style="margin-top: 15px;"><strong style="color: #ffff44;">CONTROLS:</strong></p>
+                <p style="margin: 5px 0;">• <strong>Mouse/Touch:</strong> Aim and rotate ship or camera</p>
+                <p style="margin: 5px 0;">• <strong>Click/Tap:</strong> Fire lasers</p>
+                <p style="margin: 5px 0;">• <strong>Arrow Keys:</strong> Rotate ship (WASD also works)</p>
+                <p style="margin: 5px 0;">• <strong>Spacebar:</strong> Fire lasers</p>
+                <p style="margin: 5px 0;">• <strong>Ship/Camera Toggle:</strong> Switch control modes</p>
 
-                <p style="margin-top: 20px;"><strong style="color: #ffff44;">SPECIAL:</strong></p>
-                <p>• <span style="color: #00ff00;">Green Angel Asteroids</span> restore Earth health when destroyed</p>
-                <p>• Target reticles hide when asteroids are behind Earth/Moon/Ship</p>
+                <p style="margin-top: 15px;"><strong style="color: #ffff44;">SPECIAL:</strong></p>
+                <p style="margin: 5px 0;">• <span style="color: #00ff00;">Green Angel Asteroids</span> restore Earth health when destroyed</p>
+                <p style="margin: 5px 0;">• Target reticles hide when asteroids are behind Earth/Moon/Ship</p>
             </div>
 
             <button id="startGameBtn" style="
-                padding: 20px 50px;
-                font-size: 24px;
+                padding: 15px 40px;
+                font-size: clamp(18px, 4vw, 24px);
                 background: linear-gradient(135deg, #44ff88, #00cc66);
                 color: #000;
                 border: none;
@@ -4107,7 +4126,10 @@ function showInstructions(isResume = false) {
                 font-weight: bold;
                 box-shadow: 0 0 20px rgba(68, 255, 136, 0.5);
                 display: block;
-                margin: 0 auto;
+                margin: 20px auto;
+                min-height: 44px;
+                min-width: 120px;
+                touch-action: manipulation;
             ">${isResume ? 'RESUME GAME' : 'START GAME'}</button>
         </div>
     `;
