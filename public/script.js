@@ -1657,11 +1657,6 @@ function updateTargetingHUD() {
                 lockedTarget = asteroid;
             }
 
-            // Skip if occluded by Earth, Moon, or the ship (realistic visibility)
-            if (isOccluded(asteroid.position)) {
-                return; // don't render a reticle for this asteroid
-            }
-
             // Create targeting reticle
             const reticle = document.createElement('div');
             reticle.style.cssText = `
