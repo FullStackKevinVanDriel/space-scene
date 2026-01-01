@@ -1597,59 +1597,22 @@ function projectToScreen(position) {
     };
 }
 
-// Raycast-based occlusion test: returns true if any occluder lies between
-// the camera and `targetPos`. Uses `earth`, `moon`, and `spaceShip` as occluders.
+// Determine if a world position is occluded from the camera by Earth, Moon or the ship
 function isOccluded(targetPos) {
-    // Reuse a single Raycaster to reduce allocations
-    if (typeof window._occlusionRaycaster === 'undefined') {
-        window._occlusionRaycaster = new THREE.Raycaster();
-    }
-    const ray = window._occlusionRaycaster;
-
+    // Ray from camera to target
     const origin = camera.position.clone();
-    const dir = targetPos.clone().sub(origin);
-    const dist = dir.length();
-    if (dist <= 0.0001) return false;
-    dir.normalize();
+    const direction = targetPos.clone().sub(origin);
+    const distance = direction.length();
+    direction.normalize();
 
-    // Build occluder list but skip ones that contain the camera (camera inside occluder)
-    const candidates = [];
-    if (typeof earth !== 'undefined') candidates.push(earth);
-    if (typeof moon !== 'undefined') candidates.push(moon);
-    if (typeof spaceShip !== 'undefined') candidates.push(spaceShip);
+    const raycaster = new THREE.Raycaster(origin, direction, 0.01, distance - 0.01);
 
-    if (candidates.length === 0) return false;
+    // Objects that can occlude the target
+    const occluders = [earth, moon, spaceShip];
 
-    const occluders = [];
-    const tmpBox = new THREE.Box3();
-    const tmpSphere = new THREE.Sphere();
-    for (let i = 0; i < candidates.length; i++) {
-        const obj = candidates[i];
-        // Compute a conservative bounding sphere for the object
-        try {
-            tmpBox.setFromObject(obj);
-            tmpBox.getBoundingSphere(tmpSphere);
-        } catch (e) {
-            // Fallback: use object's position with small radius
-            tmpSphere.center.copy(obj.position || new THREE.Vector3());
-            tmpSphere.radius = 0.5;
-        }
-
-        const camDist = camera.position.distanceTo(tmpSphere.center);
-        // If camera is inside the occluder, it shouldn't occlude targets
-        if (camDist <= tmpSphere.radius + 0.01) continue;
-
-        occluders.push(obj);
-    }
-
-    if (occluders.length === 0) return false;
-
-    ray.set(origin, dir);
-    ray.near = 0.01;
-    ray.far = Math.max(0.01, dist - 0.01);
-
-    const hits = ray.intersectObjects(occluders, true);
-    return hits.length > 0;
+    // Intersect (recursive for ship children)
+    const intersects = raycaster.intersectObjects(occluders, true);
+    return intersects.length > 0;
 }
 
 // Create alignment line element
