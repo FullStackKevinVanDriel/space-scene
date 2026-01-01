@@ -16,11 +16,6 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Auto-approve PR
-        uses: hmarr/auto-approve-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Auto-merge PR
         uses: pascalgn/automerge-action@v0.15.6
         env:
@@ -34,3 +29,4 @@ jobs:
           MERGE_RETRY_SLEEP: "10000"
           UPDATE_LABELS: ""
           UPDATE_METHOD: "rebase"
+          MERGE_REQUIRED_APPROVALS: "0"
