@@ -1755,7 +1755,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // === ORBIT PARAMETERS ===
-let orbitRadius = 4.5;
+let shipOrbitRadius = 4.5;
 let orbitPerigee = 4.5;  // Closest point (can be adjusted)
 let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
 let orbitInclination = 0; // Degrees of orbital tilt
@@ -1783,9 +1783,9 @@ const shipInput = {
 const SHIP_ROTATION_SPEED = 1.5; // Radians per second
 
 spaceShip.position.set(
-    Math.cos(orbitAngle) * orbitRadius,
+    Math.cos(orbitAngle) * shipOrbitRadius,
     orbitY,
-    Math.sin(orbitAngle) * orbitRadius
+    Math.sin(orbitAngle) * shipOrbitRadius
 );
 
 // Camera control variables
@@ -2640,7 +2640,7 @@ createControlUI();
 // Store cumulative angles to allow unlimited rotation in all directions
 let orbitTheta = 0;  // Horizontal angle (longitude)
 let orbitPhi = Math.PI / 2;  // Vertical angle (latitude) - start at equator
-let orbitRadius = 15;  // Distance from target
+let cameraOrbitRadius = 15;  // Distance from target
 
 // Initialize from current camera position
 (function initOrbitAngles() {
@@ -2649,17 +2649,17 @@ let orbitRadius = 15;  // Distance from target
     );
     orbitTheta = spherical.theta;
     orbitPhi = spherical.phi;
-    orbitRadius = spherical.radius;
+    cameraOrbitRadius = spherical.radius;
 })();
 
 // Update camera position from orbit angles (handles any angle values)
 function updateCameraFromOrbit() {
     // Use sin/cos directly - they handle any angle value naturally
-    const x = orbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
-    const y = orbitRadius * Math.cos(orbitPhi);
-    const z = orbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+    const x = cameraOrbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+    const y = cameraOrbitRadius * Math.cos(orbitPhi);
+    const z = cameraOrbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
 
-    camera.position.set(
+        camera.position.set(
         cameraTarget.x + x,
         cameraTarget.y + y,
         cameraTarget.z + z
@@ -3042,11 +3042,11 @@ function animate() {
     } else if (hasArrow && keys.ctrl && !keys.shift) {
         // CTRL + Up/Down: Zoom
         if (keys['ArrowUp']) {
-            orbitRadius = Math.max(3, orbitRadius - 0.3);
+            cameraOrbitRadius = Math.max(3, cameraOrbitRadius - 0.3);
             cameraChanged = true;
         }
         if (keys['ArrowDown']) {
-            orbitRadius = Math.min(50, orbitRadius + 0.3);
+            cameraOrbitRadius = Math.min(50, cameraOrbitRadius + 0.3);
             cameraChanged = true;
         }
         // CTRL + Left/Right: Also orbit
@@ -3062,11 +3062,11 @@ function animate() {
 
     // +/= and -/_ keys: Zoom (always)
     if (keys['Equal'] || keys['NumpadAdd']) {
-        orbitRadius = Math.max(3, orbitRadius - 0.3);
+        cameraOrbitRadius = Math.max(3, cameraOrbitRadius - 0.3);
         cameraChanged = true;
     }
     if (keys['Minus'] || keys['NumpadSubtract']) {
-        orbitRadius = Math.min(50, orbitRadius + 0.3);
+        cameraOrbitRadius = Math.min(50, cameraOrbitRadius + 0.3);
         cameraChanged = true;
     }
 
