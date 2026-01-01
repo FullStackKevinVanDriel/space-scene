@@ -907,6 +907,192 @@ function showLeaderboardSubmitDialog() {
     });
 }
 
+// Show quit confirmation dialog
+function showQuitDialog() {
+    gameActive = false; // Pause game
+
+    const overlay = document.createElement('div');
+    overlay.id = 'quitDialogOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10001;
+        font-family: 'Courier New', monospace;
+    `;
+
+    // Check if score qualifies for leaderboard
+    const minScore = serverLeaderboard.length >= 10 ? serverLeaderboard[9].score : 0;
+    const qualifies = score > 0 && (score > minScore || serverLeaderboard.length < 10);
+    const rank = serverLeaderboard.length < 10 ? serverLeaderboard.length + 1 :
+        serverLeaderboard.findIndex(e => score > e.score) + 1 || 10;
+
+    if (qualifies) {
+        // Score qualifies - show submit option
+        overlay.innerHTML = `
+            <div style="text-align: center; max-width: 450px; padding: 40px; background: rgba(0, 40, 80, 0.95); border: 2px solid #ffaa00; border-radius: 15px; box-shadow: 0 0 40px rgba(255, 170, 0, 0.4);">
+                <div style="color: #ffaa00; font-size: 24px; font-weight: bold; margin-bottom: 15px;">
+                    QUIT GAME?
+                </div>
+                <div style="color: #44ff88; font-size: 36px; font-weight: bold; text-shadow: 0 0 20px #44ff88; margin-bottom: 5px;">
+                    Score: ${score}
+                </div>
+                <div style="color: #ff44ff; font-size: 16px; margin-bottom: 20px;">
+                    Your score qualifies for the leaderboard! (Rank #${rank})
+                </div>
+
+                <div style="color: #ffffff; font-size: 14px; margin-bottom: 10px;">
+                    Enter your name to save your score:
+                </div>
+
+                <input type="text" id="quitPlayerNameInput" maxlength="20" placeholder="Your name" style="
+                    width: 80%;
+                    padding: 12px 15px;
+                    font-size: 18px;
+                    font-family: 'Courier New', monospace;
+                    background: rgba(0, 0, 0, 0.5);
+                    border: 2px solid #44aaff;
+                    border-radius: 8px;
+                    color: #ffffff;
+                    text-align: center;
+                    outline: none;
+                    margin-bottom: 20px;
+                " />
+
+                <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+                    <button id="submitAndQuitBtn" style="
+                        padding: 12px 25px;
+                        font-size: 14px;
+                        background: linear-gradient(135deg, #ff44ff, #aa22aa);
+                        color: #fff;
+                        border: none;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                    ">SUBMIT & QUIT</button>
+
+                    <button id="justQuitBtn" style="
+                        padding: 12px 25px;
+                        font-size: 14px;
+                        background: rgba(255, 100, 100, 0.3);
+                        color: #ff6666;
+                        border: 1px solid #ff6666;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                    ">JUST QUIT</button>
+
+                    <button id="cancelQuitBtn" style="
+                        padding: 12px 25px;
+                        font-size: 14px;
+                        background: rgba(100, 100, 100, 0.5);
+                        color: #aaa;
+                        border: 1px solid #666;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                    ">CANCEL</button>
+                </div>
+
+                <div style="color: #666; font-size: 11px; margin-top: 15px;">
+                    Leave blank to submit as "${userLocation || 'Anonymous'}"
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const input = document.getElementById('quitPlayerNameInput');
+        input.focus();
+
+        document.getElementById('submitAndQuitBtn').addEventListener('click', async () => {
+            const name = input.value.trim();
+            await submitScore(name || null);
+            overlay.remove();
+            showInstructions(false);
+        });
+
+        document.getElementById('justQuitBtn').addEventListener('click', () => {
+            overlay.remove();
+            showInstructions(false);
+        });
+
+        document.getElementById('cancelQuitBtn').addEventListener('click', () => {
+            overlay.remove();
+            gameActive = true; // Resume game
+        });
+
+        // Enter key submits
+        input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+                const name = input.value.trim();
+                await submitScore(name || null);
+                overlay.remove();
+                showInstructions(false);
+            }
+        });
+    } else {
+        // Score doesn't qualify - simple quit confirmation
+        overlay.innerHTML = `
+            <div style="text-align: center; max-width: 400px; padding: 40px; background: rgba(0, 40, 80, 0.95); border: 2px solid #ffaa00; border-radius: 15px; box-shadow: 0 0 40px rgba(255, 170, 0, 0.4);">
+                <div style="color: #ffaa00; font-size: 24px; font-weight: bold; margin-bottom: 15px;">
+                    QUIT GAME?
+                </div>
+                <div style="color: #44ff88; font-size: 28px; font-weight: bold; margin-bottom: 20px;">
+                    Score: ${score}
+                </div>
+                <div style="color: #aaaaaa; font-size: 14px; margin-bottom: 25px;">
+                    Your progress will be lost.
+                </div>
+
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button id="confirmQuitBtn" style="
+                        padding: 12px 30px;
+                        font-size: 16px;
+                        background: rgba(255, 100, 100, 0.3);
+                        color: #ff6666;
+                        border: 1px solid #ff6666;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                    ">QUIT</button>
+
+                    <button id="cancelQuitBtn2" style="
+                        padding: 12px 30px;
+                        font-size: 16px;
+                        background: rgba(68, 255, 136, 0.2);
+                        color: #44ff88;
+                        border: 1px solid #44ff88;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                    ">CANCEL</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        document.getElementById('confirmQuitBtn').addEventListener('click', () => {
+            overlay.remove();
+            showInstructions(false);
+        });
+
+        document.getElementById('cancelQuitBtn2').addEventListener('click', () => {
+            overlay.remove();
+            gameActive = true; // Resume game
+        });
+    }
+}
+
 // Format time as MM:SS
 function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
@@ -939,6 +1125,12 @@ fetchLeaderboard();
 // === SOUND SYSTEM ===
 let soundEnabled = localStorage.getItem('soundEnabled') !== 'false'; // Default true, persist across sessions
 let showDpadControls = false; // D-pad movement controls hidden by default
+let showTouchHints = localStorage.getItem('showTouchHints') !== 'false'; // Default true for new users
+let touchHintsShownThisSession = false; // Track if hints were already shown this game session
+
+// Global functions for touch hints (will be assigned when overlay is created)
+let updateTouchHintsOverlay = () => {};
+let hideTouchHints = () => {};
 let audioContext = null;
 let audioContextReady = false;
 
@@ -1069,13 +1261,10 @@ const ASTEROID_MIN_SIZE = 0.5;
 const ASTEROID_MAX_SIZE = 2.0;
 const EARTH_RADIUS = 2; // For collision detection
 
-// Speed scales with level: level 1 is very slow, level 10 is fast
+// Constant asteroid speed (difficulty comes from quantity, not speed)
 function getAsteroidSpeed() {
-    const baseMin = 1.0;  // Slow at level 1
-    const baseMax = 2.0;
-    const levelMultiplier = 0.5 + (gameLevel - 1) * 0.3; // 0.5x at L1, up to 3.2x at L10
-    const min = baseMin * levelMultiplier;
-    const max = baseMax * levelMultiplier;
+    const min = 0.8;
+    const max = 1.5;
     return min + Math.random() * (max - min);
 }
 
@@ -1739,6 +1928,10 @@ function restartGame() {
     gameStartTime = Date.now();
     gameElapsedTime = 0;
     leaderboardChecked = false;
+
+    // Reset touch hints for new game
+    touchHintsShownThisSession = false;
+    updateTouchHintsOverlay();
 
     // Clear all asteroids
     asteroids.forEach(a => scene.remove(a));
@@ -2624,6 +2817,57 @@ function createControlUI() {
 
     document.body.appendChild(modeToggleBtn);
 
+    // === QUIT BUTTON ===
+    const quitBtn = document.createElement('button');
+    quitBtn.textContent = 'QUIT';
+    quitBtn.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        left: 100px;
+        background: rgba(255, 100, 100, 0.2);
+        border: 2px solid #ff6666;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-family: 'Courier New', monospace;
+        color: #ff6666;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        box-shadow: 0 0 15px rgba(255, 100, 100, 0.2);
+        z-index: 1000;
+        transition: all 0.2s;
+        min-width: 80px;
+        text-align: center;
+    `;
+
+    quitBtn.addEventListener('mouseenter', () => {
+        quitBtn.style.background = 'rgba(255, 100, 100, 0.4)';
+        quitBtn.style.boxShadow = '0 0 20px rgba(255, 100, 100, 0.4)';
+    });
+    quitBtn.addEventListener('mouseleave', () => {
+        quitBtn.style.background = 'rgba(255, 100, 100, 0.2)';
+        quitBtn.style.boxShadow = '0 0 15px rgba(255, 100, 100, 0.2)';
+    });
+
+    quitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showQuitDialog();
+    });
+
+    // Touch feedback
+    quitBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        quitBtn.style.transform = 'scale(0.95)';
+    });
+    quitBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        quitBtn.style.transform = 'scale(1)';
+    });
+
+    document.body.appendChild(quitBtn);
+
     // === HAMBURGER MENU FOR SETTINGS ===
     const hamburgerBtn = document.createElement('button');
     hamburgerBtn.innerHTML = '☰';
@@ -2749,6 +2993,58 @@ function createControlUI() {
     dpadSetting.appendChild(dpadToggleBtn);
     settingsPanel.appendChild(dpadSetting);
 
+    // === TOUCH HINTS TOGGLE ===
+    const hintsSetting = document.createElement('div');
+    hintsSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+
+    const hintsIcon = document.createElement('div');
+    hintsIcon.textContent = '💡';
+    hintsIcon.style.cssText = 'font-size: 16px;';
+
+    const hintsLabel = document.createElement('div');
+    hintsLabel.textContent = 'Touch Hints';
+    hintsLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
+
+    const hintsToggleBtn = document.createElement('button');
+    hintsToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44aaff;
+        border-radius: 6px;
+        background: rgba(68, 170, 255, 0.2);
+        color: #44aaff;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.2s;
+        min-width: 60px;
+    `;
+
+    function updateHintsToggle() {
+        if (showTouchHints) {
+            hintsToggleBtn.textContent = 'OFF';
+            hintsToggleBtn.style.background = '#44aaff';
+            hintsToggleBtn.style.color = '#000';
+        } else {
+            hintsToggleBtn.textContent = 'ON';
+            hintsToggleBtn.style.background = 'rgba(68, 170, 255, 0.2)';
+            hintsToggleBtn.style.color = '#44aaff';
+        }
+    }
+
+    hintsToggleBtn.addEventListener('click', () => {
+        showTouchHints = !showTouchHints;
+        localStorage.setItem('showTouchHints', showTouchHints);
+        updateHintsToggle();
+        updateTouchHintsOverlay();
+    });
+
+    hintsSetting.appendChild(hintsIcon);
+    hintsSetting.appendChild(hintsLabel);
+    hintsSetting.appendChild(hintsToggleBtn);
+    settingsPanel.appendChild(hintsSetting);
+    updateHintsToggle();
+
     // === ORBIT CONTROLS IN SETTINGS ===
     // Planet rotation control
     const planetSetting = document.createElement('div');
@@ -2861,6 +3157,84 @@ function createControlUI() {
 
     document.body.appendChild(settingsPanel);
     document.body.appendChild(hamburgerBtn);
+
+    // === TOUCH HINTS OVERLAY ===
+    const touchHintsOverlay = document.createElement('div');
+    touchHintsOverlay.id = 'touchHintsOverlay';
+    touchHintsOverlay.style.cssText = `
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        z-index: 999;
+        pointer-events: none;
+        font-family: 'Courier New', monospace;
+    `;
+
+    // Add CSS animation styles
+    if (!document.getElementById('touchHintsStyle')) {
+        const style = document.createElement('style');
+        style.id = 'touchHintsStyle';
+        style.textContent = `
+            @keyframes touchHintPulse {
+                0%, 100% { opacity: 0.9; transform: translateX(-50%) scale(1); }
+                50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+            }
+            @keyframes fingerDrag {
+                0%, 100% { transform: translate(0, 0); }
+                50% { transform: translate(30px, -20px); }
+            }
+            @keyframes arrowBounce {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    touchHintsOverlay.innerHTML = `
+        <div style="
+            background: rgba(0, 40, 80, 0.9);
+            border: 2px solid #44aaff;
+            border-radius: 12px;
+            padding: 15px 25px;
+            box-shadow: 0 0 20px rgba(68, 170, 255, 0.4);
+            animation: touchHintPulse 2s ease-in-out infinite;
+        ">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="font-size: 32px; animation: fingerDrag 1.5s ease-in-out infinite;">👆</div>
+                <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                    <div style="color: #44aaff; font-size: 14px; font-weight: bold;">TOUCH & DRAG</div>
+                    <div style="color: #ffffff; font-size: 12px;">to aim at asteroids</div>
+                </div>
+                <div style="font-size: 20px; color: #44ff88; animation: arrowBounce 1s ease-in-out infinite;">↗</div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(touchHintsOverlay);
+
+    // Assign global functions for touch hints
+    updateTouchHintsOverlay = () => {
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (showTouchHints && isTouchDevice && !touchHintsShownThisSession && gameActive) {
+            touchHintsOverlay.style.display = 'flex';
+        } else {
+            touchHintsOverlay.style.display = 'none';
+        }
+    };
+
+    // Hide hints on first touch
+    hideTouchHints = () => {
+        if (!touchHintsShownThisSession) {
+            touchHintsShownThisSession = true;
+            touchHintsOverlay.style.display = 'none';
+        }
+    };
 
     // === SHIP CONTROL PAD (D-pad style) ===
     const shipControlPad = document.createElement('div');
@@ -3563,6 +3937,7 @@ renderer.domElement.addEventListener('touchstart', (event) => {
     event.preventDefault();
     touchHandlersActive = true;
     touchState.pointers = Array.from(event.touches);
+    hideTouchHints(); // Hide touch hints on first touch
 
     if (touchState.pointers.length === 1) {
         touchState.prevPosition = {
@@ -4385,12 +4760,17 @@ function showInstructions(isResume = false) {
             gameStartTime = Date.now();
             gameElapsedTime = 0;
             leaderboardChecked = false;
+            // Reset and show touch hints for new game
+            touchHintsShownThisSession = false;
         }
 
         // Resume game if it wasn't already paused
         if (isResume && !wasPaused) {
             gameActive = true;
         }
+
+        // Show touch hints if applicable
+        updateTouchHintsOverlay();
     });
 }
 
