@@ -706,6 +706,7 @@ function createSpaceShip() {
 }
 
 const spaceShip = createSpaceShip();
+spaceShip.scale.set(0.5, 0.5, 0.5); // Make ship smaller
 scene.add(spaceShip);
 
 // === GAME STATE ===
@@ -1781,9 +1782,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 // === ORBIT PARAMETERS ===
-let shipOrbitRadius = 4.5;
-let orbitPerigee = 4.5;  // Closest point (can be adjusted)
-let orbitApogee = 4.5;   // Farthest point (same as perigee = circular)
+let shipOrbitRadius = 7;
+let orbitPerigee = 7;  // Closest point (can be adjusted)
+let orbitApogee = 7;   // Farthest point (same as perigee = circular)
 let orbitInclination = 0; // Degrees of orbital tilt
 
 // Control mode: 'camera' or 'ship'
@@ -3254,31 +3255,63 @@ function animate() {
     // === BLUE METHANE ENGINE FLAME ANIMATION ===
     const flameTime = clock.getElapsedTime();
     const engineNames = ['top', 'bot_left', 'bot_right'];
+
+    // Calculate thruster intensity based on ship orientation vs movement direction
+    // Ship's backward direction (where thrusters point) is local +Z
+    const shipBackward = new THREE.Vector3(0, 0, 1);
+    shipBackward.applyQuaternion(spaceShip.quaternion);
+
+    // Orbital tangent (movement direction)
+    const movementDir = new THREE.Vector3(
+        Math.sin(orbitAngle) * shipOrbitDirection,
+        0,
+        -Math.cos(orbitAngle) * shipOrbitDirection
+    ).normalize();
+
+    // Dot product: positive = thrusters facing movement (braking), negative = accelerating
+    const thrusterAlignment = shipBackward.dot(movementDir);
+    // Convert to throttle: -1 (full forward thrust) → 1.0 throttle, +1 (braking) → 0.0 throttle
+    const thrusterIntensity = Math.max(0, -thrusterAlignment);
+
     engineNames.forEach((pos, idx) => {
         const flame = spaceShip.getObjectByName(`engine_flame_${pos}`);
         const outer = spaceShip.getObjectByName(`engine_outer_${pos}`);
         const core = spaceShip.getObjectByName(`engine_core_${pos}`);
 
         if (flame && outer) {
-            // Flickering scale with multiple noise frequencies
-            const flicker1 = Math.sin(flameTime * 25 + idx * 2) * 0.15;
-            const flicker2 = Math.sin(flameTime * 40 + idx * 3) * 0.08;
-            const flicker3 = Math.sin(flameTime * 15) * 0.1;
-            const baseScale = 1 + flicker1 + flicker2 + flicker3;
+            if (thrusterIntensity < 0.1) {
+                // Engines off - hide flames
+                flame.visible = false;
+                outer.visible = false;
+            } else {
+                flame.visible = true;
+                outer.visible = true;
 
-            flame.scale.set(0.6 * baseScale, 1.2 * (1 + flicker1 * 1.5), 1);
-            outer.scale.set(0.9 * baseScale, 1.6 * (1 + flicker2 * 1.2), 1);
+                // Flickering scale with multiple noise frequencies, scaled by intensity
+                const flicker1 = Math.sin(flameTime * 25 + idx * 2) * 0.15;
+                const flicker2 = Math.sin(flameTime * 40 + idx * 3) * 0.08;
+                const flicker3 = Math.sin(flameTime * 15) * 0.1;
+                const baseScale = (1 + flicker1 + flicker2 + flicker3) * thrusterIntensity;
 
-            // Slight position jitter
-            const jitterZ = Math.sin(flameTime * 30 + idx * 4) * 0.03;
-            flame.position.z = 3.6 + jitterZ;
-            outer.position.z = 3.8 + jitterZ * 0.5;
+                flame.scale.set(0.6 * baseScale, 1.2 * (1 + flicker1 * 1.5) * thrusterIntensity, 1);
+                outer.scale.set(0.9 * baseScale, 1.6 * (1 + flicker2 * 1.2) * thrusterIntensity, 1);
+
+                // Slight position jitter
+                const jitterZ = Math.sin(flameTime * 30 + idx * 4) * 0.03;
+                flame.position.z = 3.6 + jitterZ;
+                outer.position.z = 3.8 + jitterZ * 0.5;
+            }
         }
 
         if (core) {
-            // Core brightness flicker
-            const coreFlicker = 0.9 + Math.sin(flameTime * 50 + idx) * 0.1;
-            core.material.opacity = coreFlicker;
+            if (thrusterIntensity < 0.1) {
+                core.visible = false;
+            } else {
+                core.visible = true;
+                // Core brightness flicker scaled by intensity
+                const coreFlicker = (0.9 + Math.sin(flameTime * 50 + idx) * 0.1) * thrusterIntensity;
+                core.material.opacity = coreFlicker;
+            }
         }
     });
 
