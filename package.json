@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "dev": "node index.js",
-    "start": "node index.js",
+    "dev": "node server.js",
+    "start": "node server.js",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:unit": "jest tests/unit --coverage",
     "test:integration": "jest tests/integration",
