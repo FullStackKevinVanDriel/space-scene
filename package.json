@@ -6,22 +6,20 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "start": "node server.js",
-    "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
-    "test:unit": "jest tests/unit --coverage",
-    "test:integration": "jest tests/integration",
-    "test:e2e": "playwright test",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:visual": "playwright test tests/visual",
-    "test:ci": "npm run test:unit && npm run test:integration && npm run test:e2e"
+    "start": "node server.js"
   },
-  "keywords": ["game", "space", "threejs", "shooter"],
+  "keywords": [
+    "game",
+    "space",
+    "threejs",
+    "shooter"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^16.3.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

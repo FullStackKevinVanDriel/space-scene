@@ -709,15 +709,21 @@ const spaceShip = createSpaceShip();
 spaceShip.scale.set(0.5, 0.5, 0.5); // Make ship smaller
 scene.add(spaceShip);
 
+// Populate occluding objects for reticle occlusion detection
+occludingObjects = [earth, moon, spaceShip];
+console.log('✓ Occlusion system initialized:', { earth: !!earth, moon: !!moon, spaceShip: !!spaceShip, count: occludingObjects.length });
+
 // === GAME STATE ===
-let gameLevel = 1; // 1-10, controls asteroid spawn rate
+let gameLevel = 1; // 1-10
 let earthHealth = 100;
 let maxEarthHealth = 100;
 let score = 0;
 let gameActive = true;
 
-// Level settings: asteroids in field at once (level 1 = just 1 asteroid)
-const LEVEL_ASTEROID_COUNTS = [1, 2, 3, 5, 7, 10, 14, 18, 25, 35]; // Level 1-10
+// NEW: Fixed asteroid count per level (level = number of targets)
+let levelAsteroidsRemaining = 0; // Targets left to destroy in current level
+let levelAsteroidsTotal = 0; // Total targets for current level
+const AMMO_PER_LEVEL = 100; // Laser ammo given at start of each level
 
 // Track destroyed asteroids for rewards
 let asteroidsDestroyed = 0;
@@ -808,6 +814,31 @@ const SoundManager = {
 
         noise.start(ctx.currentTime);
         noise.stop(ctx.currentTime + 0.5);
+    },
+
+    playVictory() {
+        if (!soundEnabled) return;
+
+        // Victory fanfare: ascending arpeggio
+        const notes = [523.25, 659.25, 783.99, 1046.50]; // C, E, G, C (one octave up)
+
+        notes.forEach((freq, index) => {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
+
+            const startTime = audioContext.currentTime + index * 0.15;
+            gainNode.gain.setValueAtTime(0.2, startTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.4);
+
+            oscillator.start(startTime);
+            oscillator.stop(startTime + 0.4);
+        });
     }
 };
 
@@ -820,6 +851,10 @@ let laserAmmo = 1000;
 // Active asteroids and explosions
 const asteroids = [];
 const explosions = [];
+
+// Occlusion detection for targeting reticles (reused every frame for performance)
+const occlusionRaycaster = new THREE.Raycaster();
+let occludingObjects = []; // Will be populated after earth, moon, spaceShip are created
 
 // Asteroid spawn settings
 const ASTEROID_SPAWN_MIN_DISTANCE = 120;
@@ -949,15 +984,11 @@ function createAsteroid() {
     return asteroidGroup;
 }
 
-// Spawn asteroids to maintain level count
+// Spawn asteroids - DEPRECATED: Now handled by startLevel()
+// Asteroids are spawned once per level, not continuously
 function spawnAsteroids() {
-    if (!gameActive) return;
-
-    const targetCount = LEVEL_ASTEROID_COUNTS[gameLevel - 1] || 3;
-
-    while (asteroids.length < targetCount) {
-        createAsteroid();
-    }
+    // No longer auto-spawns - levels have fixed asteroid counts
+    return;
 }
 
 // Create explosion effect (size-based)
@@ -1419,12 +1450,61 @@ function showGameOver() {
     });
 }
 
+// Show victory screen (won the game!)
+function showVictoryScreen() {
+    gameActive = false;
+    SoundManager.playVictory();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'victoryOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 20, 40, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        font-family: 'Courier New', monospace;
+    `;
+    overlay.innerHTML = `
+        <div style="color: #44ff88; font-size: 64px; font-weight: bold; text-shadow: 0 0 30px #00ff00; margin-bottom: 20px;">VICTORY!</div>
+        <div style="color: #ffffff; font-size: 32px; margin-top: 10px;">You've saved Earth!</div>
+        <div style="color: #ffff44; font-size: 24px; margin-top: 30px;">All 10 levels completed</div>
+        <div style="color: #44ff88; font-size: 28px; margin-top: 15px;">Final Score: ${score}</div>
+        <div style="color: #aaaaaa; font-size: 18px; margin-top: 10px;">Total Asteroids Destroyed: ${asteroidsDestroyed}</div>
+        <button id="playAgainBtn" style="
+            margin-top: 40px;
+            padding: 20px 50px;
+            font-size: 22px;
+            background: linear-gradient(135deg, #44ff88, #00cc66);
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(68, 255, 136, 0.5);
+        ">PLAY AGAIN</button>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('playAgainBtn').addEventListener('click', () => {
+        restartGame();
+        overlay.remove();
+    });
+}
+
 // Restart game
 function restartGame() {
     // Reset state
     earthHealth = maxEarthHealth;
     score = 0;
-    laserAmmo = 1000;
+    gameLevel = 1;
     asteroidsDestroyed = 0;
     gameActive = true;
 
@@ -1432,11 +1512,56 @@ function restartGame() {
     asteroids.forEach(a => scene.remove(a));
     asteroids.length = 0;
 
+    // Start level 1
+    startLevel(1);
+
     // Update displays
     updateHealthDisplay();
     updateScoreDisplay();
     updateAmmoDisplay();
     updateKillCountDisplay();
+    updateLevelDisplay();
+}
+
+// Start a new level
+function startLevel(level) {
+    gameLevel = level;
+
+    // Level number = number of asteroids to destroy
+    levelAsteroidsTotal = level;
+    levelAsteroidsRemaining = level;
+
+    // Reload ammo for new level
+    laserAmmo = AMMO_PER_LEVEL;
+
+    // Clear any existing asteroids
+    asteroids.forEach(a => scene.remove(a));
+    asteroids.length = 0;
+
+    // Spawn all asteroids for this level at once
+    for (let i = 0; i < level; i++) {
+        createAsteroid();
+    }
+
+    updateLevelDisplay();
+    updateAmmoDisplay();
+
+    console.log(`Level ${level} started - Destroy ${level} asteroids!`);
+}
+
+// Check if level is complete
+function checkLevelComplete() {
+    if (levelAsteroidsRemaining <= 0 && gameActive) {
+        if (gameLevel >= 10) {
+            // Won the game!
+            showVictoryScreen();
+        } else {
+            // Advance to next level
+            setTimeout(() => {
+                startLevel(gameLevel + 1);
+            }, 1500); // Brief pause before next level
+        }
+    }
 }
 
 // Targeting HUD: shows crosshairs over asteroids
@@ -1536,6 +1661,11 @@ function updateTargetingHUD() {
                 lockedTarget = asteroid;
             }
 
+            // Skip if occluded by Earth, Moon, or the ship (realistic visibility)
+            if (isOccluded(asteroid.position)) {
+                return; // don't render a reticle for this asteroid
+            }
+
             // Create targeting reticle
             const reticle = document.createElement('div');
             reticle.style.cssText = `
@@ -1617,6 +1747,24 @@ function projectToScreen(position) {
         y: (-vector.y * 0.5 + 0.5) * window.innerHeight,
         z: vector.z
     };
+}
+
+// Determine if a world position is occluded from the camera by Earth, Moon or the ship
+function isOccluded(targetPos) {
+    // Ray from camera to target
+    const origin = camera.position.clone();
+    const direction = targetPos.clone().sub(origin);
+    const distance = direction.length();
+    direction.normalize();
+
+    const raycaster = new THREE.Raycaster(origin, direction, 0.01, distance - 0.01);
+
+    // Objects that can occlude the target
+    const occluders = [earth, moon, spaceShip];
+
+    // Intersect (recursive for ship children)
+    const intersects = raycaster.intersectObjects(occluders, true);
+    return intersects.length > 0;
 }
 
 // Create alignment line element
@@ -3420,6 +3568,9 @@ function animate() {
                         asteroidsDestroyed++;
                         updateKillCountDisplay();
 
+                        // Decrement level asteroid counter
+                        levelAsteroidsRemaining--;
+
                         // Every 3 kills, spawn an angel asteroid (only if not at full health)
                         if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0 && earthHealth < maxEarthHealth) {
                             spawnAngelAsteroid();
@@ -3427,6 +3578,9 @@ function animate() {
 
                         // Create explosion at asteroid position (size-based)
                         createExplosion(asteroid.position.clone(), asteroid.userData.size);
+
+                        // Check if level is complete
+                        checkLevelComplete();
                     }
 
                     // Remove asteroid
@@ -3549,5 +3703,80 @@ function animate() {
         renderer.render(scene, camera);
     }
 }
+
+// Show game instructions
+function showInstructions() {
+    const overlay = document.createElement('div');
+    overlay.id = 'instructionsOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.95);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        font-family: 'Courier New', monospace;
+        color: #ffffff;
+    `;
+    overlay.innerHTML = `
+        <div style="max-width: 600px; padding: 40px;">
+            <h1 style="color: #44ff88; font-size: 36px; text-align: center; margin-bottom: 30px;">
+                🛸 EARTH DEFENDER 🌍
+            </h1>
+
+            <div style="font-size: 18px; line-height: 1.8; margin-bottom: 30px;">
+                <p><strong style="color: #ffff44;">OBJECTIVE:</strong></p>
+                <p>Destroy all asteroids in each level to advance. Complete all 10 levels to win!</p>
+
+                <p style="margin-top: 20px;"><strong style="color: #ffff44;">LEVEL SYSTEM:</strong></p>
+                <p>• Level 1 = 1 asteroid, Level 2 = 2 asteroids, ..., Level 10 = 10 asteroids</p>
+                <p>• Destroy all targets to advance to the next level</p>
+                <p>• Each level reloads your laser ammo (100 shots)</p>
+
+                <p style="margin-top: 20px;"><strong style="color: #ffff44;">CONTROLS:</strong></p>
+                <p>• <strong>Mouse/Touch:</strong> Aim and rotate ship or camera</p>
+                <p>• <strong>Click/Tap:</strong> Fire lasers</p>
+                <p>• <strong>Arrow Keys:</strong> Rotate ship (WASD also works)</p>
+                <p>• <strong>Spacebar:</strong> Fire lasers</p>
+                <p>• <strong>Ship/Camera Toggle:</strong> Switch control modes</p>
+
+                <p style="margin-top: 20px;"><strong style="color: #ffff44;">SPECIAL:</strong></p>
+                <p>• <span style="color: #00ff00;">Green Angel Asteroids</span> restore Earth health when destroyed</p>
+                <p>• Target reticles hide when asteroids are behind Earth/Moon/Ship</p>
+            </div>
+
+            <button id="startGameBtn" style="
+                padding: 20px 50px;
+                font-size: 24px;
+                background: linear-gradient(135deg, #44ff88, #00cc66);
+                color: #000;
+                border: none;
+                border-radius: 10px;
+                cursor: pointer;
+                font-family: 'Courier New', monospace;
+                font-weight: bold;
+                box-shadow: 0 0 20px rgba(68, 255, 136, 0.5);
+                display: block;
+                margin: 0 auto;
+            ">START GAME</button>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('startGameBtn').addEventListener('click', () => {
+        overlay.remove();
+    });
+}
+
+// Show instructions on first load
+showInstructions();
+
+// Initialize game: start at level 1
+startLevel(1);
 
 animate();
