@@ -1,7 +1,4 @@
 server.js
-index.js
-server.log
-server.pid
+Dockerfile
 node_modules/
 *.log
-README.md
