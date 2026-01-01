@@ -916,63 +916,6 @@ function createAsteroid() {
         createdAt: Date.now()
     };
 
-    // Create health bar immediately (visible from spawn)
-    const healthBarGroup = new THREE.Group();
-    const barWidth = size * 3.5;
-    const barHeight = 0.7;
-
-    // White border/frame for clear reference
-    const borderGeo = new THREE.PlaneGeometry(barWidth + 0.15, barHeight + 0.15);
-    const borderMat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.9,
-        side: THREE.DoubleSide
-    });
-    const border = new THREE.Mesh(borderGeo, borderMat);
-    healthBarGroup.add(border);
-
-    // Black background for contrast
-    const bgGeo = new THREE.PlaneGeometry(barWidth, barHeight);
-    const bgMat = new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        transparent: true,
-        opacity: 0.8,
-        side: THREE.DoubleSide
-    });
-    const bg = new THREE.Mesh(bgGeo, bgMat);
-    bg.position.z = 0.01;
-    healthBarGroup.add(bg);
-
-    // Red background bar (always visible - shows empty health)
-    const redGeo = new THREE.PlaneGeometry(barWidth * 0.95, barHeight * 0.75);
-    const redMat = new THREE.MeshBasicMaterial({
-        color: 0xff0000,
-        transparent: true,
-        opacity: 1.0,
-        side: THREE.DoubleSide
-    });
-    const redBar = new THREE.Mesh(redGeo, redMat);
-    redBar.position.z = 0.02;
-    healthBarGroup.add(redBar);
-
-    // Health fill (green) - starts at full, shrinks as damage taken
-    const fillGeo = new THREE.PlaneGeometry(barWidth * 0.95, barHeight * 0.75);
-    const fillMat = new THREE.MeshBasicMaterial({
-        color: 0x00ff00,
-        transparent: true,
-        opacity: 1.0,
-        side: THREE.DoubleSide
-    });
-    const fill = new THREE.Mesh(fillGeo, fillMat);
-    fill.position.z = 0.03;
-    healthBarGroup.add(fill);
-
-    healthBarGroup.position.y = -(size + 0.8); // Position below asteroid
-    asteroidGroup.add(healthBarGroup);
-    asteroidGroup.userData.healthBar = healthBarGroup;
-    asteroidGroup.userData.healthFill = fill;
-
     scene.add(asteroidGroup);
     asteroids.push(asteroidGroup);
     return asteroidGroup;
@@ -1499,6 +1442,9 @@ function updateTargetingHUD() {
     // Update alignment line (dotted line showing where ship is aiming)
     updateAlignmentLine(shipDirection);
 
+    // Track if we have a locked target
+    let lockedTarget = null;
+
     // Project each asteroid to screen space
     asteroids.forEach((asteroid, index) => {
         const screenPos = projectToScreen(asteroid.position);
@@ -1515,6 +1461,11 @@ function updateTargetingHUD() {
             const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
             const alignment = shipDirection.dot(toAsteroid);
             const isAligned = alignment > 0.98; // Within ~11 degrees
+
+            // If aligned, this is our locked target
+            if (isAligned) {
+                lockedTarget = asteroid;
+            }
 
             // Create targeting reticle
             const reticle = document.createElement('div');
@@ -1554,6 +1505,33 @@ function updateTargetingHUD() {
             `;
             distLabel.textContent = Math.round(distance) + 'm';
             reticle.appendChild(distLabel);
+
+            // Health bar for THIS asteroid (underneath its reticle)
+            const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
+            const healthBarContainer = document.createElement('div');
+            healthBarContainer.style.cssText = `
+                position: absolute;
+                bottom: -20px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: ${size * 0.9}px;
+                height: 8px;
+                background: rgba(0, 0, 0, 0.8);
+                border: 1px solid ${isAligned ? '#ff4444' : '#44aaff'};
+                border-radius: 3px;
+                overflow: hidden;
+            `;
+
+            // Health fill bar
+            const healthFill = document.createElement('div');
+            const healthColor = healthPct > 50 ? '#00ff00' : healthPct > 25 ? '#ffaa00' : '#ff0000';
+            healthFill.style.cssText = `
+                width: ${healthPct}%;
+                height: 100%;
+                background: ${healthColor};
+            `;
+            healthBarContainer.appendChild(healthFill);
+            reticle.appendChild(healthBarContainer);
 
             hudContainer.appendChild(reticle);
         }
@@ -3180,21 +3158,6 @@ function animate() {
                         asteroid.children[0].material.emissive.setHex(originalEmissive);
                     }
                 }, 100);
-
-                // Update health bar fill (health bar already exists from spawn)
-                const healthPct = asteroid.userData.health / asteroid.userData.maxHealth;
-                asteroid.userData.healthFill.scale.x = Math.max(0, healthPct);
-                // Position fill to shrink from right to left (barWidth * 0.95 / 2 = size * 1.66)
-                asteroid.userData.healthFill.position.x = -(asteroid.userData.size * 1.66 * (1 - healthPct));
-
-                // Color based on health
-                if (healthPct > 0.5) {
-                    asteroid.userData.healthFill.material.color.setHex(0x00ff00); // Green
-                } else if (healthPct > 0.25) {
-                    asteroid.userData.healthFill.material.color.setHex(0xffaa00); // Orange
-                } else {
-                    asteroid.userData.healthFill.material.color.setHex(0xff0000); // Red
-                }
 
                 // Dramatic hit effect with asteroid feedback
                 createHitSpark(bolt.position.clone(), asteroid);
