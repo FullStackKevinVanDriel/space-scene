@@ -725,6 +725,7 @@ const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 
 // === SOUND SYSTEM ===
 let soundEnabled = true;
+let showDpadControls = false; // D-pad movement controls hidden by default
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
 // Sound manager with synthesized sounds
@@ -828,8 +829,8 @@ function createAsteroid() {
     const size = ASTEROID_MIN_SIZE + Math.random() * (ASTEROID_MAX_SIZE - ASTEROID_MIN_SIZE);
 
     // Health based on size: bigger = more hits required
-    // Health: small asteroids = 1 hit, medium = 2, large = 3 max
-    const health = Math.ceil(size); // 1-3 hits based on size
+    // Ensure all asteroids take multiple hits for better feedback (3-6 hits)
+    const health = Math.floor(3 + size * 1.5); // 3-6 hits based on size
 
     // Create rocky asteroid geometry using icosahedron with noise
     const baseGeo = new THREE.IcosahedronGeometry(size, 1);
@@ -896,14 +897,10 @@ function createAsteroid() {
         spawnDistance * Math.cos(spawnPhi)
     );
 
-    // Velocity: moves toward Earth (origin) with slight random offset
+    // Velocity: moves directly toward Earth (origin at 0,0,0)
     const speed = getAsteroidSpeed();
-    const targetOffset = new THREE.Vector3(
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2,
-        (Math.random() - 0.5) * 2
-    );
-    const direction = targetOffset.sub(asteroidGroup.position).normalize();
+    const earthPosition = new THREE.Vector3(0, 0, 0); // Earth is at origin
+    const direction = earthPosition.sub(asteroidGroup.position).normalize();
 
     // Store asteroid data
     asteroidGroup.userData = {
@@ -918,6 +915,63 @@ function createAsteroid() {
         ),
         createdAt: Date.now()
     };
+
+    // Create health bar immediately (visible from spawn)
+    const healthBarGroup = new THREE.Group();
+    const barWidth = size * 3.5;
+    const barHeight = 0.7;
+
+    // White border/frame for clear reference
+    const borderGeo = new THREE.PlaneGeometry(barWidth + 0.15, barHeight + 0.15);
+    const borderMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.9,
+        side: THREE.DoubleSide
+    });
+    const border = new THREE.Mesh(borderGeo, borderMat);
+    healthBarGroup.add(border);
+
+    // Black background for contrast
+    const bgGeo = new THREE.PlaneGeometry(barWidth, barHeight);
+    const bgMat = new THREE.MeshBasicMaterial({
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide
+    });
+    const bg = new THREE.Mesh(bgGeo, bgMat);
+    bg.position.z = 0.01;
+    healthBarGroup.add(bg);
+
+    // Red background bar (always visible - shows empty health)
+    const redGeo = new THREE.PlaneGeometry(barWidth * 0.95, barHeight * 0.75);
+    const redMat = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+    });
+    const redBar = new THREE.Mesh(redGeo, redMat);
+    redBar.position.z = 0.02;
+    healthBarGroup.add(redBar);
+
+    // Health fill (green) - starts at full, shrinks as damage taken
+    const fillGeo = new THREE.PlaneGeometry(barWidth * 0.95, barHeight * 0.75);
+    const fillMat = new THREE.MeshBasicMaterial({
+        color: 0x00ff00,
+        transparent: true,
+        opacity: 1.0,
+        side: THREE.DoubleSide
+    });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.position.z = 0.03;
+    healthBarGroup.add(fill);
+
+    healthBarGroup.position.y = -(size + 0.8); // Position below asteroid
+    asteroidGroup.add(healthBarGroup);
+    asteroidGroup.userData.healthBar = healthBarGroup;
+    asteroidGroup.userData.healthFill = fill;
 
     scene.add(asteroidGroup);
     asteroids.push(asteroidGroup);
@@ -1486,23 +1540,6 @@ function updateTargetingHUD() {
             crosshair.style.cssText = `position:absolute;width:100%;height:100%;`;
             reticle.appendChild(crosshair);
 
-            // Health indicator (for multi-hit asteroids)
-            if (asteroid.userData.maxHealth > 1) {
-                const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
-                const healthIndicator = document.createElement('div');
-                healthIndicator.style.cssText = `
-                    position: absolute;
-                    bottom: -12px;
-                    left: 10%;
-                    width: 80%;
-                    height: 4px;
-                    background: rgba(0,0,0,0.5);
-                    border-radius: 2px;
-                `;
-                healthIndicator.innerHTML = `<div style="width:${healthPct}%;height:100%;background:#ff4444;border-radius:2px;"></div>`;
-                reticle.appendChild(healthIndicator);
-            }
-
             // Distance indicator
             const distLabel = document.createElement('div');
             distLabel.style.cssText = `
@@ -1723,24 +1760,6 @@ const keys = {};
 
 // === UI CONTROLS ===
 function createControlUI() {
-    const container = document.createElement('div');
-    container.id = 'controls';
-    container.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0, 15, 30, 0.9);
-        border: 1px solid #4488ff;
-        border-radius: 12px;
-        padding: 15px 25px;
-        display: none;
-        gap: 30px;
-        font-family: 'Courier New', monospace;
-        color: #4488ff;
-        box-shadow: 0 0 20px rgba(68, 136, 255, 0.2);
-    `;
-
     // Laser fire button
     const laserDiv = document.createElement('div');
     laserDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;';
@@ -1805,29 +1824,6 @@ function createControlUI() {
     `;
     document.body.appendChild(laserDiv);
 
-    // === AMMO COUNTER ===
-    const ammoDiv = document.createElement('div');
-    ammoDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 4px;';
-
-    const ammoLabel = document.createElement('div');
-    ammoLabel.textContent = 'AMMO';
-    ammoLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.7;';
-    ammoDiv.appendChild(ammoLabel);
-
-    const ammoCount = document.createElement('div');
-    ammoCount.id = 'ammoCount';
-    ammoCount.textContent = '1000';
-    ammoCount.style.cssText = `
-        font-size: 20px;
-        font-weight: bold;
-        color: #44ff88;
-        text-shadow: 0 0 10px #44ff88;
-    `;
-    ammoDiv.appendChild(ammoCount);
-    container.appendChild(ammoDiv);
-
-    document.body.appendChild(container);
-
     // === MODE TOGGLE (Camera/Ship) - Single toggle button ===
     const modeToggleBtn = document.createElement('button');
     modeToggleBtn.textContent = 'CAM'; // Start in ship mode, so button shows "CAM" (what you'll switch to)
@@ -1860,7 +1856,8 @@ function createControlUI() {
         } else {
             // In ship mode, button shows "CAM" (tap to switch to camera)
             modeToggleBtn.textContent = 'CAM';
-            shipControlPad.style.display = 'flex';
+            // Only show D-pad if both in ship mode AND the setting is enabled
+            shipControlPad.style.display = showDpadControls ? 'flex' : 'none';
         }
     }
 
@@ -1934,74 +1931,96 @@ function createControlUI() {
 
     const soundLabel = document.createElement('div');
     soundLabel.textContent = 'Sound';
-    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px; flex: 1;';
+    soundLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
 
-    const soundButtons = document.createElement('div');
-    soundButtons.style.cssText = 'display: flex; gap: 3px;';
-
-    const soundOnBtn = document.createElement('button');
-    soundOnBtn.textContent = 'ON';
-    soundOnBtn.style.cssText = `
-        padding: 4px 8px;
-        border: 1px solid #44ff88;
-        border-radius: 4px;
+    const soundToggleBtn = document.createElement('button');
+    soundToggleBtn.textContent = 'OFF'; // Start with sound ON, so button shows "OFF" (what you'll switch to)
+    soundToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44ff88;
+        border-radius: 6px;
         background: #44ff88;
         color: #000;
         cursor: pointer;
         font-family: 'Courier New', monospace;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: bold;
         transition: all 0.2s;
+        min-width: 60px;
     `;
 
-    const soundOffBtn = document.createElement('button');
-    soundOffBtn.textContent = 'OFF';
-    soundOffBtn.style.cssText = `
-        padding: 4px 8px;
-        border: 1px solid #44ff88;
-        border-radius: 4px;
-        background: transparent;
-        color: #44ff88;
-        cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 9px;
-        transition: all 0.2s;
-    `;
-
-    function updateSoundButtons() {
+    function updateSoundToggle() {
         if (soundEnabled) {
-            soundOnBtn.style.background = '#44ff88';
-            soundOnBtn.style.color = '#000';
-            soundOnBtn.style.fontWeight = 'bold';
-            soundOffBtn.style.background = 'transparent';
-            soundOffBtn.style.color = '#44ff88';
-            soundOffBtn.style.fontWeight = 'normal';
+            // Sound is ON, button shows "OFF" (tap to turn off)
+            soundToggleBtn.textContent = 'OFF';
         } else {
-            soundOffBtn.style.background = '#44ff88';
-            soundOffBtn.style.color = '#000';
-            soundOffBtn.style.fontWeight = 'bold';
-            soundOnBtn.style.background = 'transparent';
-            soundOnBtn.style.color = '#44ff88';
-            soundOnBtn.style.fontWeight = 'normal';
+            // Sound is OFF, button shows "ON" (tap to turn on)
+            soundToggleBtn.textContent = 'ON';
         }
     }
 
-    soundOnBtn.addEventListener('click', () => {
-        soundEnabled = true;
-        updateSoundButtons();
+    soundToggleBtn.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        updateSoundToggle();
     });
 
-    soundOffBtn.addEventListener('click', () => {
-        soundEnabled = false;
-        updateSoundButtons();
-    });
-
-    soundButtons.appendChild(soundOnBtn);
-    soundButtons.appendChild(soundOffBtn);
     soundSetting.appendChild(soundIcon);
     soundSetting.appendChild(soundLabel);
-    soundSetting.appendChild(soundButtons);
+    soundSetting.appendChild(soundToggleBtn);
     settingsPanel.appendChild(soundSetting);
+
+    // D-pad controls toggle in settings
+    const dpadSetting = document.createElement('div');
+    dpadSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+
+    const dpadIcon = document.createElement('div');
+    dpadIcon.textContent = '🎮';
+    dpadIcon.style.cssText = 'font-size: 16px;';
+
+    const dpadLabel = document.createElement('div');
+    dpadLabel.textContent = 'D-Pad';
+    dpadLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
+
+    const dpadToggleBtn = document.createElement('button');
+    dpadToggleBtn.textContent = 'ON'; // Start hidden, so button shows "ON" (tap to show)
+    dpadToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44ff88;
+        border-radius: 6px;
+        background: rgba(68, 255, 136, 0.2);
+        color: #44ff88;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.2s;
+        min-width: 60px;
+    `;
+
+    function updateDpadToggle() {
+        if (showDpadControls) {
+            // D-pad is shown, button shows "OFF" (tap to hide)
+            dpadToggleBtn.textContent = 'OFF';
+            dpadToggleBtn.style.background = '#44ff88';
+            dpadToggleBtn.style.color = '#000';
+        } else {
+            // D-pad is hidden, button shows "ON" (tap to show)
+            dpadToggleBtn.textContent = 'ON';
+            dpadToggleBtn.style.background = 'rgba(68, 255, 136, 0.2)';
+            dpadToggleBtn.style.color = '#44ff88';
+        }
+    }
+
+    dpadToggleBtn.addEventListener('click', () => {
+        showDpadControls = !showDpadControls;
+        updateDpadToggle();
+        updateModeToggle(); // Update D-pad visibility
+    });
+
+    dpadSetting.appendChild(dpadIcon);
+    dpadSetting.appendChild(dpadLabel);
+    dpadSetting.appendChild(dpadToggleBtn);
+    settingsPanel.appendChild(dpadSetting);
 
     // === ORBIT CONTROLS IN SETTINGS ===
     // Planet rotation control
@@ -2122,7 +2141,7 @@ function createControlUI() {
     shipControlPad.style.cssText = `
         position: fixed;
         bottom: 100px;
-        right: 20px;
+        left: 10px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -2335,31 +2354,59 @@ function createControlUI() {
     healthDiv.appendChild(healthText);
     gamePanel.appendChild(healthDiv);
 
-    // Stats row - combine score/threats/destroyed in compact format
+    // Stats row - score/threats/kills/ammo in compact format
     const statsRow = document.createElement('div');
-    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
+    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
 
     statsRow.innerHTML = `
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">SCORE</div>
-            <div id="scoreValue" style="font-size: 14px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
+            <div id="scoreValue" style="font-size: 12px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">THREATS</div>
-            <div id="asteroidCount" style="font-size: 14px; font-weight: bold; color: #ff4444; text-shadow: 0 0 8px #ff4444;">0</div>
+            <div id="asteroidCount" style="font-size: 12px; font-weight: bold; color: #ff4444;">0</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">KILLS</div>
-            <div id="killCount" style="font-size: 14px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+            <div id="killCount" style="font-size: 12px; font-weight: bold; color: #88ff44; text-shadow: 0 0 8px #88ff44;">0</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">AMMO</div>
+            <div id="ammoCount" style="font-size: 12px; font-weight: bold; color: #44aaff; text-shadow: 0 0 8px #44aaff;">1000</div>
         </div>
     `;
     gamePanel.appendChild(statsRow);
 
     document.body.appendChild(gamePanel);
 
-    // Slider styling
+    // Slider styling and threat animation
     const style = document.createElement('style');
     style.textContent = `
+        @keyframes threatPulse {
+            0%, 100% {
+                text-shadow: 0 0 8px #ff4444;
+                transform: scale(1);
+                background-color: transparent;
+            }
+            50% {
+                text-shadow: 0 0 25px #ff4444, 0 0 35px #ff0000, 0 0 45px #ff0000;
+                transform: scale(1.2);
+                background-color: rgba(255, 68, 68, 0.2);
+            }
+        }
+
+        #asteroidCount {
+            text-shadow: 0 0 8px #ff4444;
+            border-radius: 4px;
+            padding: 2px 4px;
+            transition: all 0.2s;
+        }
+
+        .threat-active {
+            animation: threatPulse 0.6s ease-in-out infinite;
+        }
+
         #controls input[type="range"] {
             -webkit-appearance: none;
             height: 6px;
@@ -3076,13 +3123,21 @@ function animate() {
         const hitRadius = EARTH_RADIUS + asteroid.userData.size * 0.5;
 
         if (distanceToEarth < hitRadius) {
-            // Asteroid hit Earth!
-            const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
-            earthHealth -= damage;
-            updateHealthDisplay();
-
-            // Create explosion at impact point
-            createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            // Check if this is an angel asteroid
+            if (asteroid.userData.isAngel) {
+                // Angel hit Earth - restore health!
+                earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                updateHealthDisplay();
+                createAngelExplosion(asteroid.position.clone());
+                showNotification('+25 HEALTH!', '#88ffaa');
+            } else {
+                // Regular asteroid hit Earth - damage!
+                const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
+                earthHealth -= damage;
+                updateHealthDisplay();
+                // Create explosion at impact point
+                createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            }
 
             // Remove asteroid
             scene.remove(asteroid);
@@ -3116,6 +3171,30 @@ function animate() {
             if (distance < hitRadius) {
                 // Damage asteroid
                 asteroid.userData.health--;
+
+                // Immediate visual feedback - flash the asteroid
+                const originalEmissive = asteroid.children[0].material.emissive.getHex();
+                asteroid.children[0].material.emissive.setHex(0xffff00); // Yellow flash
+                setTimeout(() => {
+                    if (asteroid.parent) { // Check still exists
+                        asteroid.children[0].material.emissive.setHex(originalEmissive);
+                    }
+                }, 100);
+
+                // Update health bar fill (health bar already exists from spawn)
+                const healthPct = asteroid.userData.health / asteroid.userData.maxHealth;
+                asteroid.userData.healthFill.scale.x = Math.max(0, healthPct);
+                // Position fill to shrink from right to left (barWidth * 0.95 / 2 = size * 1.66)
+                asteroid.userData.healthFill.position.x = -(asteroid.userData.size * 1.66 * (1 - healthPct));
+
+                // Color based on health
+                if (healthPct > 0.5) {
+                    asteroid.userData.healthFill.material.color.setHex(0x00ff00); // Green
+                } else if (healthPct > 0.25) {
+                    asteroid.userData.healthFill.material.color.setHex(0xffaa00); // Orange
+                } else {
+                    asteroid.userData.healthFill.material.color.setHex(0xff0000); // Red
+                }
 
                 // Dramatic hit effect with asteroid feedback
                 createHitSpark(bolt.position.clone(), asteroid);
@@ -3162,6 +3241,38 @@ function animate() {
             }
         }
 
+        // Check collision with Earth (friendly fire!)
+        if (!hitAsteroid) {
+            const distanceToEarth = bolt.position.length();
+            if (distanceToEarth < EARTH_RADIUS + 0.3) {
+                // Laser hit Earth!
+                const damage = 2; // Small damage per laser hit
+                earthHealth -= damage;
+                updateHealthDisplay();
+
+                // Create small impact explosion on Earth
+                createExplosion(bolt.position.clone(), 0.3);
+
+                // Flash the Earth briefly
+                earth.material.emissive.setHex(0xff4444);
+                setTimeout(() => {
+                    earth.material.emissive.setHex(0x000000);
+                }, 50);
+
+                // Remove bolt
+                scene.remove(bolt);
+                laserBolts.splice(i, 1);
+                hitAsteroid = true; // Prevent further checks
+
+                // Check game over
+                if (earthHealth <= 0) {
+                    earthHealth = 0;
+                    gameActive = false;
+                    showGameOver();
+                }
+            }
+        }
+
         // Remove if traveled too far (and didn't hit anything)
         if (!hitAsteroid && bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
             scene.remove(bolt);
@@ -3176,6 +3287,12 @@ function animate() {
     const asteroidCountEl = document.getElementById('asteroidCount');
     if (asteroidCountEl) {
         asteroidCountEl.textContent = asteroids.length;
+        // Make threats pulse/glow when there are active threats
+        if (asteroids.length > 0) {
+            asteroidCountEl.classList.add('threat-active');
+        } else {
+            asteroidCountEl.classList.remove('threat-active');
+        }
     }
 
     // === UPDATE HUD ===
