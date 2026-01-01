@@ -714,6 +714,7 @@ let gameLevel = 1; // 1-10
 let earthHealth = 100;
 let maxEarthHealth = 100;
 let score = 0;
+let highScore = parseInt(localStorage.getItem('earthDefenderHighScore')) || 0;
 let gameActive = true;
 
 // NEW: Fixed asteroid count per level (level = number of targets)
@@ -1395,6 +1396,20 @@ function updateScoreDisplay() {
     if (scoreEl) {
         scoreEl.textContent = score;
     }
+    // Update high score if needed
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('earthDefenderHighScore', highScore);
+        updateHighScoreDisplay();
+    }
+}
+
+// Update high score display
+function updateHighScoreDisplay() {
+    const highScoreEl = document.getElementById('highScoreValue');
+    if (highScoreEl) {
+        highScoreEl.textContent = highScore;
+    }
 }
 
 // Update level display
@@ -1523,6 +1538,7 @@ function restartGame() {
 
 // Show level-up notification
 function showLevelUpNotification(level) {
+    const prevLevel = level - 1;
     const notification = document.createElement('div');
     notification.id = 'levelUpNotification';
     notification.style.cssText = `
@@ -1542,7 +1558,8 @@ function showLevelUpNotification(level) {
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     `;
     notification.innerHTML = `
-        <div style="font-size: 18px; color: #44aaff; letter-spacing: 3px; margin-bottom: 10px;">LEVEL COMPLETE</div>
+        <div style="font-size: 14px; color: #88ff88; letter-spacing: 2px; margin-bottom: 5px;">LEVEL ${prevLevel} COMPLETE</div>
+        <div style="font-size: 24px; color: #44aaff; letter-spacing: 3px; margin-bottom: 10px;">STARTING LEVEL</div>
         <div style="font-size: 72px; font-weight: bold; color: #44ff88; text-shadow: 0 0 30px #44ff88, 0 0 60px #44ff88;">
             ${level}
         </div>
@@ -1952,6 +1969,10 @@ function updateAlignmentLine(shipDirection) {
     const farPoint = spaceShip.position.clone().add(shipDirection.clone().multiplyScalar(200));
     const farScreen = projectToScreen(farPoint);
 
+    // Check if aiming at Earth (friendly fire warning)
+    const aimingAtEarth = checkAimingAtEarth(shipDirection);
+    updateFriendlyFireWarning(aimingAtEarth);
+
     // Only show if ship is on screen
     if (shipScreen.z < 1 && farScreen.z < 1) {
         aimLine.setAttribute('x1', shipScreen.x);
@@ -1959,8 +1980,129 @@ function updateAlignmentLine(shipDirection) {
         aimLine.setAttribute('x2', farScreen.x);
         aimLine.setAttribute('y2', farScreen.y);
         aimLine.style.opacity = '0.6';
+        // Change line color if aiming at Earth
+        if (aimingAtEarth) {
+            aimLine.setAttribute('stroke', '#ff4444');
+        } else {
+            aimLine.setAttribute('stroke', 'url(#dottedPattern)');
+        }
     } else {
         aimLine.style.opacity = '0';
+    }
+}
+
+// Check if ship is aiming at Earth
+function checkAimingAtEarth(shipDirection) {
+    // Vector from ship to Earth center (Earth is at origin)
+    const toEarth = new THREE.Vector3().sub(spaceShip.position).normalize();
+    const distanceToEarth = spaceShip.position.length();
+
+    // Check alignment with Earth
+    const alignment = shipDirection.dot(toEarth);
+
+    // Calculate if the aim line would hit Earth's sphere
+    // Using ray-sphere intersection concept
+    if (alignment > 0) {
+        // Ship is facing toward Earth direction
+        const closestApproach = spaceShip.position.clone().add(
+            shipDirection.clone().multiplyScalar(alignment * distanceToEarth)
+        );
+        const missDistance = closestApproach.length();
+
+        // If closest approach is within Earth radius, we're aiming at Earth
+        return missDistance < EARTH_RADIUS + 0.5;
+    }
+    return false;
+}
+
+// Update friendly fire warning UI
+function updateFriendlyFireWarning(isAiming) {
+    let warning = document.getElementById('friendlyFireWarning');
+    let earthHighlight = document.getElementById('earthHighlight');
+
+    if (isAiming) {
+        // Create warning if it doesn't exist
+        if (!warning) {
+            warning = document.createElement('div');
+            warning.id = 'friendlyFireWarning';
+            warning.style.cssText = `
+                position: fixed;
+                top: 80px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(255, 0, 0, 0.8);
+                color: #ffffff;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                font-weight: bold;
+                z-index: 9000;
+                text-shadow: 0 0 10px #ff0000;
+                box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+                animation: warningPulse 0.5s ease-in-out infinite alternate;
+            `;
+            warning.innerHTML = '⚠ FRIENDLY FIRE WARNING - AIMING AT EARTH ⚠';
+            document.body.appendChild(warning);
+
+            // Add pulse animation style if not exists
+            if (!document.getElementById('warningPulseStyle')) {
+                const style = document.createElement('style');
+                style.id = 'warningPulseStyle';
+                style.textContent = `
+                    @keyframes warningPulse {
+                        from { opacity: 0.7; transform: translateX(-50%) scale(1); }
+                        to { opacity: 1; transform: translateX(-50%) scale(1.05); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+        warning.style.display = 'block';
+
+        // Create Earth highlight ring if it doesn't exist
+        if (!earthHighlight) {
+            earthHighlight = document.createElement('div');
+            earthHighlight.id = 'earthHighlight';
+            earthHighlight.style.cssText = `
+                position: fixed;
+                pointer-events: none;
+                border: 3px solid #ff4444;
+                border-radius: 50%;
+                box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3);
+                z-index: 8999;
+                animation: earthWarningPulse 0.3s ease-in-out infinite alternate;
+            `;
+            document.body.appendChild(earthHighlight);
+
+            // Add Earth pulse animation
+            if (!document.getElementById('earthWarningPulseStyle')) {
+                const style = document.createElement('style');
+                style.id = 'earthWarningPulseStyle';
+                style.textContent = `
+                    @keyframes earthWarningPulse {
+                        from { box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3); }
+                        to { box-shadow: 0 0 50px #ff0000, inset 0 0 50px rgba(255, 0, 0, 0.5); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        // Position highlight over Earth
+        const earthScreen = projectToScreen(earth.position);
+        const distanceToEarth = camera.position.distanceTo(earth.position);
+        const apparentSize = (EARTH_RADIUS * 2 * window.innerHeight) / (distanceToEarth * 2);
+
+        earthHighlight.style.width = apparentSize + 'px';
+        earthHighlight.style.height = apparentSize + 'px';
+        earthHighlight.style.left = (earthScreen.x - apparentSize / 2) + 'px';
+        earthHighlight.style.top = (earthScreen.y - apparentSize / 2) + 'px';
+        earthHighlight.style.display = 'block';
+
+    } else {
+        if (warning) warning.style.display = 'none';
+        if (earthHighlight) earthHighlight.style.display = 'none';
     }
 }
 
@@ -2776,8 +2918,8 @@ function createControlUI() {
             <div id="scoreValue" style="font-size: 12px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
         </div>
         <div style="text-align: center;">
-            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">THREATS</div>
-            <div id="asteroidCount" style="font-size: 12px; font-weight: bold; color: #ff4444;">0</div>
+            <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">BEST</div>
+            <div id="highScoreValue" style="font-size: 12px; font-weight: bold; color: #ff44ff; text-shadow: 0 0 8px #ff44ff;">${highScore}</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 7px; letter-spacing: 1px;">KILLS</div>
