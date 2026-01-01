@@ -1839,17 +1839,23 @@ function createControlUI() {
         }
     }
 
-    modeToggleBtn.addEventListener('click', () => {
+    modeToggleBtn.addEventListener('click', (e) => {
+        // Prevent event bubbling to avoid conflicts with other input handlers
+        e.preventDefault();
+        e.stopPropagation();
+
         // Toggle between modes
         controlMode = controlMode === 'camera' ? 'ship' : 'camera';
         updateModeToggle();
     });
 
     // Touch feedback
-    modeToggleBtn.addEventListener('touchstart', () => {
+    modeToggleBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
         modeToggleBtn.style.transform = 'scale(0.95)';
     });
-    modeToggleBtn.addEventListener('touchend', () => {
+    modeToggleBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
         modeToggleBtn.style.transform = 'scale(1)';
     });
 
@@ -2476,6 +2482,9 @@ const pointerState = {
 let touchHandlersActive = false;
 
 renderer.domElement.addEventListener('pointerdown', (ev) => {
+    // Skip pointer events if touch handlers are active (prevents double-handling on touch devices)
+    if (touchHandlersActive) return;
+
     ev.preventDefault();
     renderer.domElement.setPointerCapture(ev.pointerId);
     pointerState.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, type: ev.pointerType, button: ev.button, buttons: ev.buttons });
@@ -2490,6 +2499,9 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
 });
 
 renderer.domElement.addEventListener('pointermove', (ev) => {
+    // Skip pointer events if touch handlers are active (prevents double-handling on touch devices)
+    if (touchHandlersActive) return;
+
     if (!pointerState.pointers.has(ev.pointerId) && ev.pointerType === 'mouse' && ev.buttons === 0) return;
     const prev = pointerState.pointers.get(ev.pointerId);
     const prevX = prev ? prev.x : ev.clientX;
@@ -2607,6 +2619,9 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
 });
 
 renderer.domElement.addEventListener('pointerup', (ev) => {
+    // Skip pointer events if touch handlers are active (prevents double-handling on touch devices)
+    if (touchHandlersActive) return;
+
     renderer.domElement.releasePointerCapture(ev.pointerId);
     pointerState.pointers.delete(ev.pointerId);
     if (pointerState.pointers.size === 0) {
@@ -2622,6 +2637,9 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 });
 
 renderer.domElement.addEventListener('pointercancel', (ev) => {
+    // Skip pointer events if touch handlers are active (prevents double-handling on touch devices)
+    if (touchHandlersActive) return;
+
     renderer.domElement.releasePointerCapture(ev.pointerId);
     pointerState.pointers.delete(ev.pointerId);
 });
