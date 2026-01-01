@@ -719,7 +719,9 @@ let gameActive = true;
 // NEW: Fixed asteroid count per level (level = number of targets)
 let levelAsteroidsRemaining = 0; // Targets left to destroy in current level
 let levelAsteroidsTotal = 0; // Total targets for current level
-const AMMO_PER_ASTEROID = 200; // Laser ammo given per asteroid in level
+const AMMO_PER_ASTEROID = 40; // Laser ammo given per asteroid in level
+let scoreBeforeLevel = 0; // Score saved before level starts (for retry)
+let levelFailedShown = false; // Prevent showing fail dialog multiple times
 
 // Track destroyed asteroids for rewards
 let asteroidsDestroyed = 0;
@@ -1568,14 +1570,20 @@ function showLevelUpNotification(level) {
 }
 
 // Start a new level
-function startLevel(level) {
+function startLevel(level, isRetry = false) {
     gameLevel = level;
+
+    // Save score before level (only if not a retry)
+    if (!isRetry) {
+        scoreBeforeLevel = score;
+    }
+    levelFailedShown = false;
 
     // Level number = number of asteroids to destroy
     levelAsteroidsTotal = level;
     levelAsteroidsRemaining = level;
 
-    // Reload ammo for new level (200 per asteroid)
+    // Reload ammo for new level (40 per asteroid)
     laserAmmo = AMMO_PER_ASTEROID * level;
 
     // Clear any existing asteroids
@@ -1611,6 +1619,102 @@ function checkLevelComplete() {
             }, 1500); // Brief pause before next level
         }
     }
+}
+
+// Check if level failed (no asteroids left but level not complete)
+function checkLevelFailed() {
+    if (asteroids.length === 0 && levelAsteroidsRemaining > 0 && gameActive && !levelFailedShown) {
+        levelFailedShown = true;
+        gameActive = false;
+        showLevelFailedDialog();
+    }
+}
+
+// Show level failed dialog with retry/continue options
+function showLevelFailedDialog() {
+    const destroyed = levelAsteroidsTotal - levelAsteroidsRemaining;
+    const overlay = document.createElement('div');
+    overlay.id = 'levelFailedOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+        font-family: 'Courier New', monospace;
+    `;
+    overlay.innerHTML = `
+        <div style="text-align: center; max-width: 500px; padding: 40px;">
+            <div style="color: #ffaa00; font-size: 42px; font-weight: bold; text-shadow: 0 0 20px #ff8800; margin-bottom: 20px;">
+                LEVEL ${gameLevel} INCOMPLETE
+            </div>
+            <div style="color: #ffffff; font-size: 18px; margin-bottom: 10px;">
+                Destroyed ${destroyed} of ${levelAsteroidsTotal} asteroids
+            </div>
+            <div style="color: #888888; font-size: 14px; margin-bottom: 30px;">
+                ${levelAsteroidsRemaining} asteroid${levelAsteroidsRemaining > 1 ? 's' : ''} hit Earth
+            </div>
+
+            <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;">
+                <button id="retryLevelBtn" style="
+                    padding: 15px 35px;
+                    font-size: 18px;
+                    background: linear-gradient(135deg, #44aaff, #0066cc);
+                    color: #fff;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                    font-weight: bold;
+                    box-shadow: 0 0 15px rgba(68, 170, 255, 0.5);
+                ">
+                    RETRY LEVEL
+                    <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Score: ${scoreBeforeLevel}</div>
+                </button>
+
+                <button id="continueLevelBtn" style="
+                    padding: 15px 35px;
+                    font-size: 18px;
+                    background: linear-gradient(135deg, #44ff88, #00cc66);
+                    color: #000;
+                    border: none;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                    font-weight: bold;
+                    box-shadow: 0 0 15px rgba(68, 255, 136, 0.5);
+                ">
+                    CONTINUE
+                    <div style="font-size: 11px; opacity: 0.7; margin-top: 4px;">Score: ${score}</div>
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('retryLevelBtn').addEventListener('click', () => {
+        overlay.remove();
+        score = scoreBeforeLevel;
+        updateScoreDisplay();
+        gameActive = true;
+        startLevel(gameLevel, true);
+    });
+
+    document.getElementById('continueLevelBtn').addEventListener('click', () => {
+        overlay.remove();
+        gameActive = true;
+        if (gameLevel >= 10) {
+            showVictoryScreen();
+        } else {
+            startLevel(gameLevel + 1);
+        }
+    });
 }
 
 // Targeting HUD: shows crosshairs over asteroids
@@ -3602,6 +3706,9 @@ function animate() {
         }
     }
 
+    // Check if level failed (all asteroids gone but level not complete)
+    checkLevelFailed();
+
     // === LASER BOLT ANIMATION & COLLISION DETECTION ===
     for (let i = laserBolts.length - 1; i >= 0; i--) {
         const bolt = laserBolts[i];
@@ -3828,7 +3935,7 @@ function showInstructions(isResume = false) {
                 <p style="margin-top: 20px;"><strong style="color: #ffff44;">LEVEL SYSTEM:</strong></p>
                 <p>• Level 1 = 1 asteroid, Level 2 = 2 asteroids, ..., Level 10 = 10 asteroids</p>
                 <p>• Destroy all targets to advance to the next level</p>
-                <p>• Each level gives 200 ammo per asteroid (Level 5 = 1000 ammo)</p>
+                <p>• Each level gives 40 ammo per asteroid (Level 5 = 200 ammo)</p>
 
                 <p style="margin-top: 20px;"><strong style="color: #ffff44;">CONTROLS:</strong></p>
                 <p>• <strong>Mouse/Touch:</strong> Aim and rotate ship or camera</p>
