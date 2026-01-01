@@ -10,6 +10,9 @@ echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gp
 
 # Install gh CLI
 apt-get update -qq && apt-get install -y gh
+
+# Configure authentication (token stored in ~/.gh_token)
+export GH_TOKEN=$(cat ~/.gh_token)
 ```
 
 ## Git Configuration
