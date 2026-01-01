@@ -730,62 +730,75 @@ const ANGEL_SPAWN_INTERVAL = 3; // Every 3 kills, spawn an angel asteroid
 // === SOUND SYSTEM ===
 let soundEnabled = true;
 let showDpadControls = false; // D-pad movement controls hidden by default
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext = null;
+
+// Lazy-initialize AudioContext on first user gesture
+function getAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    return audioContext;
+}
 
 // Sound manager with synthesized sounds
 const SoundManager = {
     playLaser() {
         if (!soundEnabled) return;
+        const ctx = getAudioContext();
 
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
 
         oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(ctx.destination);
 
         // Laser sound: quick descending frequency
         oscillator.type = 'square';
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(200, audioContext.currentTime + 0.1);
+        oscillator.frequency.setValueAtTime(800, ctx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.1);
 
-        gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.15, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
 
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.1);
+        oscillator.start(ctx.currentTime);
+        oscillator.stop(ctx.currentTime + 0.1);
     },
 
     playExplosion(size = 1) {
         if (!soundEnabled) return;
+        const ctx = getAudioContext();
 
         // White noise for explosion
-        const bufferSize = audioContext.sampleRate * 0.5; // 0.5 second
-        const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+        const bufferSize = ctx.sampleRate * 0.5; // 0.5 second
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const data = buffer.getChannelData(0);
 
         for (let i = 0; i < bufferSize; i++) {
             data[i] = Math.random() * 2 - 1;
         }
 
-        const noise = audioContext.createBufferSource();
+        const noise = ctx.createBufferSource();
         noise.buffer = buffer;
 
-        const filter = audioContext.createBiquadFilter();
+        const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(1000, audioContext.currentTime);
-        filter.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.5);
+        filter.frequency.setValueAtTime(1000, ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5);
 
-        const gainNode = audioContext.createGain();
+        const gainNode = ctx.createGain();
         const volume = Math.min(0.2, 0.1 * size);
-        gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        gainNode.gain.setValueAtTime(volume, ctx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
 
         noise.connect(filter);
         filter.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(ctx.destination);
 
-        noise.start(audioContext.currentTime);
-        noise.stop(audioContext.currentTime + 0.5);
+        noise.start(ctx.currentTime);
+        noise.stop(ctx.currentTime + 0.5);
     }
 };
 
@@ -1458,7 +1471,9 @@ function updateTargetingHUD() {
     // Create/reuse a Raycaster for occlusion detection and limit checks frequency
     if (!window._hudRaycaster) window._hudRaycaster = new THREE.Raycaster();
     const raycaster = window._hudRaycaster;
-    const occludingObjects = [earth, moon, spaceShip];
+    raycaster.camera = camera; // Required for raycasting against sprites
+    // Filter out null/undefined objects to prevent matrixWorld errors
+    const occludingObjects = [earth, moon, spaceShip].filter(obj => obj && obj.matrixWorld);
     // Frame-based throttling to avoid heavy per-frame work
     if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
     window._hudFrameCount++;
