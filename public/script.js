@@ -1467,6 +1467,11 @@ function updateTargetingHUD() {
                 lockedTarget = asteroid;
             }
 
+            // Skip if occluded by Earth, Moon, or the ship (realistic visibility)
+            if (isOccluded(asteroid.position)) {
+                return; // don't render a reticle for this asteroid
+            }
+
             // Create targeting reticle
             const reticle = document.createElement('div');
             reticle.style.cssText = `
@@ -1548,6 +1553,26 @@ function projectToScreen(position) {
         y: (-vector.y * 0.5 + 0.5) * window.innerHeight,
         z: vector.z
     };
+}
+
+// Raycast-based occlusion test: returns true if any occluder lies between
+// the camera and `targetPos`. Uses `earth`, `moon`, and `spaceShip` as occluders.
+function isOccluded(targetPos) {
+    const origin = camera.position.clone();
+    const dir = targetPos.clone().sub(origin);
+    const dist = dir.length();
+    if (dist <= 0) return false;
+    dir.normalize();
+
+    const ray = new THREE.Raycaster(origin, dir, 0.01, Math.max(0.01, dist - 0.01));
+    const occluders = [];
+    if (typeof earth !== 'undefined') occluders.push(earth);
+    if (typeof moon !== 'undefined') occluders.push(moon);
+    if (typeof spaceShip !== 'undefined') occluders.push(spaceShip);
+
+    if (occluders.length === 0) return false;
+    const hits = ray.intersectObjects(occluders, true);
+    return hits.length > 0;
 }
 
 // Create alignment line element
