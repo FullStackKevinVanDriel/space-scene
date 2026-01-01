@@ -1469,6 +1469,15 @@ function updateTargetingHUD() {
             const intersections = raycaster.intersectObjects(occludingObjects, true);
             const isOccluded = intersections.length > 0;
 
+            // Debug: log occlusion events (remove this after testing)
+            if (isOccluded && Math.random() < 0.01) { // Log 1% of occlusions to avoid spam
+                const occludingObject = intersections[0].object.parent || intersections[0].object;
+                const objectName = occludingObject === earth ? 'Earth' :
+                                 occludingObject === moon ? 'Moon' :
+                                 occludingObject.parent === spaceShip ? 'Ship' : 'Unknown';
+                console.log(`Reticle occluded by ${objectName} at distance ${intersections[0].distance.toFixed(1)}m`);
+            }
+
             // Skip rendering reticle if asteroid is occluded
             if (isOccluded) {
                 return;
