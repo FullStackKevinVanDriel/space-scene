@@ -4757,6 +4757,11 @@ function animate() {
     for (let i = asteroids.length - 1; i >= 0; i--) {
         const asteroid = asteroids[i];
 
+        // Always recalculate direction toward Earth to prevent asteroids from drifting away
+        const directionToEarth = new THREE.Vector3(0, 0, 0).sub(asteroid.position).normalize();
+        const speed = asteroid.userData.velocity.length(); // Preserve original speed
+        asteroid.userData.velocity.copy(directionToEarth.multiplyScalar(speed));
+
         // Move asteroid toward Earth
         const movement = asteroid.userData.velocity.clone().multiplyScalar(delta);
         asteroid.position.add(movement);
