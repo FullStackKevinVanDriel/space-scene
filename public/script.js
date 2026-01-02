@@ -4463,6 +4463,10 @@ function animate() {
         updateCameraFromOrbit();
     }
 
+    // === PAUSE ALL GAME WORLD ANIMATIONS WHEN PAUSED ===
+    // Camera controls above still work so player can look around while paused
+    if (gameActive) {
+
     // Rotate Earth
     earth.rotation.y += planetRotationSpeed * planetRotationDirection * delta;
     clouds.rotation.y += planetRotationSpeed * planetRotationDirection * delta * 1.05;
@@ -4947,6 +4951,8 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
+
+    } // End of gameActive check - animations paused when game is paused
 
     // Update orientation indicator (human figure matches camera view direction)
     if (window.orientationHuman && window.orientationRenderer) {
