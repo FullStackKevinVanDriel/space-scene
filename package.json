@@ -8,6 +8,7 @@
     "dev": "node server.js",
     "start": "node server.js",
     "test:unit": "jest tests/unit --passWithNoTests",
+    "test:integration": "jest tests/integration --passWithNoTests",
     "test:e2e": "playwright test",
     "test:visual": "playwright test --config=playwright.visual.config.js || true"
   },
