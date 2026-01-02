@@ -2397,9 +2397,17 @@ function createHudReticle() {
     `;
     reticle.appendChild(crosshair);
 
+    // Two separate labels above the reticle: ETA (time to impact) and distance
+    const etaLabel = document.createElement('div');
+    etaLabel.className = 'hudETA';
+    etaLabel.style.cssText = 'position:absolute;top:-32px;left:50%;transform:translateX(-50%);font-family:Courier New, monospace;font-size:11px;color:#ffffff;background:rgba(0,0,0,0.75);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:101;';
+    etaLabel.textContent = '';
+    reticle.appendChild(etaLabel);
+
     const distLabel = document.createElement('div');
     distLabel.className = 'hudDist';
-    distLabel.style.cssText = 'position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:Courier New, monospace;font-size:10px;';
+    distLabel.style.cssText = 'position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-family:Courier New, monospace;font-size:11px;color:#ffffff;background:rgba(0,0,0,0.75);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:101;';
+    distLabel.textContent = '';
     reticle.appendChild(distLabel);
 
     const healthBarContainer = document.createElement('div');
@@ -2410,6 +2418,13 @@ function createHudReticle() {
     healthFill.style.cssText = 'height:100%;width:100%;background:#00ff00;';
     healthBarContainer.appendChild(healthFill);
     reticle.appendChild(healthBarContainer);
+
+    // Numeric health text (readable for tests and players)
+    const healthText = document.createElement('div');
+    healthText.className = 'hudHealthText';
+    healthText.style.cssText = 'position:absolute;bottom:-38px;left:50%;transform:translateX(-50%);font-family:Courier New, monospace;font-size:11px;color:#ffffff;background:rgba(0,0,0,0.75);padding:2px 6px;border-radius:4px;pointer-events:none;z-index:101;';
+    healthText.textContent = '';
+    reticle.appendChild(healthText);
 
     return reticle;
 }
@@ -2457,7 +2472,9 @@ function updateTargetingHUD() {
 
         // occlusion
         let isOccluded = window._asteroidOcclusionState.get(asteroid.uuid) || false;
-        if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
+        // Test hook: when running tests, allow forcing HUD visibility and skip occlusion checks
+        const forceShowHud = !!window.__TEST_forceShowHud;
+        if (!forceShowHud && window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
             try {
                 const dir = asteroid.position.clone().sub(camera.position).normalize();
                 raycaster.set(camera.position, dir);
@@ -2471,7 +2488,7 @@ function updateTargetingHUD() {
                 window._asteroidOcclusionState.set(asteroid.uuid, false);
             }
         }
-        if (isOccluded) return;
+        if (isOccluded && !forceShowHud) return;
 
         // alignment
         const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
@@ -2493,15 +2510,39 @@ function updateTargetingHUD() {
         reticle.style.top = (screenPos.y - size / 2) + 'px';
         reticle.style.width = size + 'px';
         reticle.style.height = size + 'px';
+        // Ensure visible; in test mode we force visibility and full opacity
         reticle.style.display = 'block';
+        if (forceShowHud) {
+            reticle.style.visibility = 'visible';
+            reticle.style.opacity = '1';
+            reticle.style.pointerEvents = 'none';
+        }
         reticle.style.borderRadius = '50%';
         // Ensure transparent background and circular ring
         reticle.style.background = 'transparent';
         reticle.style.border = `2px solid ${isAligned ? '#ff4444' : '#44aaff'}`;
         reticle.style.boxShadow = `0 0 10px ${isAligned ? '#ff4444' : '#44aaff'}`;
 
+        // Position labels above the reticle so they don't cover the crosshair.
+        const etaEl = reticle.querySelector('.hudETA');
         const distEl = reticle.querySelector('.hudDist');
-        if (distEl) distEl.textContent = Math.round(distance) + 'm';
+        // Distance-to-impact (distance from asteroid to Earth's surface)
+        const impactDistance = Math.max(0, asteroid.position.length() - EARTH_RADIUS);
+        // Estimate time to impact in seconds using asteroid velocity magnitude
+        const speed = (asteroid.userData && asteroid.userData.velocity) ? asteroid.userData.velocity.length() : 0;
+        const eta = speed > 0 ? (impactDistance / speed) : NaN;
+        if (distEl) {
+            distEl.textContent = `${Math.round(impactDistance)}m`;
+        }
+        if (etaEl) {
+            etaEl.textContent = isFinite(eta) ? `${eta.toFixed(1)}s` : '';
+        }
+        // Dynamically offset labels above the reticle based on its size
+        try {
+            const labelBase = Math.round(size / 2 + 6);
+            if (distEl) distEl.style.top = `-${labelBase}px`;
+            if (etaEl) etaEl.style.top = `-${labelBase + 18}px`;
+        } catch (e) {}
 
         const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
         const healthFill = reticle.querySelector('.hudHealthFill');
@@ -2510,6 +2551,17 @@ function updateTargetingHUD() {
         if (healthFill) {
             healthFill.style.width = healthPct + '%';
             healthFill.style.background = healthPct > 50 ? '#00ff00' : healthPct > 25 ? '#ffaa00' : '#ff0000';
+        }
+        const healthTextEl = reticle.querySelector('.hudHealthText');
+        if (healthTextEl) {
+            const cur = typeof asteroid.userData.health !== 'undefined' ? asteroid.userData.health : '';
+            const max = typeof asteroid.userData.maxHealth !== 'undefined' ? asteroid.userData.maxHealth : '';
+            healthTextEl.textContent = (cur !== '' && max !== '') ? `${cur}/${max}` : `${Math.round(healthPct)}%`;
+            // Position numeric health below the reticle, outside the circle
+            try {
+                const bottomOffset = Math.round(size / 2 + 12);
+                healthTextEl.style.bottom = `-${bottomOffset}px`;
+            } catch (e) {}
         }
 
         // Color crosshair parts

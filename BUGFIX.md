@@ -98,29 +98,3 @@ Next steps I can take (if you want)
 If you want, I can implement (1) now and run targeted profiling suggestions.
 
 -- End of audit
-
-## Verification & Recent Actions
-
-- Implemented fix: refactored `updateTargetingHUD()` to use DOM pooling (create-once, reuse per-frame) and throttled occlusion/raycast checks where possible.
-- Added stable DOM IDs for UI controls (`gameCanvas`, `orientationCanvas`, `laserBtn`, `modeToggleBtn`, `hamburgerBtn`, `settingsPanel`) to stabilize automated tests.
-- Created `tools/debug_mode_toggle.mjs` to reproduce UI flows and capture screenshots/logs during automated runs.
-
-Test results (local):
-
-- Unit tests: `npm run test:unit` — 12/12 passed.
-- Playwright e2e (focused + full): `npx playwright test --headed --project=chromium` — 9/9 passed (mode-toggle focused tests also passed after adding stable id and serving on expected port).
-
-Artifacts & notes:
-
-- Debug screenshot: `modeToggle_debug.png` captured by `tools/debug_mode_toggle.mjs` demonstrating `#modeToggleBtn` presence and computed styles.
-- Playwright report: saved under `test-results/` (use `npx playwright show-report` to open the HTML report locally).
-
-Recommended next steps before shipping:
-
-- Merge `fix/hud-pooling` branch after review.
-- Run a short devtools trace (5–10s) in a clean browser profile (no extensions) before and after the change to quantify CPU/Layout/Paint improvements.
-- Optionally add automated performance regression test (collect a short trace or FPS metric during a fixed scenario and fail on regressions).
-
-If you want, I can open a PR from `fix/hud-pooling` with these notes and the test artifacts attached.
-
-```
