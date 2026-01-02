@@ -938,9 +938,25 @@ function togglePause() {
             `;
             overlay.innerHTML = `
                 <div style="color: #44aaff; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #44aaff; letter-spacing: 8px;">PAUSED</div>
-                <div style="color: #888; font-size: 16px; margin-top: 20px;">Press PAUSE to resume</div>
+                <button id="resumeBtn" style="
+                    margin-top: 30px;
+                    padding: 15px 40px;
+                    font-size: 18px;
+                    font-weight: bold;
+                    font-family: 'Courier New', monospace;
+                    background: rgba(68, 255, 136, 0.2);
+                    border: 2px solid #44ff88;
+                    border-radius: 8px;
+                    color: #44ff88;
+                    cursor: pointer;
+                    letter-spacing: 3px;
+                    transition: all 0.2s;
+                ">RESUME</button>
             `;
             document.body.appendChild(overlay);
+            document.getElementById('resumeBtn').addEventListener('click', () => {
+                togglePause();
+            });
         }
         if (pauseBtn) {
             pauseBtn.textContent = 'RESUME';
@@ -4553,6 +4569,10 @@ function animate() {
         updateCameraFromOrbit();
     }
 
+    // === PAUSE ALL GAME WORLD ANIMATIONS WHEN PAUSED ===
+    // Camera controls above still work so player can look around while paused
+    if (gameActive) {
+
     // Rotate Earth
     earth.rotation.y += planetRotationSpeed * planetRotationDirection * delta;
     clouds.rotation.y += planetRotationSpeed * planetRotationDirection * delta * 1.05;
@@ -5037,6 +5057,8 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
+
+    } // End of gameActive check - animations paused when game is paused
 
     // Update orientation indicator (human figure matches camera view direction)
     if (window.orientationHuman && window.orientationRenderer) {
