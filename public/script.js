@@ -3308,6 +3308,55 @@ function createControlUI() {
     settingsPanel.appendChild(hintsSetting);
     updateHintsToggle();
 
+    // === QUIT BUTTON IN HAMBURGER MENU ===
+    const quitSetting = document.createElement('div');
+    quitSetting.style.cssText = 'display: flex; align-items: center; justify-content: center; padding-top: 8px; border-top: 1px solid #444;';
+
+    const quitBtn = document.createElement('button');
+    quitBtn.textContent = 'QUIT GAME';
+    quitBtn.style.cssText = `
+        padding: 12px 20px;
+        border: 2px solid #ff6666;
+        border-radius: 6px;
+        background: rgba(255, 100, 100, 0.2);
+        color: #ff6666;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        transition: all 0.2s;
+        width: 100%;
+        box-shadow: 0 0 10px rgba(255, 100, 100, 0.2);
+    `;
+
+    quitBtn.addEventListener('mouseenter', () => {
+        quitBtn.style.background = 'rgba(255, 100, 100, 0.4)';
+        quitBtn.style.boxShadow = '0 0 15px rgba(255, 100, 100, 0.4)';
+    });
+    quitBtn.addEventListener('mouseleave', () => {
+        quitBtn.style.background = 'rgba(255, 100, 100, 0.2)';
+        quitBtn.style.boxShadow = '0 0 10px rgba(255, 100, 100, 0.2)';
+    });
+
+    quitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showQuitDialog();
+    });
+
+    quitBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        quitBtn.style.transform = 'scale(0.95)';
+    });
+    quitBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        quitBtn.style.transform = 'scale(1)';
+    });
+
+    quitSetting.appendChild(quitBtn);
+    settingsPanel.appendChild(quitSetting);
+
     // === ORBIT CONTROLS IN SETTINGS ===
     // Planet rotation control
     const planetSetting = document.createElement('div');
@@ -3654,6 +3703,30 @@ function createControlUI() {
         box-shadow: 0 0 15px rgba(68, 170, 255, 0.3);
         min-width: 140px;
         z-index: 1000;
+        cursor: pointer;
+        transition: all 0.3s;
+    `;
+
+    // Dashboard icon (shown by default)
+    const dashboardIcon = document.createElement('div');
+    dashboardIcon.id = 'dashboardIcon';
+    dashboardIcon.innerHTML = '📊';
+    dashboardIcon.style.cssText = `
+        font-size: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+    `;
+
+    // Dashboard content container (hidden by default)
+    const dashboardContent = document.createElement('div');
+    dashboardContent.id = 'dashboardContent';
+    dashboardContent.style.cssText = `
+        display: none;
+        flex-direction: column;
+        gap: 6px;
     `;
 
     // Header row with info button
@@ -3690,13 +3763,14 @@ function createControlUI() {
         infoBtn.style.background = 'rgba(68, 170, 255, 0.2)';
         infoBtn.style.boxShadow = 'none';
     });
-    infoBtn.addEventListener('click', () => {
+    infoBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent dashboard toggle when clicking info button
         showInstructions(true);
     });
 
     headerRow.appendChild(titleLabel);
     headerRow.appendChild(infoBtn);
-    gamePanel.appendChild(headerRow);
+    dashboardContent.appendChild(headerRow);
 
     // Level indicator - simple display
     const levelDiv = document.createElement('div');
@@ -3713,7 +3787,7 @@ function createControlUI() {
 
     levelDiv.appendChild(levelLabel);
     levelDiv.appendChild(levelValue);
-    gamePanel.appendChild(levelDiv);
+    dashboardContent.appendChild(levelDiv);
 
     // Earth health bar - more compact
     const healthDiv = document.createElement('div');
@@ -3746,7 +3820,7 @@ function createControlUI() {
 
     healthDiv.appendChild(healthBarContainer);
     healthDiv.appendChild(healthText);
-    gamePanel.appendChild(healthDiv);
+    dashboardContent.appendChild(healthDiv);
 
     // Stats row - score/best/threats/kills/ammo in compact format
     const statsRow = document.createElement('div');
@@ -3774,7 +3848,7 @@ function createControlUI() {
             <div id="ammoCount" style="font-size: 11px; font-weight: bold; color: #44aaff; text-shadow: 0 0 8px #44aaff;">1000</div>
         </div>
     `;
-    gamePanel.appendChild(statsRow);
+    dashboardContent.appendChild(statsRow);
 
     // === LEADERBOARD SECTION ===
     const leaderboardDiv = document.createElement('div');
@@ -3786,7 +3860,7 @@ function createControlUI() {
         </div>
         <div id="leaderboardList" style="font-size: 8px;"></div>
     `;
-    gamePanel.appendChild(leaderboardDiv);
+    dashboardContent.appendChild(leaderboardDiv);
 
     // Initialize leaderboard display
     setTimeout(updateLeaderboardDisplay, 100);
@@ -3812,7 +3886,31 @@ function createControlUI() {
         overflow: hidden;
     `;
     orientationDiv.appendChild(orientationContainer);
-    gamePanel.appendChild(orientationDiv);
+    dashboardContent.appendChild(orientationDiv);
+
+    // Add icon and content to gamePanel
+    gamePanel.appendChild(dashboardIcon);
+    gamePanel.appendChild(dashboardContent);
+
+    // Toggle dashboard functionality
+    let dashboardExpanded = false;
+    gamePanel.addEventListener('click', (e) => {
+        // Don't toggle if clicking on interactive elements inside dashboard
+        if (e.target.closest('#infoBtn') || e.target.closest('input') || e.target.closest('button')) {
+            return;
+        }
+
+        dashboardExpanded = !dashboardExpanded;
+        if (dashboardExpanded) {
+            dashboardIcon.style.display = 'none';
+            dashboardContent.style.display = 'flex';
+            gamePanel.style.minWidth = '140px';
+        } else {
+            dashboardIcon.style.display = 'flex';
+            dashboardContent.style.display = 'none';
+            gamePanel.style.minWidth = 'auto';
+        }
+    });
 
     document.body.appendChild(gamePanel);
 
