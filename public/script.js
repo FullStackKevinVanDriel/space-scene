@@ -3156,10 +3156,8 @@ const orbitY = 1.5;
 let shipPhase = 'orbit'; // Start directly in orbit for smooth experience
 let orbitAngle = Math.PI * 1.5; // Starting angle
 
-// Ship orientation (pitch, yaw, roll offsets)
-let shipPitch = 0;  // Vertical aim (up/down)
-let shipYaw = 0;    // Horizontal aim (left/right)
-let shipRoll = 0;   // Roll (banking)
+// Ship orientation (quaternion-based for gimbal-lock-free rotation)
+let shipOrientationQuat = new THREE.Quaternion();  // Cumulative rotation offset from base orientation
 
 // Ship control input state
 const shipInput = {
@@ -3169,6 +3167,22 @@ const shipInput = {
     yawRight: false
 };
 const SHIP_ROTATION_SPEED = 1.5; // Radians per second
+
+// Apply incremental rotation to ship orientation quaternion
+function applyShipRotation(deltaYaw, deltaPitch) {
+    // Get the ship's current local axes from the quaternion
+    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(shipOrientationQuat);
+    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(shipOrientationQuat);
+
+    // Create rotation quaternions for yaw (around local up) and pitch (around local right)
+    const yawQuat = new THREE.Quaternion().setFromAxisAngle(localUp, -deltaYaw);
+    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(localRight, -deltaPitch);
+
+    // Apply rotations: first yaw, then pitch
+    shipOrientationQuat.premultiply(yawQuat);
+    shipOrientationQuat.premultiply(pitchQuat);
+    shipOrientationQuat.normalize();
+}
 
 spaceShip.position.set(
     Math.cos(orbitAngle) * shipOrbitRadius,
@@ -4725,12 +4739,9 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
     // Single pointer drag
     if (pointerState.prevSingle) {
         if (controlMode === 'ship') {
-            // Ship mode: drag to aim the ship
+            // Ship mode: drag to aim the ship using quaternion rotation
             const aimSensitivity = 0.005;
-            shipYaw -= deltaX * aimSensitivity;
-            shipPitch -= deltaY * aimSensitivity;
-            // Clamp pitch
-            shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
+            applyShipRotation(deltaX * aimSensitivity, deltaY * aimSensitivity);
         } else {
             // Camera mode: orbit around scene using quaternion rotation
             applyOrbitRotation(deltaX * rotationSpeed, deltaY * rotationSpeed);
@@ -4798,12 +4809,9 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         const deltaY = touches[0].clientY - touchState.prevPosition.y;
 
         if (controlMode === 'ship') {
-            // Ship mode: drag to aim the ship
+            // Ship mode: drag to aim the ship using quaternion rotation
             const aimSensitivity = 0.005;
-            shipYaw -= deltaX * aimSensitivity;
-            shipPitch -= deltaY * aimSensitivity;
-            // Clamp pitch
-            shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
+            applyShipRotation(deltaX * aimSensitivity, deltaY * aimSensitivity);
         } else {
             // Camera mode: orbit around scene using quaternion rotation
             applyOrbitRotation(deltaX * rotationSpeed, deltaY * rotationSpeed);
@@ -5130,19 +5138,21 @@ function animate() {
 
     // Update ship rotation from input (only in ship mode)
     if (controlMode === 'ship') {
-        if (shipInput.pitchUp) shipPitch -= SHIP_ROTATION_SPEED * delta;
-        if (shipInput.pitchDown) shipPitch += SHIP_ROTATION_SPEED * delta;
-        if (shipInput.yawLeft) shipYaw -= SHIP_ROTATION_SPEED * delta;
-        if (shipInput.yawRight) shipYaw += SHIP_ROTATION_SPEED * delta;
+        let deltaYaw = 0, deltaPitch = 0;
+        if (shipInput.pitchUp) deltaPitch -= SHIP_ROTATION_SPEED * delta;
+        if (shipInput.pitchDown) deltaPitch += SHIP_ROTATION_SPEED * delta;
+        if (shipInput.yawLeft) deltaYaw -= SHIP_ROTATION_SPEED * delta;
+        if (shipInput.yawRight) deltaYaw += SHIP_ROTATION_SPEED * delta;
 
-        // Clamp pitch to prevent flipping
-        shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
+        if (deltaYaw !== 0 || deltaPitch !== 0) {
+            applyShipRotation(deltaYaw, deltaPitch);
+        }
     }
 
-    // Apply custom pitch, yaw, roll orientation offsets
-    spaceShip.rotateY(shipYaw);
-    spaceShip.rotateX(shipPitch);
-    spaceShip.rotateZ(shipRoll);
+    // Apply quaternion-based orientation offset (gimbal-lock free)
+    // Store the base orientation from lookAt, then multiply by our offset quaternion
+    const baseQuat = spaceShip.quaternion.clone();
+    spaceShip.quaternion.copy(baseQuat.multiply(shipOrientationQuat));
 
     // Animate thrusters
     for (let i = 1; i <= 5; i++) {
