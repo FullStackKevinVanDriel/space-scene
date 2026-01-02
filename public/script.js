@@ -918,7 +918,7 @@ function togglePause() {
     const pauseOverlay = document.getElementById('pauseOverlay');
 
     if (gamePaused) {
-        // Show pause overlay
+        // Show pause overlay with resume button
         if (!pauseOverlay) {
             const overlay = document.createElement('div');
             overlay.id = 'pauseOverlay';
@@ -938,9 +938,28 @@ function togglePause() {
             `;
             overlay.innerHTML = `
                 <div style="color: #44aaff; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #44aaff; letter-spacing: 8px;">PAUSED</div>
-                <div style="color: #888; font-size: 16px; margin-top: 20px;">Press PAUSE to resume</div>
+                <button id="resumeBtn" style="
+                    margin-top: 30px;
+                    padding: 15px 40px;
+                    font-size: 20px;
+                    background: rgba(68, 255, 136, 0.3);
+                    color: #44ff88;
+                    border: 2px solid #44ff88;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                    font-weight: bold;
+                    letter-spacing: 2px;
+                    box-shadow: 0 0 20px rgba(68, 255, 136, 0.3);
+                    transition: all 0.2s;
+                ">RESUME</button>
             `;
             document.body.appendChild(overlay);
+
+            // Add click handler for resume button
+            document.getElementById('resumeBtn').addEventListener('click', () => {
+                togglePause();
+            });
         }
         if (pauseBtn) {
             pauseBtn.textContent = 'RESUME';
@@ -3032,58 +3051,6 @@ function createControlUI() {
 
     document.body.appendChild(modeToggleBtn);
 
-    // === PAUSE BUTTON ===
-    const pauseBtn = document.createElement('button');
-    pauseBtn.id = 'pauseBtn';
-    pauseBtn.textContent = 'PAUSE';
-    pauseBtn.style.cssText = `
-        position: fixed;
-        bottom: 10px;
-        left: 10px;
-        background: rgba(68, 170, 255, 0.2);
-        border: 2px solid #44aaff;
-        border-radius: 8px;
-        padding: 12px 20px;
-        font-family: 'Courier New', monospace;
-        color: #44aaff;
-        cursor: pointer;
-        font-size: 16px;
-        font-weight: bold;
-        letter-spacing: 2px;
-        box-shadow: 0 0 15px rgba(68, 170, 255, 0.2);
-        z-index: 1000;
-        transition: all 0.2s;
-        min-width: 80px;
-        text-align: center;
-    `;
-
-    pauseBtn.addEventListener('mouseenter', () => {
-        pauseBtn.style.background = gamePaused ? 'rgba(68, 255, 136, 0.4)' : 'rgba(68, 170, 255, 0.4)';
-        pauseBtn.style.boxShadow = gamePaused ? '0 0 20px rgba(68, 255, 136, 0.4)' : '0 0 20px rgba(68, 170, 255, 0.4)';
-    });
-    pauseBtn.addEventListener('mouseleave', () => {
-        pauseBtn.style.background = gamePaused ? 'rgba(68, 255, 136, 0.2)' : 'rgba(68, 170, 255, 0.2)';
-        pauseBtn.style.boxShadow = gamePaused ? '0 0 15px rgba(68, 255, 136, 0.2)' : '0 0 15px rgba(68, 170, 255, 0.2)';
-    });
-
-    pauseBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        togglePause();
-    });
-
-    // Touch feedback
-    pauseBtn.addEventListener('touchstart', (e) => {
-        e.stopPropagation();
-        pauseBtn.style.transform = 'scale(0.95)';
-    });
-    pauseBtn.addEventListener('touchend', (e) => {
-        e.stopPropagation();
-        pauseBtn.style.transform = 'scale(1)';
-    });
-
-    document.body.appendChild(pauseBtn);
-
     // === HAMBURGER MENU FOR SETTINGS ===
     const hamburgerBtn = document.createElement('button');
     hamburgerBtn.innerHTML = '☰';
@@ -3741,6 +3708,36 @@ function createControlUI() {
     levelDiv.appendChild(levelLabel);
     levelDiv.appendChild(levelValue);
     dashboardContent.appendChild(levelDiv);
+
+    // Pause button in dashboard
+    const pauseDiv = document.createElement('div');
+    pauseDiv.style.cssText = 'display: flex; justify-content: center; padding: 4px 0;';
+
+    const pauseBtn = document.createElement('button');
+    pauseBtn.id = 'pauseBtn';
+    pauseBtn.textContent = 'PAUSE';
+    pauseBtn.style.cssText = `
+        padding: 6px 16px;
+        font-size: 11px;
+        background: rgba(68, 170, 255, 0.2);
+        color: #44aaff;
+        border: 1px solid #44aaff;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        letter-spacing: 1px;
+        transition: all 0.2s;
+    `;
+
+    pauseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePause();
+    });
+
+    pauseDiv.appendChild(pauseBtn);
+    dashboardContent.appendChild(pauseDiv);
 
     // Earth health bar - more compact
     const healthDiv = document.createElement('div');
