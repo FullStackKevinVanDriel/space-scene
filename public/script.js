@@ -2145,6 +2145,8 @@ function restartGame() {
     // Clear all asteroids
     asteroids.forEach(a => scene.remove(a));
     asteroids.length = 0;
+    // Clear occlusion state to prevent memory leak
+    window._asteroidOcclusionState?.clear();
 
     // Start level 1
     startLevel(1);
@@ -2227,6 +2229,8 @@ function startLevel(level, isRetry = false) {
     // Clear any existing asteroids
     asteroids.forEach(a => scene.remove(a));
     asteroids.length = 0;
+    // Clear occlusion state to prevent memory leak
+    window._asteroidOcclusionState?.clear();
 
     // Spawn all asteroids for this level at once
     for (let i = 0; i < level; i++) {
@@ -4801,6 +4805,8 @@ function animate() {
             // Remove asteroid
             scene.remove(asteroid);
             asteroids.splice(i, 1);
+            // Clean up occlusion state to prevent memory leak
+            window._asteroidOcclusionState?.delete(asteroid.uuid);
 
             // Check game over
             if (earthHealth <= 0) {
@@ -4884,6 +4890,8 @@ function animate() {
                     // Remove asteroid
                     scene.remove(asteroid);
                     asteroids.splice(j, 1);
+                    // Clean up occlusion state to prevent memory leak
+                    window._asteroidOcclusionState?.delete(asteroid.uuid);
                 }
 
                 // Remove bolt
