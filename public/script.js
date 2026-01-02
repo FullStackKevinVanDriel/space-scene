@@ -3084,57 +3084,6 @@ function createControlUI() {
 
     document.body.appendChild(pauseBtn);
 
-    // === QUIT BUTTON ===
-    const quitBtn = document.createElement('button');
-    quitBtn.textContent = 'QUIT';
-    quitBtn.style.cssText = `
-        position: fixed;
-        bottom: 10px;
-        left: 120px;
-        background: rgba(255, 100, 100, 0.2);
-        border: 2px solid #ff6666;
-        border-radius: 8px;
-        padding: 12px 20px;
-        font-family: 'Courier New', monospace;
-        color: #ff6666;
-        cursor: pointer;
-        font-size: 16px;
-        font-weight: bold;
-        letter-spacing: 2px;
-        box-shadow: 0 0 15px rgba(255, 100, 100, 0.2);
-        z-index: 1000;
-        transition: all 0.2s;
-        min-width: 80px;
-        text-align: center;
-    `;
-
-    quitBtn.addEventListener('mouseenter', () => {
-        quitBtn.style.background = 'rgba(255, 100, 100, 0.4)';
-        quitBtn.style.boxShadow = '0 0 20px rgba(255, 100, 100, 0.4)';
-    });
-    quitBtn.addEventListener('mouseleave', () => {
-        quitBtn.style.background = 'rgba(255, 100, 100, 0.2)';
-        quitBtn.style.boxShadow = '0 0 15px rgba(255, 100, 100, 0.2)';
-    });
-
-    quitBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showQuitDialog();
-    });
-
-    // Touch feedback
-    quitBtn.addEventListener('touchstart', (e) => {
-        e.stopPropagation();
-        quitBtn.style.transform = 'scale(0.95)';
-    });
-    quitBtn.addEventListener('touchend', (e) => {
-        e.stopPropagation();
-        quitBtn.style.transform = 'scale(1)';
-    });
-
-    document.body.appendChild(quitBtn);
-
     // === HAMBURGER MENU FOR SETTINGS ===
     const hamburgerBtn = document.createElement('button');
     hamburgerBtn.innerHTML = '☰';
