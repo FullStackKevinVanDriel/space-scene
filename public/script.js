@@ -1484,6 +1484,33 @@ const ASTEROID_MIN_SIZE = 0.5;
 const ASTEROID_MAX_SIZE = 2.0;
 const EARTH_RADIUS = 2; // For collision detection
 
+// Dynamic score weighting settings
+const BASE_ORBIT_SPEED = 0.25; // Default orbit speed
+const MAX_ORBIT_SPEED_MULTIPLIER = 2.5; // Max multiplier from orbit speed
+const MAX_PROXIMITY_MULTIPLIER = 4.0; // Max multiplier from close kills
+const DANGER_ZONE_DISTANCE = 15; // Distance where proximity bonus starts ramping up
+let lastScoreMultiplier = 1.0; // Track last multiplier for display
+
+// Calculate dynamic score multiplier based on orbit speed and asteroid proximity
+function calculateScoreMultiplier(asteroidDistance) {
+    // Orbit speed multiplier: faster orbit = more points
+    // Normalized from BASE_ORBIT_SPEED (1.0x) up to MAX_ORBIT_SPEED_MULTIPLIER
+    const speedRatio = Math.abs(shipOrbitSpeed) / BASE_ORBIT_SPEED;
+    const orbitMultiplier = Math.min(1.0 + (speedRatio - 1.0) * 0.5, MAX_ORBIT_SPEED_MULTIPLIER);
+
+    // Proximity multiplier: closer to Earth = more points
+    // Distance ranges from ~EARTH_RADIUS (very close) to ASTEROID_SPAWN_MIN_DISTANCE (far)
+    const impactDistance = Math.max(0, asteroidDistance - EARTH_RADIUS);
+    const dangerProgress = Math.max(0, 1 - (impactDistance / DANGER_ZONE_DISTANCE));
+    const proximityMultiplier = 1.0 + (dangerProgress * (MAX_PROXIMITY_MULTIPLIER - 1.0));
+
+    // Combine multipliers (multiplicative for exciting high scores)
+    const totalMultiplier = orbitMultiplier * proximityMultiplier;
+    lastScoreMultiplier = totalMultiplier;
+
+    return totalMultiplier;
+}
+
 // Constant asteroid speed (difficulty comes from quantity, not speed)
 function getAsteroidSpeed() {
     const min = 0.8;
@@ -2233,6 +2260,81 @@ function updateHighScoreDisplay() {
     if (highScoreEl) {
         highScoreEl.textContent = highScore;
     }
+}
+
+// Update multiplier display
+function updateMultiplierDisplay(multiplier) {
+    const multiplierEl = document.getElementById('multiplierValue');
+    if (multiplierEl) {
+        multiplierEl.textContent = multiplier.toFixed(1) + 'x';
+        // Color based on multiplier intensity
+        if (multiplier >= 5.0) {
+            multiplierEl.style.color = '#ff44ff';
+            multiplierEl.style.textShadow = '0 0 12px #ff44ff';
+        } else if (multiplier >= 3.0) {
+            multiplierEl.style.color = '#ff8844';
+            multiplierEl.style.textShadow = '0 0 10px #ff8844';
+        } else if (multiplier >= 1.5) {
+            multiplierEl.style.color = '#ffff44';
+            multiplierEl.style.textShadow = '0 0 8px #ffff44';
+        } else {
+            multiplierEl.style.color = '#88ff88';
+            multiplierEl.style.textShadow = '0 0 6px #88ff88';
+        }
+    }
+}
+
+// Show floating score popup for high multiplier kills
+function showScorePopup(points, multiplier, worldPosition) {
+    // Project 3D position to screen
+    const screenPos = worldPosition.project(camera);
+    const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
+
+    const popup = document.createElement('div');
+    popup.className = 'score-popup';
+    popup.innerHTML = `+${points} <span style="font-size: 0.7em; opacity: 0.8;">(${multiplier.toFixed(1)}x)</span>`;
+    popup.style.cssText = `
+        position: fixed;
+        left: ${x}px;
+        top: ${y}px;
+        transform: translate(-50%, -50%);
+        font-family: 'Orbitron', sans-serif;
+        font-size: 18px;
+        font-weight: bold;
+        color: ${multiplier >= 5.0 ? '#ff44ff' : multiplier >= 3.0 ? '#ff8844' : '#ffff44'};
+        text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+        pointer-events: none;
+        z-index: 1000;
+        animation: scorePopupAnim 1.5s ease-out forwards;
+    `;
+
+    document.body.appendChild(popup);
+
+    // Remove after animation
+    setTimeout(() => popup.remove(), 1500);
+}
+
+// Add score popup animation styles (only once)
+if (!document.getElementById('score-popup-styles')) {
+    const style = document.createElement('style');
+    style.id = 'score-popup-styles';
+    style.textContent = `
+        @keyframes scorePopupAnim {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(0.5);
+            }
+            20% {
+                transform: translate(-50%, -50%) scale(1.2);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -150%) scale(1);
+            }
+        }
+    `;
+    document.head.appendChild(style);
 }
 
 // Update level display
@@ -4223,11 +4325,15 @@ function createDashboardContent(dashboardContent) {
 
     // Stats
     const statsRow = document.createElement('div');
-    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 3px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
+    statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; gap: 3px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
     statsRow.innerHTML = `
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">SCORE</div>
             <div id="scoreValue" style="font-size: 11px; font-weight: bold; color: #ffaa00; text-shadow: 0 0 8px #ffaa00;">0</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">MULT</div>
+            <div id="multiplierValue" style="font-size: 11px; font-weight: bold; color: #88ff88; text-shadow: 0 0 6px #88ff88;">1.0x</div>
         </div>
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">BEST</div>
@@ -5357,8 +5463,18 @@ function animate() {
                         createAngelExplosion(asteroid.position.clone());
                     } else {
                         // Regular asteroid destroyed!
-                        score += Math.ceil(asteroid.userData.size * 10);
+                        const asteroidDistance = asteroid.position.length();
+                        const multiplier = calculateScoreMultiplier(asteroidDistance);
+                        const basePoints = Math.ceil(asteroid.userData.size * 10);
+                        const earnedPoints = Math.ceil(basePoints * multiplier);
+                        score += earnedPoints;
                         updateScoreDisplay();
+                        updateMultiplierDisplay(multiplier);
+
+                        // Show floating score popup for significant multipliers
+                        if (multiplier >= 1.5) {
+                            showScorePopup(earnedPoints, multiplier, asteroid.position.clone());
+                        }
 
                         // Reward: gain ammo
                         laserAmmo += AMMO_REWARD_PER_KILL;
