@@ -907,6 +907,212 @@ function showLeaderboardSubmitDialog() {
     });
 }
 
+// === PAUSE FUNCTIONALITY ===
+let gamePaused = false;
+
+function togglePause() {
+    gamePaused = !gamePaused;
+    gameActive = !gamePaused;
+
+    const pauseBtn = document.getElementById('pauseBtn');
+    const pauseOverlay = document.getElementById('pauseOverlay');
+
+    if (gamePaused) {
+        // Show pause overlay
+        if (!pauseOverlay) {
+            const overlay = document.createElement('div');
+            overlay.id = 'pauseOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.7);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
+                font-family: 'Courier New', monospace;
+            `;
+            overlay.innerHTML = `
+                <div style="color: #44aaff; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #44aaff; letter-spacing: 8px;">PAUSED</div>
+                <div style="color: #888; font-size: 16px; margin-top: 20px;">Press PAUSE to resume</div>
+            `;
+            document.body.appendChild(overlay);
+        }
+        if (pauseBtn) {
+            pauseBtn.textContent = 'RESUME';
+            pauseBtn.style.borderColor = '#44ff88';
+            pauseBtn.style.color = '#44ff88';
+        }
+        // Save game state when pausing
+        saveGameState();
+    } else {
+        // Remove pause overlay
+        if (pauseOverlay) pauseOverlay.remove();
+        if (pauseBtn) {
+            pauseBtn.textContent = 'PAUSE';
+            pauseBtn.style.borderColor = '#44aaff';
+            pauseBtn.style.color = '#44aaff';
+        }
+    }
+}
+
+// === GAME STATE PERSISTENCE ===
+const SAVE_KEY = 'earthDefenderSavedGame';
+
+function saveGameState() {
+    const state = {
+        gameLevel,
+        earthHealth,
+        score,
+        asteroidsDestroyed,
+        gameElapsedTime,
+        levelAsteroidsRemaining,
+        levelAsteroidsTotal,
+        laserAmmo,
+        scoreBeforeLevel,
+        savedAt: Date.now()
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+}
+
+function loadGameState() {
+    const saved = localStorage.getItem(SAVE_KEY);
+    if (!saved) return null;
+    try {
+        return JSON.parse(saved);
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearSavedGame() {
+    localStorage.removeItem(SAVE_KEY);
+}
+
+function hasSavedGame() {
+    return localStorage.getItem(SAVE_KEY) !== null;
+}
+
+function restoreGameState(state) {
+    gameLevel = state.gameLevel;
+    earthHealth = state.earthHealth;
+    score = state.score;
+    asteroidsDestroyed = state.asteroidsDestroyed;
+    gameElapsedTime = state.gameElapsedTime;
+    levelAsteroidsRemaining = state.levelAsteroidsRemaining;
+    levelAsteroidsTotal = state.levelAsteroidsTotal;
+    laserAmmo = state.laserAmmo;
+    scoreBeforeLevel = state.scoreBeforeLevel;
+
+    // Set game start time to account for elapsed time
+    gameStartTime = Date.now() - (gameElapsedTime * 1000);
+
+    // Update displays
+    updateHealthDisplay();
+    updateScoreDisplay();
+    updateAmmoDisplay();
+    updateKillCountDisplay();
+    updateLevelDisplay();
+}
+
+function showContinueDialog() {
+    const savedState = loadGameState();
+    if (!savedState) return;
+
+    gameActive = false; // Pause game during dialog
+
+    const overlay = document.createElement('div');
+    overlay.id = 'continueDialogOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 10002;
+        font-family: 'Courier New', monospace;
+    `;
+
+    const savedTime = new Date(savedState.savedAt);
+    const timeAgo = formatTimeAgo(savedState.savedAt);
+
+    overlay.innerHTML = `
+        <div style="text-align: center; max-width: 450px; padding: 40px; background: rgba(0, 40, 80, 0.95); border: 2px solid #44aaff; border-radius: 15px; box-shadow: 0 0 40px rgba(68, 170, 255, 0.4);">
+            <div style="color: #44aaff; font-size: 28px; font-weight: bold; margin-bottom: 20px; letter-spacing: 2px;">
+                SAVED GAME FOUND
+            </div>
+            <div style="color: #ffffff; font-size: 16px; margin-bottom: 15px;">
+                Level ${savedState.gameLevel} • Score: ${savedState.score}
+            </div>
+            <div style="color: #888; font-size: 12px; margin-bottom: 25px;">
+                Saved ${timeAgo}
+            </div>
+            <div style="display: flex; gap: 15px; justify-content: center;">
+                <button id="continueGameBtn" style="
+                    padding: 15px 30px;
+                    font-size: 16px;
+                    background: rgba(68, 255, 136, 0.3);
+                    color: #44ff88;
+                    border: 2px solid #44ff88;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                    font-weight: bold;
+                    letter-spacing: 1px;
+                    transition: all 0.2s;
+                ">CONTINUE</button>
+                <button id="newGameBtn" style="
+                    padding: 15px 30px;
+                    font-size: 16px;
+                    background: rgba(255, 100, 100, 0.2);
+                    color: #ff6666;
+                    border: 2px solid #ff6666;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-family: 'Courier New', monospace;
+                    font-weight: bold;
+                    letter-spacing: 1px;
+                    transition: all 0.2s;
+                ">NEW GAME</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('continueGameBtn').addEventListener('click', () => {
+        restoreGameState(savedState);
+        startLevel(savedState.gameLevel); // Resume at saved level
+        overlay.remove();
+        gameActive = true;
+    });
+
+    document.getElementById('newGameBtn').addEventListener('click', () => {
+        clearSavedGame();
+        overlay.remove();
+        restartGame();
+    });
+}
+
+function formatTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    const days = Math.floor(hours / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+}
+
 // Show quit confirmation dialog
 function showQuitDialog() {
     gameActive = false; // Pause game
@@ -1818,6 +2024,7 @@ function updateLevelDisplay() {
 
 // Show game over screen
 function showGameOver() {
+    clearSavedGame(); // Clear save on game over
     // Check leaderboard qualification before showing game over
     setTimeout(() => checkLeaderboardQualification(), 500);
 
@@ -1917,6 +2124,8 @@ function showVictoryScreen() {
 
 // Restart game
 function restartGame() {
+    clearSavedGame(); // Clear any saved game state
+    gamePaused = false; // Reset pause state
     // Reset state
     earthHealth = maxEarthHealth;
     score = 0;
@@ -2040,9 +2249,11 @@ function checkLevelComplete() {
     if (levelAsteroidsRemaining <= 0 && gameActive) {
         if (gameLevel >= 10) {
             // Won the game!
+            clearSavedGame(); // Clear save on victory
             showVictoryScreen();
         } else {
             // Advance to next level
+            saveGameState(); // Save progress on level completion
             setTimeout(() => {
                 startLevel(gameLevel + 1);
             }, 1500); // Brief pause before next level
@@ -2817,13 +3028,65 @@ function createControlUI() {
 
     document.body.appendChild(modeToggleBtn);
 
+    // === PAUSE BUTTON ===
+    const pauseBtn = document.createElement('button');
+    pauseBtn.id = 'pauseBtn';
+    pauseBtn.textContent = 'PAUSE';
+    pauseBtn.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(68, 170, 255, 0.2);
+        border: 2px solid #44aaff;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-family: 'Courier New', monospace;
+        color: #44aaff;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        box-shadow: 0 0 15px rgba(68, 170, 255, 0.2);
+        z-index: 1000;
+        transition: all 0.2s;
+        min-width: 80px;
+        text-align: center;
+    `;
+
+    pauseBtn.addEventListener('mouseenter', () => {
+        pauseBtn.style.background = gamePaused ? 'rgba(68, 255, 136, 0.4)' : 'rgba(68, 170, 255, 0.4)';
+        pauseBtn.style.boxShadow = gamePaused ? '0 0 20px rgba(68, 255, 136, 0.4)' : '0 0 20px rgba(68, 170, 255, 0.4)';
+    });
+    pauseBtn.addEventListener('mouseleave', () => {
+        pauseBtn.style.background = gamePaused ? 'rgba(68, 255, 136, 0.2)' : 'rgba(68, 170, 255, 0.2)';
+        pauseBtn.style.boxShadow = gamePaused ? '0 0 15px rgba(68, 255, 136, 0.2)' : '0 0 15px rgba(68, 170, 255, 0.2)';
+    });
+
+    pauseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePause();
+    });
+
+    // Touch feedback
+    pauseBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        pauseBtn.style.transform = 'scale(0.95)';
+    });
+    pauseBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        pauseBtn.style.transform = 'scale(1)';
+    });
+
+    document.body.appendChild(pauseBtn);
+
     // === QUIT BUTTON ===
     const quitBtn = document.createElement('button');
     quitBtn.textContent = 'QUIT';
     quitBtn.style.cssText = `
         position: fixed;
         bottom: 10px;
-        left: 100px;
+        left: 120px;
         background: rgba(255, 100, 100, 0.2);
         border: 2px solid #ff6666;
         border-radius: 8px;
@@ -3435,33 +3698,21 @@ function createControlUI() {
     headerRow.appendChild(infoBtn);
     gamePanel.appendChild(headerRow);
 
-    // Level selector - more compact
+    // Level indicator - simple display
     const levelDiv = document.createElement('div');
-    levelDiv.innerHTML = '<div style="font-size: 9px; letter-spacing: 1px; margin-bottom: 4px; opacity: 0.8;">LVL</div>';
+    levelDiv.style.cssText = 'display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 0;';
 
-    const levelRow = document.createElement('div');
-    levelRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-
-    const levelSlider = document.createElement('input');
-    levelSlider.type = 'range';
-    levelSlider.min = '1';
-    levelSlider.max = '10';
-    levelSlider.value = '1';
-    levelSlider.style.cssText = 'flex: 1;';
-    levelSlider.addEventListener('input', (e) => {
-        gameLevel = parseInt(e.target.value);
-        levelValue.textContent = gameLevel;
-        updateLevelDisplay();
-    });
+    const levelLabel = document.createElement('div');
+    levelLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.8;';
+    levelLabel.textContent = 'LEVEL';
 
     const levelValue = document.createElement('div');
     levelValue.id = 'levelValue';
     levelValue.textContent = '1';
-    levelValue.style.cssText = 'font-size: 18px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff; min-width: 24px; text-align: center;';
+    levelValue.style.cssText = 'font-size: 22px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff;';
 
-    levelRow.appendChild(levelSlider);
-    levelRow.appendChild(levelValue);
-    levelDiv.appendChild(levelRow);
+    levelDiv.appendChild(levelLabel);
+    levelDiv.appendChild(levelValue);
     gamePanel.appendChild(levelDiv);
 
     // Earth health bar - more compact
@@ -4756,12 +5007,19 @@ function showInstructions(isResume = false) {
         overlay.remove();
 
         if (!isResume) {
+            // Check for saved game before starting new
+            if (hasSavedGame()) {
+                showContinueDialog();
+                return; // Don't start new game yet - dialog will handle it
+            }
+
             // Starting new game - reset timer
             gameStartTime = Date.now();
             gameElapsedTime = 0;
             leaderboardChecked = false;
             // Reset and show touch hints for new game
             touchHintsShownThisSession = false;
+            gameActive = true;
         }
 
         // Resume game if it wasn't already paused

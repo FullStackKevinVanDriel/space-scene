@@ -1,6 +1,7 @@
 module.exports = {
   testEnvironment: 'jsdom',
-  setupFiles: ['jest-canvas-mock', './tests/setup/jest.setup.js'],
+  setupFiles: ['jest-canvas-mock'],
+  setupFilesAfterEnv: ['./tests/setup/jest.setup.js'],
   testMatch: [
     '**/tests/unit/**/*.test.js',
     '**/tests/integration/**/*.test.js'
