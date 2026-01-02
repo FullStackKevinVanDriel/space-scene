@@ -1500,6 +1500,210 @@ const laserGlowMat = new THREE.MeshBasicMaterial({
     opacity: 0.6
 });
 
+// Glow geometry for laser bolts (reusable)
+const laserGlowGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.9, 8);
+
+// === OBJECT POOLING SYSTEM ===
+const laserPool = [];
+const LASER_POOL_INITIAL_SIZE = 20;
+const explosionParticlePool = [];
+const EXPLOSION_POOL_INITIAL_SIZE = 100;
+const debrisPool = [];
+const DEBRIS_POOL_INITIAL_SIZE = 30;
+const explosionLightPool = [];
+const LIGHT_POOL_INITIAL_SIZE = 15;
+
+const pooledSphereGeos = {
+    small: new THREE.SphereGeometry(1, 6, 6),
+    medium: new THREE.SphereGeometry(1, 8, 8)
+};
+const pooledTetraGeo = new THREE.TetrahedronGeometry(1);
+
+const explosionColors = [0xff4400, 0xff8800, 0xffcc00, 0xffffff];
+const sparkColors = [0xffff00, 0xff8800, 0xffffff, 0xff4400, 0xffcc00];
+const angelColors = [0x88ffaa, 0xffffff, 0xaaffcc, 0xffdd88];
+const debrisColor = 0x6b5b4d;
+
+const explosionMaterials = explosionColors.map(color => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }));
+const sparkMaterials = sparkColors.map(color => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }));
+const angelMaterials = angelColors.map(color => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 }));
+const debrisMaterial = new THREE.MeshBasicMaterial({ color: debrisColor, transparent: true, opacity: 1 });
+
+function createPooledLaserBolt() {
+    const bolt = new THREE.Group();
+    const core = new THREE.Mesh(laserGeo, laserMat);
+    core.rotation.x = Math.PI / 2;
+    bolt.add(core);
+    const glow = new THREE.Mesh(laserGlowGeo, laserGlowMat);
+    glow.rotation.x = Math.PI / 2;
+    bolt.add(glow);
+    const light = new THREE.PointLight(0xff3300, 0.8, 2);
+    bolt.add(light);
+    bolt.userData.pooled = true;
+    bolt.userData.inUse = false;
+    bolt.visible = false;
+    return bolt;
+}
+
+function createPooledParticle() {
+    const mesh = new THREE.Mesh(pooledSphereGeos.medium, explosionMaterials[0]);
+    mesh.userData.pooled = true;
+    mesh.userData.inUse = false;
+    mesh.visible = false;
+    return mesh;
+}
+
+function createPooledDebris() {
+    const mesh = new THREE.Mesh(pooledTetraGeo, debrisMaterial.clone());
+    mesh.userData.pooled = true;
+    mesh.userData.inUse = false;
+    mesh.visible = false;
+    return mesh;
+}
+
+function createPooledExplosionLight() {
+    const light = new THREE.PointLight(0xff8800, 3, 20);
+    light.userData.pooled = true;
+    light.userData.inUse = false;
+    light.visible = false;
+    return light;
+}
+
+function initObjectPools() {
+    for (let i = 0; i < LASER_POOL_INITIAL_SIZE; i++) laserPool.push(createPooledLaserBolt());
+    for (let i = 0; i < EXPLOSION_POOL_INITIAL_SIZE; i++) explosionParticlePool.push(createPooledParticle());
+    for (let i = 0; i < DEBRIS_POOL_INITIAL_SIZE; i++) debrisPool.push(createPooledDebris());
+    for (let i = 0; i < LIGHT_POOL_INITIAL_SIZE; i++) explosionLightPool.push(createPooledExplosionLight());
+}
+
+function getLaserFromPool() {
+    for (let i = 0; i < laserPool.length; i++) {
+        if (!laserPool[i].userData.inUse) {
+            const bolt = laserPool[i];
+            bolt.userData.inUse = true;
+            bolt.visible = true;
+            return bolt;
+        }
+    }
+    const newBolt = createPooledLaserBolt();
+    newBolt.userData.inUse = true;
+    newBolt.visible = true;
+    laserPool.push(newBolt);
+    return newBolt;
+}
+
+function returnLaserToPool(bolt) {
+    bolt.userData.inUse = false;
+    bolt.visible = false;
+    bolt.position.set(0, 0, 0);
+    bolt.quaternion.identity();
+    bolt.userData.velocity = null;
+    bolt.userData.distanceTraveled = 0;
+    if (bolt.parent) bolt.parent.remove(bolt);
+}
+
+function getParticleFromPool() {
+    for (let i = 0; i < explosionParticlePool.length; i++) {
+        if (!explosionParticlePool[i].userData.inUse) {
+            const particle = explosionParticlePool[i];
+            particle.userData.inUse = true;
+            particle.visible = true;
+            return particle;
+        }
+    }
+    const newParticle = createPooledParticle();
+    newParticle.userData.inUse = true;
+    newParticle.visible = true;
+    explosionParticlePool.push(newParticle);
+    return newParticle;
+}
+
+function returnParticleToPool(particle) {
+    particle.userData.inUse = false;
+    particle.visible = false;
+    particle.position.set(0, 0, 0);
+    particle.scale.set(1, 1, 1);
+    particle.rotation.set(0, 0, 0);
+    if (particle.material) particle.material.opacity = 1;
+    if (particle.parent) particle.parent.remove(particle);
+}
+
+function getDebrisFromPool() {
+    for (let i = 0; i < debrisPool.length; i++) {
+        if (!debrisPool[i].userData.inUse) {
+            const debris = debrisPool[i];
+            debris.userData.inUse = true;
+            debris.visible = true;
+            return debris;
+        }
+    }
+    const newDebris = createPooledDebris();
+    newDebris.userData.inUse = true;
+    newDebris.visible = true;
+    debrisPool.push(newDebris);
+    return newDebris;
+}
+
+function returnDebrisToPool(debris) {
+    debris.userData.inUse = false;
+    debris.visible = false;
+    debris.position.set(0, 0, 0);
+    debris.scale.set(1, 1, 1);
+    debris.rotation.set(0, 0, 0);
+    if (debris.material) debris.material.opacity = 1;
+    if (debris.parent) debris.parent.remove(debris);
+}
+
+function getExplosionLightFromPool() {
+    for (let i = 0; i < explosionLightPool.length; i++) {
+        if (!explosionLightPool[i].userData.inUse) {
+            const light = explosionLightPool[i];
+            light.userData.inUse = true;
+            light.visible = true;
+            return light;
+        }
+    }
+    const newLight = createPooledExplosionLight();
+    newLight.userData.inUse = true;
+    newLight.visible = true;
+    explosionLightPool.push(newLight);
+    return newLight;
+}
+
+function returnExplosionLightToPool(light) {
+    light.userData.inUse = false;
+    light.visible = false;
+    light.intensity = 3;
+    light.distance = 20;
+    light.color.setHex(0xff8800);
+    if (light.parent) light.parent.remove(light);
+}
+
+function disposeObject(obj) {
+    if (!obj) return;
+    if (obj.userData && obj.userData.pooled) return;
+    if (obj.geometry && !obj.geometry.userData?.shared) obj.geometry.dispose();
+    if (obj.material) {
+        if (Array.isArray(obj.material)) {
+            obj.material.forEach(mat => { if (!mat.userData?.shared) mat.dispose(); });
+        } else if (!obj.material.userData?.shared) obj.material.dispose();
+    }
+    if (obj.children) obj.children.forEach(child => disposeObject(child));
+}
+
+function cleanupExplosionGroup(explosionGroup) {
+    if (!explosionGroup) return;
+    const children = [...explosionGroup.children];
+    for (const child of children) {
+        if (child.userData && child.userData.pooled) {
+            if (child.isLight) returnExplosionLightToPool(child);
+            else if (child.geometry === pooledTetraGeo) returnDebrisToPool(child);
+            else returnParticleToPool(child);
+        } else disposeObject(child);
+    }
+    explosionGroup.children.length = 0;
+}
+
 // Create asteroid with rocky appearance
 function createAsteroid() {
     const asteroidGroup = new THREE.Group();
@@ -2429,6 +2633,35 @@ function createHudReticle() {
     return reticle;
 }
 
+// Update threat count indicator on dashboard
+function updateThreatIndicator() {
+    const threatCountEl = document.getElementById('dashboardThreatCount');
+    if (!threatCountEl) return;
+
+    const count = asteroids ? asteroids.length : 0;
+    threatCountEl.textContent = count;
+
+    // Add/remove pulse animation based on threat count
+    if (count > 0) {
+        threatCountEl.classList.add('threat-active');
+        // Color intensity based on threat level
+        if (count >= 5) {
+            threatCountEl.style.color = '#ff2222';
+            threatCountEl.style.textShadow = '0 0 12px #ff2222, 0 0 20px #ff0000';
+        } else if (count >= 3) {
+            threatCountEl.style.color = '#ff4444';
+            threatCountEl.style.textShadow = '0 0 10px #ff4444';
+        } else {
+            threatCountEl.style.color = '#ff6644';
+            threatCountEl.style.textShadow = '0 0 8px #ff6644';
+        }
+    } else {
+        threatCountEl.classList.remove('threat-active');
+        threatCountEl.style.color = '#44ff88';
+        threatCountEl.style.textShadow = '0 0 8px #44ff88';
+    }
+}
+
 function updateTargetingHUD() {
     let hudContainer = document.getElementById('targetingHUD');
     if (!hudContainer) {
@@ -2648,12 +2881,31 @@ function updateAlignmentLine(shipDirection) {
     const aimingAtEarth = checkAimingAtEarth(shipDirection);
     updateFriendlyFireWarning(aimingAtEarth);
 
-    // Only show if ship is on screen
-    if (shipScreen.z < 1 && farScreen.z < 1) {
+    // Only show if ship is on screen - use fallback for far point if behind camera
+    if (shipScreen.z < 1 && shipScreen.z > -1) {
+        let endX = farScreen.x;
+        let endY = farScreen.y;
+
+        // If far point is behind camera (z >= 1), compute screen-space fallback
+        if (farScreen.z >= 1 || farScreen.z < 0) {
+            const nearPoint = spaceShip.position.clone().add(shipDirection.clone().multiplyScalar(5));
+            const nearScreen = projectToScreen(nearPoint);
+            if (nearScreen.z < 1 && nearScreen.z > 0) {
+                const dx = nearScreen.x - shipScreen.x;
+                const dy = nearScreen.y - shipScreen.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0.001) {
+                    const scale = 2000 / len;
+                    endX = shipScreen.x + dx * scale;
+                    endY = shipScreen.y + dy * scale;
+                }
+            }
+        }
+
         aimLine.setAttribute('x1', shipScreen.x);
         aimLine.setAttribute('y1', shipScreen.y);
-        aimLine.setAttribute('x2', farScreen.x);
-        aimLine.setAttribute('y2', farScreen.y);
+        aimLine.setAttribute('x2', endX);
+        aimLine.setAttribute('y2', endY);
         aimLine.style.opacity = '0.6';
         // Change line color if aiming at Earth
         if (aimingAtEarth) {
@@ -2986,37 +3238,62 @@ function createLaserButton() {
         transition: all 0.1s ease;
     `;
 
-    laserBtn.addEventListener('mousedown', () => {
+    // Hold-to-fire state for laser button
+    let laserHoldInterval = null;
+    let isLaserButtonHeld = false;
+    const LASER_HOLD_FIRE_RATE = 150; // ms between shots when holding
+
+    function startLaserHoldFire() {
+        if (isLaserButtonHeld) return;
+        isLaserButtonHeld = true;
         laserBtn.style.transform = 'scale(0.95)';
         laserBtn.style.boxShadow = '0 0 25px rgba(255, 50, 0, 0.8), inset 0 1px 0 rgba(255,255,255,0.2)';
-    });
-    laserBtn.addEventListener('mouseup', () => {
-        laserBtn.style.transform = 'scale(1)';
-        laserBtn.style.boxShadow = '0 0 15px rgba(255, 50, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)';
-    });
-    laserBtn.addEventListener('mouseleave', () => {
-        laserBtn.style.transform = 'scale(1)';
-        laserBtn.style.boxShadow = '0 0 15px rgba(255, 50, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)';
-    });
-    laserBtn.addEventListener('click', () => {
+
+        // Fire immediately on press
         if (canFire) {
             fireLasers();
             canFire = false;
             setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
         }
+
+        // Start continuous firing while held
+        laserHoldInterval = setInterval(() => {
+            if (canFire && isLaserButtonHeld) {
+                fireLasers();
+                canFire = false;
+                setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
+            }
+        }, LASER_HOLD_FIRE_RATE);
+    }
+
+    function stopLaserHoldFire() {
+        isLaserButtonHeld = false;
+        laserBtn.style.transform = 'scale(1)';
+        laserBtn.style.boxShadow = '0 0 15px rgba(255, 50, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.2)';
+        if (laserHoldInterval) {
+            clearInterval(laserHoldInterval);
+            laserHoldInterval = null;
+        }
+    }
+
+    // Mouse events for hold-to-fire
+    laserBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startLaserHoldFire();
     });
+    laserBtn.addEventListener('mouseup', stopLaserHoldFire);
+    laserBtn.addEventListener('mouseleave', stopLaserHoldFire);
+
+    // Touch events for hold-to-fire
     laserBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        laserBtn.style.transform = 'scale(0.95)';
-        if (canFire) {
-            fireLasers();
-            canFire = false;
-            setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
-        }
+        startLaserHoldFire();
     });
-    laserBtn.addEventListener('touchend', () => {
-        laserBtn.style.transform = 'scale(1)';
+    laserBtn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        stopLaserHoldFire();
     });
+    laserBtn.addEventListener('touchcancel', stopLaserHoldFire);
 
     laserDiv.appendChild(laserBtn);
     document.body.appendChild(laserDiv);
@@ -3345,43 +3622,61 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
     `;
 
     // Sound toggle
-    const soundToggle = document.createElement('div');
-    soundToggle.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 8px;
+    const soundSetting = document.createElement('div');
+    soundSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px 0;';
+    soundSetting.innerHTML = `
+        <div style="font-size: 16px; width: 24px; text-align: center;">🔊</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px; flex: 1;">Sound</div>
+    `;
+
+    const soundToggleBtn = document.createElement('button');
+    soundToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44ff88;
         border-radius: 6px;
+        background: rgba(68, 255, 136, 0.2);
+        color: #44ff88;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
         transition: all 0.2s;
-        user-select: none;
+        min-width: 60px;
     `;
 
     function updateSoundToggle() {
-        soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
-        soundToggle.title = soundEnabled ? 'Sound On (click to mute)' : 'Sound Off (click to unmute)';
+        if (soundEnabled) {
+            soundToggleBtn.textContent = 'ON';
+            soundToggleBtn.style.background = '#44ff88';
+            soundToggleBtn.style.color = '#000';
+            soundToggleBtn.style.borderColor = '#44ff88';
+        } else {
+            soundToggleBtn.textContent = 'OFF';
+            soundToggleBtn.style.background = 'rgba(136, 136, 136, 0.2)';
+            soundToggleBtn.style.color = '#888';
+            soundToggleBtn.style.borderColor = '#888';
+        }
     }
 
-    soundToggle.addEventListener('click', () => {
+    soundToggleBtn.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
         localStorage.setItem('soundEnabled', soundEnabled);
         updateSoundToggle();
     });
 
-    settingsPanel.appendChild(soundToggle);
+    soundSetting.appendChild(soundToggleBtn);
+    settingsPanel.appendChild(soundSetting);
     updateSoundToggle();
 
     // D-pad toggle
     const dpadSetting = document.createElement('div');
-    dpadSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+    dpadSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #444;';
     dpadSetting.innerHTML = `
-        <div style="font-size: 16px;">🎮</div>
-        <div style="color: #fff; font-family: monospace; font-size: 12px;">D-Pad</div>
+        <div style="font-size: 16px; width: 24px; text-align: center;">🎮</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px; flex: 1;">D-Pad</div>
     `;
 
     const dpadToggleBtn = document.createElement('button');
-    dpadToggleBtn.textContent = 'ON';
     dpadToggleBtn.style.cssText = `
         padding: 8px 16px;
         border: 2px solid #44ff88;
@@ -3398,13 +3693,15 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
 
     function updateDpadToggle() {
         if (showDpadControls) {
-            dpadToggleBtn.textContent = 'OFF';
+            dpadToggleBtn.textContent = 'ON';
             dpadToggleBtn.style.background = '#44ff88';
             dpadToggleBtn.style.color = '#000';
+            dpadToggleBtn.style.borderColor = '#44ff88';
         } else {
-            dpadToggleBtn.textContent = 'ON';
-            dpadToggleBtn.style.background = 'rgba(68, 255, 136, 0.2)';
-            dpadToggleBtn.style.color = '#44ff88';
+            dpadToggleBtn.textContent = 'OFF';
+            dpadToggleBtn.style.background = 'rgba(136, 136, 136, 0.2)';
+            dpadToggleBtn.style.color = '#888';
+            dpadToggleBtn.style.borderColor = '#888';
         }
     }
 
@@ -3420,19 +3717,19 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
 
     // Touch hints toggle
     const hintsSetting = document.createElement('div');
-    hintsSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+    hintsSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #444;';
     hintsSetting.innerHTML = `
-        <div style="font-size: 16px;">💡</div>
-        <div style="color: #fff; font-family: monospace; font-size: 12px;">Touch Hints</div>
+        <div style="font-size: 16px; width: 24px; text-align: center;">💡</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px; flex: 1;">Hints</div>
     `;
 
     const hintsToggleBtn = document.createElement('button');
     hintsToggleBtn.style.cssText = `
         padding: 8px 16px;
-        border: 2px solid #44aaff;
+        border: 2px solid #44ff88;
         border-radius: 6px;
-        background: rgba(68, 170, 255, 0.2);
-        color: #44aaff;
+        background: rgba(68, 255, 136, 0.2);
+        color: #44ff88;
         cursor: pointer;
         font-family: 'Courier New', monospace;
         font-size: 12px;
@@ -3443,13 +3740,15 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
 
     function updateHintsToggle() {
         if (showTouchHints) {
-            hintsToggleBtn.textContent = 'OFF';
-            hintsToggleBtn.style.background = '#44aaff';
-            hintsToggleBtn.style.color = '#000';
-        } else {
             hintsToggleBtn.textContent = 'ON';
-            hintsToggleBtn.style.background = 'rgba(68, 170, 255, 0.2)';
-            hintsToggleBtn.style.color = '#44aaff';
+            hintsToggleBtn.style.background = '#44ff88';
+            hintsToggleBtn.style.color = '#000';
+            hintsToggleBtn.style.borderColor = '#44ff88';
+        } else {
+            hintsToggleBtn.textContent = 'OFF';
+            hintsToggleBtn.style.background = 'rgba(136, 136, 136, 0.2)';
+            hintsToggleBtn.style.color = '#888';
+            hintsToggleBtn.style.borderColor = '#888';
         }
     }
 
@@ -3466,10 +3765,10 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
 
     // Pause button in menu
     const pauseSetting = document.createElement('div');
-    pauseSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+    pauseSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid #444;';
     pauseSetting.innerHTML = `
-        <div style="font-size: 16px;">⏸️</div>
-        <div style="color: #fff; font-family: monospace; font-size: 12px;">Pause</div>
+        <div style="font-size: 16px; width: 24px; text-align: center;">⏸️</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px; flex: 1;">Pause</div>
     `;
 
     const pauseBtn = document.createElement('button');
@@ -3486,7 +3785,7 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
         font-size: 12px;
         font-weight: bold;
         transition: all 0.2s;
-        min-width: 80px;
+        min-width: 60px;
     `;
 
     pauseBtn.addEventListener('click', (e) => {
@@ -3754,14 +4053,31 @@ function createGameStatusPanel() {
 
     const dashboardIcon = document.createElement('div');
     dashboardIcon.id = 'dashboardIcon';
-    dashboardIcon.innerHTML = '📊';
+    dashboardIcon.innerHTML = `
+        <div id="dashboardThreatCount" style="
+            font-size: 22px;
+            font-weight: bold;
+            color: #ff4444;
+            text-shadow: 0 0 8px #ff4444;
+            line-height: 1;
+        ">0</div>
+        <div style="
+            font-size: 7px;
+            letter-spacing: 1px;
+            opacity: 0.7;
+            color: #44aaff;
+            margin-top: 2px;
+        ">THREATS</div>
+    `;
     dashboardIcon.style.cssText = `
-        font-size: 32px;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
-        width: 40px;
-        height: 40px;
+        width: 50px;
+        height: 50px;
+        border-radius: 6px;
+        transition: all 0.15s;
     `;
 
     const dashboardContent = document.createElement('div');
@@ -3777,6 +4093,19 @@ function createGameStatusPanel() {
 
     gamePanel.appendChild(dashboardIcon);
     gamePanel.appendChild(dashboardContent);
+
+    // Add pulse animation CSS for threat indicator
+    const threatPulseStyle = document.createElement('style');
+    threatPulseStyle.textContent = `
+        @keyframes threatPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+        .threat-active {
+            animation: threatPulse 0.8s ease-in-out infinite;
+        }
+    `;
+    document.head.appendChild(threatPulseStyle);
 
     // Toggle functionality
     let dashboardExpanded = false;
@@ -5048,6 +5377,7 @@ function animate() {
 
     // === UPDATE HUD ===
     updateTargetingHUD();
+    updateThreatIndicator();
 
     // === UPDATE GAME TIMER ===
     if (gameStartTime && gameActive) {
