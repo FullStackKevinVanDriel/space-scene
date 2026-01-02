@@ -5,6 +5,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.domElement.id = 'gameCanvas';
 // Enable shadow mapping for solar eclipse (moon shadow on Earth)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -2378,171 +2379,150 @@ function showLevelFailedDialog() {
 }
 
 // Targeting HUD: shows crosshairs over asteroids
+// Pooling HUD reticles for performance. We avoid rebuilding DOM every frame.
+if (!window._hudReticles) window._hudReticles = [];
+function createHudReticle() {
+    const reticle = document.createElement('div');
+    reticle.className = 'hudReticle';
+    reticle.style.cssText = 'position:absolute; pointer-events:none; background:transparent; border-radius:50%; overflow:visible;';
+
+    const crosshair = document.createElement('div');
+    crosshair.className = 'hudCrosshair';
+    crosshair.style.cssText = 'position:absolute;width:100%;height:100%;';
+    crosshair.innerHTML = `
+        <div class="hud-ch-v" style="position:absolute;left:50%;top:0;width:2px;height:30%;transform:translateX(-50%);"></div>
+        <div class="hud-ch-v2" style="position:absolute;left:50%;bottom:0;width:2px;height:30%;transform:translateX(-50%);"></div>
+        <div class="hud-ch-h" style="position:absolute;top:50%;left:0;width:30%;height:2px;transform:translateY(-50%);"></div>
+        <div class="hud-ch-h2" style="position:absolute;top:50%;right:0;width:30%;height:2px;transform:translateY(-50%);"></div>
+    `;
+    reticle.appendChild(crosshair);
+
+    const distLabel = document.createElement('div');
+    distLabel.className = 'hudDist';
+    distLabel.style.cssText = 'position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:Courier New, monospace;font-size:10px;';
+    reticle.appendChild(distLabel);
+
+    const healthBarContainer = document.createElement('div');
+    healthBarContainer.className = 'hudHealth';
+    healthBarContainer.style.cssText = 'position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);height:8px;background:rgba(0,0,0,0.8);border-radius:3px;overflow:hidden;width:60px;';
+    const healthFill = document.createElement('div');
+    healthFill.className = 'hudHealthFill';
+    healthFill.style.cssText = 'height:100%;width:100%;background:#00ff00;';
+    healthBarContainer.appendChild(healthFill);
+    reticle.appendChild(healthBarContainer);
+
+    return reticle;
+}
+
 function updateTargetingHUD() {
     let hudContainer = document.getElementById('targetingHUD');
     if (!hudContainer) {
         hudContainer = document.createElement('div');
         hudContainer.id = 'targetingHUD';
-        hudContainer.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 100;
-        `;
+        hudContainer.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100;`;
         document.body.appendChild(hudContainer);
     }
 
-    // Clear previous markers
-    hudContainer.innerHTML = '';
+    // Ensure pool attached to window and appended to container
+    const pool = window._hudReticles;
+    for (let i = 0; i < pool.length; i++) {
+        if (!pool[i].parentElement) hudContainer.appendChild(pool[i]);
+    }
 
-    // Add alignment line from ship
+    // Add alignment line and update it
     const alignmentLine = document.getElementById('alignmentLine') || createAlignmentLine();
-
-    // Get ship's forward direction
-    const shipDirection = new THREE.Vector3(0, 0, -1);
-    shipDirection.applyQuaternion(spaceShip.quaternion);
-
-    // Update alignment line (dotted line showing where ship is aiming)
+    const shipDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(spaceShip.quaternion);
     updateAlignmentLine(shipDirection);
 
-    // Track if we have a locked target
-    let lockedTarget = null;
-
-    // Create/reuse a Raycaster for occlusion detection and limit checks frequency
+    // Occlusion / raycast setup (reuse existing raycaster and occlusion state)
     if (!window._hudRaycaster) window._hudRaycaster = new THREE.Raycaster();
     const raycaster = window._hudRaycaster;
-    raycaster.camera = camera; // Required for raycasting against sprites
-    // Filter out null/undefined objects to prevent matrixWorld errors
+    raycaster.camera = camera;
     const occludingObjects = [earth, moon, spaceShip].filter(obj => obj && obj.matrixWorld);
-    // Frame-based throttling to avoid heavy per-frame work
     if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
     window._hudFrameCount++;
-    const HUD_OCCLUSION_EVERY_N_FRAMES = 5; // only run occlusion check every 5 frames
-    // Persistent occlusion state map (keyed by asteroid UUID)
+    const HUD_OCCLUSION_EVERY_N_FRAMES = 5;
     if (!window._asteroidOcclusionState) window._asteroidOcclusionState = new Map();
 
-    // Project each asteroid to screen space
-    asteroids.forEach((asteroid, index) => {
+    // Reuse existing reticles from pool; only grow pool when needed
+    let used = 0;
+
+    asteroids.forEach((asteroid) => {
         const screenPos = projectToScreen(asteroid.position);
+        if (!(screenPos.z < 1 && screenPos.x > -50 && screenPos.x < window.innerWidth + 50 && screenPos.y > -50 && screenPos.y < window.innerHeight + 50)) return;
 
-        if (screenPos.z < 1 && screenPos.x > -50 && screenPos.x < window.innerWidth + 50 &&
-            screenPos.y > -50 && screenPos.y < window.innerHeight + 50) {
+        const distance = camera.position.distanceTo(asteroid.position);
+        const baseSize = 40 + asteroid.userData.size * 20;
+        const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
 
-            // Calculate apparent size based on distance
-            const distance = camera.position.distanceTo(asteroid.position);
-            const baseSize = 40 + asteroid.userData.size * 20;
-            const size = Math.max(20, Math.min(100, baseSize * (50 / distance)));
-
-            // Get persisted occlusion state, default to false
-            let isOccluded = window._asteroidOcclusionState.get(asteroid.uuid) || false;
-
-            // Only perform raycast occasionally to reduce CPU load
-            if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
-                try {
-                    // Check for occlusion - cast ray from camera to asteroid
-                    const direction = asteroid.position.clone().sub(camera.position).normalize();
-                    raycaster.set(camera.position, direction);
-                    raycaster.near = 0.01;
-                    raycaster.far = Math.max(0.1, distance - 0.01);
-
-                    const intersections = raycaster.intersectObjects(occludingObjects, true);
-                    isOccluded = intersections.length > 0;
-
-                    // Persist the occlusion state
-                    window._asteroidOcclusionState.set(asteroid.uuid, isOccluded);
-                } catch (e) {
-                    // Fail-safe: don't block HUD if raycast errors
-                    console.warn('[DEBUG] occlusion raycast failed', e);
-                    isOccluded = false;
-                    window._asteroidOcclusionState.set(asteroid.uuid, false);
-                }
+        // occlusion
+        let isOccluded = window._asteroidOcclusionState.get(asteroid.uuid) || false;
+        if (window._hudFrameCount % HUD_OCCLUSION_EVERY_N_FRAMES === 0) {
+            try {
+                const dir = asteroid.position.clone().sub(camera.position).normalize();
+                raycaster.set(camera.position, dir);
+                raycaster.near = 0.01;
+                raycaster.far = Math.max(0.1, distance - 0.01);
+                const intersections = raycaster.intersectObjects(occludingObjects, true);
+                isOccluded = intersections.length > 0;
+                window._asteroidOcclusionState.set(asteroid.uuid, isOccluded);
+            } catch (e) {
+                isOccluded = false;
+                window._asteroidOcclusionState.set(asteroid.uuid, false);
             }
+        }
+        if (isOccluded) return;
 
-            // If asteroid is occluded, skip drawing reticle
-            if (isOccluded) return;
+        // alignment
+        const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
+        const alignment = shipDirection.dot(toAsteroid);
+        const isAligned = alignment > 0.98;
 
-            // Check if asteroid is aligned with ship direction
-            const toAsteroid = asteroid.position.clone().sub(spaceShip.position).normalize();
-            const alignment = shipDirection.dot(toAsteroid);
-            const isAligned = alignment > 0.98; // Within ~11 degrees
-
-            // If aligned, this is our locked target
-            if (isAligned) {
-                lockedTarget = asteroid;
-            }
-
-            // Create targeting reticle
-            const reticle = document.createElement('div');
-            reticle.style.cssText = `
-                position: absolute;
-                left: ${screenPos.x - size/2}px;
-                top: ${screenPos.y - size/2}px;
-                width: ${size}px;
-                height: ${size}px;
-                border: 2px solid ${isAligned ? '#ff4444' : '#44aaff'};
-                border-radius: 50%;
-                box-shadow: 0 0 10px ${isAligned ? '#ff4444' : '#44aaff'};
-            `;
-
-            // Crosshair lines
-            const crosshair = document.createElement('div');
-            crosshair.innerHTML = `
-                <div style="position:absolute;left:50%;top:0;width:2px;height:30%;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateX(-50%);"></div>
-                <div style="position:absolute;left:50%;bottom:0;width:2px;height:30%;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateX(-50%);"></div>
-                <div style="position:absolute;top:50%;left:0;width:30%;height:2px;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateY(-50%);"></div>
-                <div style="position:absolute;top:50%;right:0;width:30%;height:2px;background:${isAligned ? '#ff4444' : '#44aaff'};transform:translateY(-50%);"></div>
-            `;
-            crosshair.style.cssText = `position:absolute;width:100%;height:100%;`;
-            reticle.appendChild(crosshair);
-
-            // Distance indicator
-            const distLabel = document.createElement('div');
-            distLabel.style.cssText = `
-                position: absolute;
-                top: -18px;
-                left: 50%;
-                transform: translateX(-50%);
-                font-family: 'Courier New', monospace;
-                font-size: 10px;
-                color: ${isAligned ? '#ff4444' : '#44aaff'};
-                text-shadow: 0 0 5px ${isAligned ? '#ff0000' : '#0088ff'};
-            `;
-            distLabel.textContent = Math.round(distance) + 'm';
-            reticle.appendChild(distLabel);
-
-            // Health bar for THIS asteroid (underneath its reticle)
-            const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
-            const healthBarContainer = document.createElement('div');
-            healthBarContainer.style.cssText = `
-                position: absolute;
-                bottom: -20px;
-                left: 50%;
-                transform: translateX(-50%);
-                width: ${size * 0.9}px;
-                height: 8px;
-                background: rgba(0, 0, 0, 0.8);
-                border: 1px solid ${isAligned ? '#ff4444' : '#44aaff'};
-                border-radius: 3px;
-                overflow: hidden;
-            `;
-
-            // Health fill bar
-            const healthFill = document.createElement('div');
-            const healthColor = healthPct > 50 ? '#00ff00' : healthPct > 25 ? '#ffaa00' : '#ff0000';
-            healthFill.style.cssText = `
-                width: ${healthPct}%;
-                height: 100%;
-                background: ${healthColor};
-            `;
-            healthBarContainer.appendChild(healthFill);
-            reticle.appendChild(healthBarContainer);
-
+        // Get or create reticle
+        let reticle;
+        if (used < pool.length) {
+            reticle = pool[used];
+        } else {
+            reticle = createHudReticle();
+            pool.push(reticle);
             hudContainer.appendChild(reticle);
         }
+
+        // Update position and styles
+        reticle.style.left = (screenPos.x - size / 2) + 'px';
+        reticle.style.top = (screenPos.y - size / 2) + 'px';
+        reticle.style.width = size + 'px';
+        reticle.style.height = size + 'px';
+        reticle.style.display = 'block';
+        reticle.style.borderRadius = '50%';
+        // Ensure transparent background and circular ring
+        reticle.style.background = 'transparent';
+        reticle.style.border = `2px solid ${isAligned ? '#ff4444' : '#44aaff'}`;
+        reticle.style.boxShadow = `0 0 10px ${isAligned ? '#ff4444' : '#44aaff'}`;
+
+        const distEl = reticle.querySelector('.hudDist');
+        if (distEl) distEl.textContent = Math.round(distance) + 'm';
+
+        const healthPct = (asteroid.userData.health / asteroid.userData.maxHealth) * 100;
+        const healthFill = reticle.querySelector('.hudHealthFill');
+        const healthContainer = reticle.querySelector('.hudHealth');
+        if (healthContainer) healthContainer.style.width = (size * 0.9) + 'px';
+        if (healthFill) {
+            healthFill.style.width = healthPct + '%';
+            healthFill.style.background = healthPct > 50 ? '#00ff00' : healthPct > 25 ? '#ffaa00' : '#ff0000';
+        }
+
+        // Color crosshair parts
+        const chEls = reticle.querySelectorAll('.hud-ch-v, .hud-ch-v2, .hud-ch-h, .hud-ch-h2');
+        chEls.forEach(el => el.style.background = isAligned ? '#ff4444' : '#44aaff');
+
+        used++;
     });
+
+    // Hide unused pooled reticles
+    for (let i = used; i < pool.length; i++) {
+        pool[i].style.display = 'none';
+    }
 }
 
 // Project 3D position to screen coordinates
@@ -2936,6 +2916,7 @@ function createLaserButton() {
     `;
 
     const laserBtn = document.createElement('button');
+    laserBtn.id = 'laserBtn';
     laserBtn.textContent = 'LASER';
     laserBtn.style.cssText = `
         background: linear-gradient(180deg, #ff3300 0%, #aa0000 100%);
@@ -2991,6 +2972,9 @@ function createLaserButton() {
 
 function createModeToggleButton(updateModeToggle, shipControlPad) {
     const modeToggleBtn = document.createElement('button');
+    modeToggleBtn.id = 'modeToggleBtn';
+    modeToggleBtn.id = 'modeToggleBtn';
+    modeToggleBtn.id = 'modeToggleBtn';
     modeToggleBtn.textContent = 'CAM'; // Start in ship mode, so button shows "CAM" (what you'll switch to)
     modeToggleBtn.style.cssText = `
         position: fixed;
@@ -3265,6 +3249,7 @@ function createShipControlPad() {
 
 function createHamburgerMenuAndSettings(updateModeToggle) {
     const hamburgerBtn = document.createElement('button');
+    hamburgerBtn.id = 'hamburgerBtn';
     hamburgerBtn.innerHTML = '☰';
     hamburgerBtn.style.cssText = `
         position: fixed;
@@ -3289,6 +3274,7 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
     });
 
     const settingsPanel = document.createElement('div');
+    settingsPanel.id = 'settingsPanel';
     settingsPanel.style.cssText = `
         position: fixed;
         top: 60px;
@@ -3895,6 +3881,7 @@ function createOrientationIndicator(container) {
     window.orientationRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     window.orientationRenderer.setSize(60, 60);
     window.orientationRenderer.setClearColor(0x000000, 0);
+    window.orientationRenderer.domElement.id = 'orientationCanvas';
     container.appendChild(window.orientationRenderer.domElement);
 
     const humanGroup = new THREE.Group();
@@ -4051,6 +4038,7 @@ function createControlUI() {
 
     // Mode toggle needs inline implementation for closure over shipControlPad
     const modeToggleBtn = document.createElement('button');
+    modeToggleBtn.id = 'modeToggleBtn';
     modeToggleBtn.style.cssText = `
         position: fixed;
         bottom: 10px;
