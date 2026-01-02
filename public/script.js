@@ -4054,28 +4054,39 @@ function createGameStatusPanel() {
     const dashboardIcon = document.createElement('div');
     dashboardIcon.id = 'dashboardIcon';
     dashboardIcon.innerHTML = `
-        <div id="dashboardThreatCount" style="
-            font-size: 22px;
-            font-weight: bold;
-            color: #ff4444;
-            text-shadow: 0 0 8px #ff4444;
-            line-height: 1;
-        ">0</div>
-        <div style="
-            font-size: 7px;
-            letter-spacing: 1px;
-            opacity: 0.7;
-            color: #44aaff;
-            margin-top: 2px;
-        ">THREATS</div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <div id="miniOrientationIndicator" style="
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background: rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(68, 170, 255, 0.5);
+                overflow: hidden;
+            "></div>
+            <div style="display: flex; flex-direction: column; align-items: center;">
+                <div id="dashboardThreatCount" style="
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #ff4444;
+                    text-shadow: 0 0 8px #ff4444;
+                    line-height: 1;
+                ">0</div>
+                <div style="
+                    font-size: 6px;
+                    letter-spacing: 1px;
+                    opacity: 0.7;
+                    color: #44aaff;
+                    margin-top: 1px;
+                ">THREATS</div>
+            </div>
+        </div>
     `;
     dashboardIcon.style.cssText = `
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
         justify-content: center;
-        width: 50px;
-        height: 50px;
+        padding: 4px 6px;
         border-radius: 6px;
         transition: all 0.15s;
     `;
@@ -4127,10 +4138,16 @@ function createGameStatusPanel() {
 
     document.body.appendChild(gamePanel);
 
-    // Create orientation indicator
+    // Create orientation indicators (main and mini for collapsed state)
     const orientationContainer = document.getElementById('orientationIndicator');
     if (orientationContainer) {
-        createOrientationIndicator(orientationContainer);
+        createOrientationIndicator(orientationContainer, 60, false);
+    }
+
+    // Create mini orientation indicator for collapsed dashboard
+    const miniOrientationContainer = document.getElementById('miniOrientationIndicator');
+    if (miniOrientationContainer) {
+        createOrientationIndicator(miniOrientationContainer, 36, true);
     }
 }
 
@@ -4253,17 +4270,17 @@ function createDashboardContent(dashboardContent) {
     dashboardContent.appendChild(orientationDiv);
 }
 
-function createOrientationIndicator(container) {
-    window.orientationScene = new THREE.Scene();
-    window.orientationCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
-    window.orientationCamera.position.set(0, 0, 3.5);
-    window.orientationCamera.lookAt(0, 0, 0);
+function createOrientationIndicator(container, size = 60, isMini = false) {
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    cam.position.set(0, 0, 3.5);
+    cam.lookAt(0, 0, 0);
 
-    window.orientationRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    window.orientationRenderer.setSize(60, 60);
-    window.orientationRenderer.setClearColor(0x000000, 0);
-    window.orientationRenderer.domElement.id = 'orientationCanvas';
-    container.appendChild(window.orientationRenderer.domElement);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(size, size);
+    renderer.setClearColor(0x000000, 0);
+    renderer.domElement.id = isMini ? 'miniOrientationCanvas' : 'orientationCanvas';
+    container.appendChild(renderer.domElement);
 
     const humanGroup = new THREE.Group();
     const humanMaterial = new THREE.MeshBasicMaterial({ color: 0x44aaff });
@@ -4304,11 +4321,23 @@ function createOrientationIndicator(container) {
     nose.rotation.x = Math.PI / 2;
     humanGroup.add(nose);
 
-    window.orientationScene.add(humanGroup);
-    window.orientationHuman = humanGroup;
+    scene.add(humanGroup);
 
     const orientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    window.orientationScene.add(orientLight);
+    scene.add(orientLight);
+
+    // Store references for animation loop
+    if (isMini) {
+        window.miniOrientationScene = scene;
+        window.miniOrientationCamera = cam;
+        window.miniOrientationRenderer = renderer;
+        window.miniOrientationHuman = humanGroup;
+    } else {
+        window.orientationScene = scene;
+        window.orientationCamera = cam;
+        window.orientationRenderer = renderer;
+        window.orientationHuman = humanGroup;
+    }
 }
 
 function createUIStyles() {
@@ -4505,11 +4534,12 @@ function createControlUI() {
 
 createControlUI();
 
-// === CAMERA ORBIT STATE (persistent angles for gyroscope-like rotation) ===
-// Store cumulative angles to allow unlimited rotation in all directions
-let orbitTheta = 0;  // Horizontal angle (longitude)
-let orbitPhi = Math.PI / 2;  // Vertical angle (latitude) - start at equator
+// === CAMERA ORBIT STATE (quaternion-based for continuous pole rotation) ===
+// Use quaternion to avoid gimbal lock and pole singularity issues
+let orbitTheta = 0;  // Horizontal angle (longitude) - for orientation indicator
+let orbitPhi = Math.PI / 2;  // Vertical angle (latitude) - for orientation indicator
 let cameraOrbitRadius = 15;  // Distance from target
+let cameraOrbitQuaternion = new THREE.Quaternion();  // Cumulative rotation quaternion
 
 // Initialize from current camera position
 (function initOrbitAngles() {
@@ -4519,21 +4549,52 @@ let cameraOrbitRadius = 15;  // Distance from target
     orbitTheta = spherical.theta;
     orbitPhi = spherical.phi;
     cameraOrbitRadius = spherical.radius;
+
+    // Initialize quaternion from initial spherical position
+    // Start with camera looking at target from initial position
+    const initialDir = camera.position.clone().sub(cameraTarget).normalize();
+    const defaultDir = new THREE.Vector3(0, 0, 1);  // Default: looking from +Z
+    cameraOrbitQuaternion.setFromUnitVectors(defaultDir, initialDir);
 })();
 
-// Update camera position from orbit angles (handles any angle values)
+// Update camera position from orbit quaternion (avoids pole singularity)
 function updateCameraFromOrbit() {
-    // Use sin/cos directly - they handle any angle value naturally
-    const x = cameraOrbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
-    const y = cameraOrbitRadius * Math.cos(orbitPhi);
-    const z = cameraOrbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+    // Apply quaternion to get camera direction from target
+    const cameraDir = new THREE.Vector3(0, 0, 1).applyQuaternion(cameraOrbitQuaternion);
 
-        camera.position.set(
-        cameraTarget.x + x,
-        cameraTarget.y + y,
-        cameraTarget.z + z
-    );
+    // Position camera at orbit radius along this direction
+    camera.position.copy(cameraTarget).addScaledVector(cameraDir, cameraOrbitRadius);
+
+    // Compute up vector by rotating world up with the same quaternion
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraOrbitQuaternion);
+    camera.up.copy(cameraUp);
+
     camera.lookAt(cameraTarget);
+
+    // Update spherical angles for orientation indicator display
+    const spherical = new THREE.Spherical().setFromVector3(cameraDir);
+    orbitTheta = spherical.theta;
+    orbitPhi = spherical.phi;
+}
+
+// Apply incremental rotation to orbit quaternion (avoids gimbal lock)
+function applyOrbitRotation(deltaTheta, deltaPhi) {
+    // Create rotation quaternions for horizontal (around world Y) and vertical (around camera right) axes
+    // Horizontal rotation: around the camera's local up vector (maintains smooth pole crossing)
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cameraOrbitQuaternion);
+    const horizontalQuat = new THREE.Quaternion().setFromAxisAngle(cameraUp, -deltaTheta);
+
+    // Vertical rotation: around the camera's local right vector
+    const cameraDir = new THREE.Vector3(0, 0, 1).applyQuaternion(cameraOrbitQuaternion);
+    const cameraRight = new THREE.Vector3().crossVectors(cameraUp, cameraDir).normalize();
+    const verticalQuat = new THREE.Quaternion().setFromAxisAngle(cameraRight, deltaPhi);
+
+    // Apply rotations: first horizontal, then vertical
+    cameraOrbitQuaternion.premultiply(horizontalQuat);
+    cameraOrbitQuaternion.premultiply(verticalQuat);
+    cameraOrbitQuaternion.normalize();
+
+    updateCameraFromOrbit();
 }
 
 // === POINTER EVENTS UNIFIED INPUT ===
@@ -4671,10 +4732,8 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
             // Clamp pitch
             shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
         } else {
-            // Camera mode: orbit around scene using persistent angles
-            orbitTheta -= deltaX * rotationSpeed;
-            orbitPhi -= deltaY * rotationSpeed;
-            updateCameraFromOrbit();
+            // Camera mode: orbit around scene using quaternion rotation
+            applyOrbitRotation(deltaX * rotationSpeed, deltaY * rotationSpeed);
         }
         pointerState.prevSingle = { x: ev.clientX, y: ev.clientY };
     }
@@ -4746,10 +4805,8 @@ renderer.domElement.addEventListener('touchmove', (event) => {
             // Clamp pitch
             shipPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, shipPitch));
         } else {
-            // Camera mode: orbit around scene using persistent angles
-            orbitTheta -= deltaX * rotationSpeed;
-            orbitPhi -= deltaY * rotationSpeed;
-            updateCameraFromOrbit();
+            // Camera mode: orbit around scene using quaternion rotation
+            applyOrbitRotation(deltaX * rotationSpeed, deltaY * rotationSpeed);
         }
 
         touchState.prevPosition = { x: touches[0].clientX, y: touches[0].clientY };
@@ -4913,14 +4970,18 @@ function animate() {
             cameraChanged = true;
         }
         // CTRL + Left/Right: Also orbit
-        if (keys['ArrowLeft']) { orbitTheta += keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowRight']) { orbitTheta -= keyRotationSpeed; cameraChanged = true; }
+        if (keys['ArrowLeft']) { applyOrbitRotation(-keyRotationSpeed, 0); }
+        if (keys['ArrowRight']) { applyOrbitRotation(keyRotationSpeed, 0); }
     } else if (hasArrow) {
-        // Plain arrows: Orbit using persistent angles (no limits)
-        if (keys['ArrowLeft']) { orbitTheta += keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowRight']) { orbitTheta -= keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowUp']) { orbitPhi -= keyRotationSpeed; cameraChanged = true; }
-        if (keys['ArrowDown']) { orbitPhi += keyRotationSpeed; cameraChanged = true; }
+        // Plain arrows: Orbit using quaternion rotation (continuous through poles)
+        let deltaTheta = 0, deltaPhi = 0;
+        if (keys['ArrowLeft']) { deltaTheta = -keyRotationSpeed; }
+        if (keys['ArrowRight']) { deltaTheta = keyRotationSpeed; }
+        if (keys['ArrowUp']) { deltaPhi = keyRotationSpeed; }
+        if (keys['ArrowDown']) { deltaPhi = -keyRotationSpeed; }
+        if (deltaTheta !== 0 || deltaPhi !== 0) {
+            applyOrbitRotation(deltaTheta, deltaPhi);
+        }
     }
 
     // +/= and -/_ keys: Zoom (always)
@@ -4933,7 +4994,7 @@ function animate() {
         cameraChanged = true;
     }
 
-    // Apply camera changes
+    // Apply camera changes (for zoom only now, rotation uses applyOrbitRotation)
     if (cameraChanged) {
         updateCameraFromOrbit();
     }
@@ -5430,14 +5491,22 @@ function animate() {
 
     } // End of gameActive check - animations paused when game is paused
 
-    // Update orientation indicator (human figure matches camera view direction)
+    // Update orientation indicators (human figures match camera view direction)
+    // Main orientation indicator (shown when dashboard is expanded)
     if (window.orientationHuman && window.orientationRenderer) {
         // Use persistent orbit angles for smooth continuous rotation display
         window.orientationHuman.rotation.set(0, 0, 0);
         window.orientationHuman.rotation.y = -orbitTheta + Math.PI;
         window.orientationHuman.rotation.x = orbitPhi - Math.PI / 2;
-
         window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
+    }
+
+    // Mini orientation indicator (shown when dashboard is collapsed)
+    if (window.miniOrientationHuman && window.miniOrientationRenderer) {
+        window.miniOrientationHuman.rotation.set(0, 0, 0);
+        window.miniOrientationHuman.rotation.y = -orbitTheta + Math.PI;
+        window.miniOrientationHuman.rotation.x = orbitPhi - Math.PI / 2;
+        window.miniOrientationRenderer.render(window.miniOrientationScene, window.miniOrientationCamera);
     }
 
     if (composer) {
