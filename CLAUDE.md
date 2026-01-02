@@ -26,7 +26,7 @@ npx jest tests/unit/gameLogic.test.js
 ## Architecture
 
 ### Frontend (public/)
-- `script.js` - Monolithic Three.js application (~4400 lines) containing all game logic
+- `script.js` - Monolithic Three.js application (~5700+ lines) containing all game logic
 - `index.html` - Entry point, loads Three.js from CDN
 - No build step required; runs directly in browser
 
@@ -44,9 +44,36 @@ The file is organized into sections marked with `// === SECTION_NAME ===`:
 - Sound system via Web Audio API
 - Input handling (keyboard, mouse, touch, gyroscope)
 - Level progression and scoring
+- Dynamic score weighting based on orbit speed and proximity to threats
 
 ### Game State
-Global state object tracks: health, ammo, kills, score, level, paused status. Ammo scales with level (40 per asteroid × asteroid count).
+Global state object tracks:
+- **Earth Health**: 100 max, decreases from asteroid impacts and friendly fire
+- **Moon Health**: 100 max, decreases from asteroid impacts and friendly fire
+- **Linked Destruction**: If Moon health reaches 0, Earth is also destroyed (game over)
+- Ammo scales with level (40 per asteroid × asteroid count)
+- Score, kills, level, paused status
+
+### Health & Friendly Fire System
+- Both Earth and Moon have independent health meters displayed in the dashboard
+- Laser bolts can damage both Earth (2 damage/hit) and Moon (2 damage/hit)
+- Asteroids can impact both Earth and Moon (damage = asteroid size × 5)
+- **Friendly Fire Warning**: Visual warning and highlight overlay when aiming at Earth or Moon
+- **Critical Dependency**: Destroying the Moon also destroys Earth (game over)
+
+### Angel Asteroids (Health Powerups)
+- Spawn every 3 kills if Earth or Moon is damaged
+- Glowing white asteroids with pulsing halos
+- Restore +25 health to BOTH Earth and Moon when destroyed or when they impact either body
+- Display special notification: "+25 HEALTH (EARTH & MOON)!"
+
+### Scoring System
+- Base points per asteroid: size × 10
+- **Dynamic multipliers** based on:
+  - **Orbit Speed**: Higher multipliers for faster camera orbit (up to 2.5x)
+  - **Proximity**: Higher multipliers for destroying asteroids close to Earth (up to 4.0x at <15 units)
+  - Combined multiplier caps at 10.0x
+- Multiplier displayed in real-time on dashboard and as floating popups for significant kills (≥1.5x)
 
 ## Testing
 
