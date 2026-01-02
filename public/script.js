@@ -918,7 +918,7 @@ function togglePause() {
     const pauseOverlay = document.getElementById('pauseOverlay');
 
     if (gamePaused) {
-        // Show pause overlay with resume button
+        // Show pause overlay
         if (!pauseOverlay) {
             const overlay = document.createElement('div');
             overlay.id = 'pauseOverlay';
@@ -938,28 +938,9 @@ function togglePause() {
             `;
             overlay.innerHTML = `
                 <div style="color: #44aaff; font-size: 48px; font-weight: bold; text-shadow: 0 0 20px #44aaff; letter-spacing: 8px;">PAUSED</div>
-                <button id="resumeBtn" style="
-                    margin-top: 30px;
-                    padding: 15px 40px;
-                    font-size: 20px;
-                    background: rgba(68, 255, 136, 0.3);
-                    color: #44ff88;
-                    border: 2px solid #44ff88;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-family: 'Courier New', monospace;
-                    font-weight: bold;
-                    letter-spacing: 2px;
-                    box-shadow: 0 0 20px rgba(68, 255, 136, 0.3);
-                    transition: all 0.2s;
-                ">RESUME</button>
+                <div style="color: #888; font-size: 16px; margin-top: 20px;">Press PAUSE to resume</div>
             `;
             document.body.appendChild(overlay);
-
-            // Add click handler for resume button
-            document.getElementById('resumeBtn').addEventListener('click', () => {
-                togglePause();
-            });
         }
         if (pauseBtn) {
             pauseBtn.textContent = 'RESUME';
@@ -2927,10 +2908,16 @@ const touchState = {
 const keys = {};
 
 // === UI CONTROLS ===
-function createControlUI() {
-    // Laser fire button
+// === UI COMPONENT CREATION FUNCTIONS ===
+
+function createLaserButton() {
     const laserDiv = document.createElement('div');
-    laserDiv.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;';
+    laserDiv.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        z-index: 1000;
+    `;
 
     const laserBtn = document.createElement('button');
     laserBtn.textContent = 'LASER';
@@ -2949,6 +2936,7 @@ function createControlUI() {
         text-shadow: 0 0 10px #ff0000;
         transition: all 0.1s ease;
     `;
+
     laserBtn.addEventListener('mousedown', () => {
         laserBtn.style.transform = 'scale(0.95)';
         laserBtn.style.boxShadow = '0 0 25px rgba(255, 50, 0, 0.8), inset 0 1px 0 rgba(255,255,255,0.2)';
@@ -2968,7 +2956,6 @@ function createControlUI() {
             setTimeout(() => { canFire = true; }, FIRE_COOLDOWN);
         }
     });
-    // Touch support
     laserBtn.addEventListener('touchstart', (e) => {
         e.preventDefault();
         laserBtn.style.transform = 'scale(0.95)';
@@ -2982,17 +2969,11 @@ function createControlUI() {
         laserBtn.style.transform = 'scale(1)';
     });
 
-    // Make laser button standalone and always visible
     laserDiv.appendChild(laserBtn);
-    laserDiv.style.cssText = `
-        position: fixed;
-        bottom: 10px;
-        right: 10px;
-        z-index: 1000;
-    `;
     document.body.appendChild(laserDiv);
+}
 
-    // === MODE TOGGLE (Camera/Ship) - Single toggle button ===
+function createModeToggleButton(updateModeToggle, shipControlPad) {
     const modeToggleBtn = document.createElement('button');
     modeToggleBtn.textContent = 'CAM'; // Start in ship mode, so button shows "CAM" (what you'll switch to)
     modeToggleBtn.style.cssText = `
@@ -3016,30 +2997,13 @@ function createControlUI() {
         text-align: center;
     `;
 
-    function updateModeToggle() {
-        if (controlMode === 'camera') {
-            // In camera mode, button shows "SHIP" (tap to switch to ship)
-            modeToggleBtn.textContent = 'SHIP';
-            shipControlPad.style.display = 'none';
-        } else {
-            // In ship mode, button shows "CAM" (tap to switch to camera)
-            modeToggleBtn.textContent = 'CAM';
-            // Only show D-pad if both in ship mode AND the setting is enabled
-            shipControlPad.style.display = showDpadControls ? 'flex' : 'none';
-        }
-    }
-
     modeToggleBtn.addEventListener('click', (e) => {
-        // Prevent event bubbling to avoid conflicts with other input handlers
         e.preventDefault();
         e.stopPropagation();
-
-        // Toggle between modes
         controlMode = controlMode === 'camera' ? 'ship' : 'camera';
         updateModeToggle();
     });
 
-    // Touch feedback
     modeToggleBtn.addEventListener('touchstart', (e) => {
         e.stopPropagation();
         modeToggleBtn.style.transform = 'scale(0.95)';
@@ -3050,221 +3014,95 @@ function createControlUI() {
     });
 
     document.body.appendChild(modeToggleBtn);
+}
 
-    // === HAMBURGER MENU FOR SETTINGS ===
-    const hamburgerBtn = document.createElement('button');
-    hamburgerBtn.innerHTML = '☰';
-    hamburgerBtn.style.cssText = `
+function createPauseButton() {
+    const pauseBtn = document.createElement('button');
+    pauseBtn.id = 'pauseBtn';
+    pauseBtn.textContent = 'PAUSE';
+    pauseBtn.style.cssText = `
         position: fixed;
-        top: 10px;
-        right: 10px;
-        background: rgba(20, 20, 30, 0.95);
-        border: 1px solid #888;
-        border-radius: 8px;
-        color: #fff;
-        cursor: pointer;
-        font-size: 24px;
-        padding: 8px 12px;
-        z-index: 1001;
-        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-        transition: all 0.2s;
-    `;
-    hamburgerBtn.addEventListener('mouseenter', () => {
-        hamburgerBtn.style.background = 'rgba(40, 40, 50, 0.95)';
-    });
-    hamburgerBtn.addEventListener('mouseleave', () => {
-        hamburgerBtn.style.background = 'rgba(20, 20, 30, 0.95)';
-    });
-
-    // Settings panel (hidden by default)
-    const settingsPanel = document.createElement('div');
-    settingsPanel.style.cssText = `
-        position: fixed;
-        top: 60px;
-        right: 10px;
-        background: rgba(20, 20, 30, 0.98);
-        border: 1px solid #888;
-        border-radius: 8px;
-        padding: 12px;
-        z-index: 1000;
-        display: none;
-        flex-direction: column;
-        gap: 10px;
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
-        max-height: 70vh;
-        overflow-y: auto;
-    `;
-
-    // Sound toggle in settings - icon is the toggle
-    const soundToggle = document.createElement('div');
-    soundToggle.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 8px;
-        border-radius: 6px;
-        transition: all 0.2s;
-        user-select: none;
-    `;
-
-    function updateSoundToggle() {
-        soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
-        soundToggle.title = soundEnabled ? 'Sound On (click to mute)' : 'Sound Off (click to unmute)';
-    }
-
-    soundToggle.addEventListener('click', () => {
-        soundEnabled = !soundEnabled;
-        localStorage.setItem('soundEnabled', soundEnabled);
-        updateSoundToggle();
-    });
-
-    settingsPanel.appendChild(soundToggle);
-    updateSoundToggle(); // Set initial state from localStorage
-
-    // D-pad controls toggle in settings
-    const dpadSetting = document.createElement('div');
-    dpadSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
-
-    const dpadIcon = document.createElement('div');
-    dpadIcon.textContent = '🎮';
-    dpadIcon.style.cssText = 'font-size: 16px;';
-
-    const dpadLabel = document.createElement('div');
-    dpadLabel.textContent = 'D-Pad';
-    dpadLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
-
-    const dpadToggleBtn = document.createElement('button');
-    dpadToggleBtn.textContent = 'ON'; // Start hidden, so button shows "ON" (tap to show)
-    dpadToggleBtn.style.cssText = `
-        padding: 8px 16px;
-        border: 2px solid #44ff88;
-        border-radius: 6px;
-        background: rgba(68, 255, 136, 0.2);
-        color: #44ff88;
-        cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        font-weight: bold;
-        transition: all 0.2s;
-        min-width: 60px;
-    `;
-
-    function updateDpadToggle() {
-        if (showDpadControls) {
-            // D-pad is shown, button shows "OFF" (tap to hide)
-            dpadToggleBtn.textContent = 'OFF';
-            dpadToggleBtn.style.background = '#44ff88';
-            dpadToggleBtn.style.color = '#000';
-        } else {
-            // D-pad is hidden, button shows "ON" (tap to show)
-            dpadToggleBtn.textContent = 'ON';
-            dpadToggleBtn.style.background = 'rgba(68, 255, 136, 0.2)';
-            dpadToggleBtn.style.color = '#44ff88';
-        }
-    }
-
-    dpadToggleBtn.addEventListener('click', () => {
-        showDpadControls = !showDpadControls;
-        updateDpadToggle();
-        updateModeToggle(); // Update D-pad visibility
-    });
-
-    dpadSetting.appendChild(dpadIcon);
-    dpadSetting.appendChild(dpadLabel);
-    dpadSetting.appendChild(dpadToggleBtn);
-    settingsPanel.appendChild(dpadSetting);
-
-    // === TOUCH HINTS TOGGLE ===
-    const hintsSetting = document.createElement('div');
-    hintsSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
-
-    const hintsIcon = document.createElement('div');
-    hintsIcon.textContent = '💡';
-    hintsIcon.style.cssText = 'font-size: 16px;';
-
-    const hintsLabel = document.createElement('div');
-    hintsLabel.textContent = 'Touch Hints';
-    hintsLabel.style.cssText = 'color: #fff; font-family: monospace; font-size: 12px;';
-
-    const hintsToggleBtn = document.createElement('button');
-    hintsToggleBtn.style.cssText = `
-        padding: 8px 16px;
-        border: 2px solid #44aaff;
-        border-radius: 6px;
+        bottom: 10px;
+        left: 10px;
         background: rgba(68, 170, 255, 0.2);
+        border: 2px solid #44aaff;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-family: 'Courier New', monospace;
         color: #44aaff;
         cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        font-weight: bold;
-        transition: all 0.2s;
-        min-width: 60px;
-    `;
-
-    function updateHintsToggle() {
-        if (showTouchHints) {
-            hintsToggleBtn.textContent = 'OFF';
-            hintsToggleBtn.style.background = '#44aaff';
-            hintsToggleBtn.style.color = '#000';
-        } else {
-            hintsToggleBtn.textContent = 'ON';
-            hintsToggleBtn.style.background = 'rgba(68, 170, 255, 0.2)';
-            hintsToggleBtn.style.color = '#44aaff';
-        }
-    }
-
-    hintsToggleBtn.addEventListener('click', () => {
-        showTouchHints = !showTouchHints;
-        localStorage.setItem('showTouchHints', showTouchHints);
-        updateHintsToggle();
-        updateTouchHintsOverlay();
-    });
-
-    hintsSetting.appendChild(hintsIcon);
-    hintsSetting.appendChild(hintsLabel);
-    hintsSetting.appendChild(hintsToggleBtn);
-    settingsPanel.appendChild(hintsSetting);
-    updateHintsToggle();
-
-    // === QUIT BUTTON IN HAMBURGER MENU ===
-    const quitSetting = document.createElement('div');
-    quitSetting.style.cssText = 'display: flex; align-items: center; justify-content: center; padding-top: 8px; border-top: 1px solid #444;';
-
-    const quitBtn = document.createElement('button');
-    quitBtn.textContent = 'QUIT GAME';
-    quitBtn.style.cssText = `
-        padding: 12px 20px;
-        border: 2px solid #ff6666;
-        border-radius: 6px;
-        background: rgba(255, 100, 100, 0.2);
-        color: #ff6666;
-        cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
+        font-size: 16px;
         font-weight: bold;
         letter-spacing: 2px;
+        box-shadow: 0 0 15px rgba(68, 170, 255, 0.2);
+        z-index: 1000;
         transition: all 0.2s;
-        width: 100%;
-        box-shadow: 0 0 10px rgba(255, 100, 100, 0.2);
+        min-width: 80px;
+        text-align: center;
+    `;
+
+    pauseBtn.addEventListener('mouseenter', () => {
+        pauseBtn.style.background = gamePaused ? 'rgba(68, 255, 136, 0.4)' : 'rgba(68, 170, 255, 0.4)';
+        pauseBtn.style.boxShadow = gamePaused ? '0 0 20px rgba(68, 255, 136, 0.4)' : '0 0 20px rgba(68, 170, 255, 0.4)';
+    });
+    pauseBtn.addEventListener('mouseleave', () => {
+        pauseBtn.style.background = gamePaused ? 'rgba(68, 255, 136, 0.2)' : 'rgba(68, 170, 255, 0.2)';
+        pauseBtn.style.boxShadow = gamePaused ? '0 0 15px rgba(68, 255, 136, 0.2)' : '0 0 15px rgba(68, 170, 255, 0.2)';
+    });
+    pauseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePause();
+    });
+    pauseBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        pauseBtn.style.transform = 'scale(0.95)';
+    });
+    pauseBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        pauseBtn.style.transform = 'scale(1)';
+    });
+
+    document.body.appendChild(pauseBtn);
+}
+
+function createQuitButtonBottomLeft() {
+    const quitBtn = document.createElement('button');
+    quitBtn.textContent = 'QUIT';
+    quitBtn.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        left: 120px;
+        background: rgba(255, 100, 100, 0.2);
+        border: 2px solid #ff6666;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-family: 'Courier New', monospace;
+        color: #ff6666;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        box-shadow: 0 0 15px rgba(255, 100, 100, 0.2);
+        z-index: 1000;
+        transition: all 0.2s;
+        min-width: 80px;
+        text-align: center;
     `;
 
     quitBtn.addEventListener('mouseenter', () => {
         quitBtn.style.background = 'rgba(255, 100, 100, 0.4)';
-        quitBtn.style.boxShadow = '0 0 15px rgba(255, 100, 100, 0.4)';
+        quitBtn.style.boxShadow = '0 0 20px rgba(255, 100, 100, 0.4)';
     });
     quitBtn.addEventListener('mouseleave', () => {
         quitBtn.style.background = 'rgba(255, 100, 100, 0.2)';
-        quitBtn.style.boxShadow = '0 0 10px rgba(255, 100, 100, 0.2)';
+        quitBtn.style.boxShadow = '0 0 15px rgba(255, 100, 100, 0.2)';
     });
-
     quitBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         showQuitDialog();
     });
-
     quitBtn.addEventListener('touchstart', (e) => {
         e.stopPropagation();
         quitBtn.style.transform = 'scale(0.95)';
@@ -3274,201 +3112,10 @@ function createControlUI() {
         quitBtn.style.transform = 'scale(1)';
     });
 
-    quitSetting.appendChild(quitBtn);
-    settingsPanel.appendChild(quitSetting);
+    document.body.appendChild(quitBtn);
+}
 
-    // === ORBIT CONTROLS IN SETTINGS ===
-    // Planet rotation control
-    const planetSetting = document.createElement('div');
-    planetSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
-
-    const planetHeader = document.createElement('div');
-    planetHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
-    planetHeader.textContent = '🌍 PLANET ROTATION';
-    planetSetting.appendChild(planetHeader);
-
-    const planetSlider = document.createElement('input');
-    planetSlider.type = 'range';
-    planetSlider.min = '-100';
-    planetSlider.max = '100';
-    planetSlider.value = '25';
-    planetSlider.style.cssText = 'width: 100%; cursor: pointer;';
-    planetSetting.appendChild(planetSlider);
-
-    const planetValue = document.createElement('div');
-    planetValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
-    planetValue.textContent = 'CW 0.12';
-    planetSetting.appendChild(planetValue);
-    settingsPanel.appendChild(planetSetting);
-
-    // Moon orbit control
-    const moonSetting = document.createElement('div');
-    moonSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
-
-    const moonHeader = document.createElement('div');
-    moonHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
-    moonHeader.textContent = '🌙 MOON ORBIT';
-    moonSetting.appendChild(moonHeader);
-
-    const moonSlider = document.createElement('input');
-    moonSlider.type = 'range';
-    moonSlider.min = '-100';
-    moonSlider.max = '100';
-    moonSlider.value = '30';
-    moonSlider.style.cssText = 'width: 100%; cursor: pointer;';
-    moonSetting.appendChild(moonSlider);
-
-    const moonValue = document.createElement('div');
-    moonValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
-    moonValue.textContent = 'CW 0.15';
-    moonSetting.appendChild(moonValue);
-    settingsPanel.appendChild(moonSetting);
-
-    // Ship orbit control
-    const shipOrbitSetting = document.createElement('div');
-    shipOrbitSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
-
-    const shipHeader = document.createElement('div');
-    shipHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
-    shipHeader.textContent = '🚀 SHIP ORBIT';
-    shipOrbitSetting.appendChild(shipHeader);
-
-    const shipOrbitSlider = document.createElement('input');
-    shipOrbitSlider.type = 'range';
-    shipOrbitSlider.min = '-100';
-    shipOrbitSlider.max = '100';
-    shipOrbitSlider.value = '50';
-    shipOrbitSlider.style.cssText = 'width: 100%; cursor: pointer;';
-    shipOrbitSetting.appendChild(shipOrbitSlider);
-
-    const shipOrbitValue = document.createElement('div');
-    shipOrbitValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
-    shipOrbitValue.textContent = 'CW 0.25';
-    shipOrbitSetting.appendChild(shipOrbitValue);
-    settingsPanel.appendChild(shipOrbitSetting);
-
-    // Event handlers for orbit controls
-    planetSlider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value);
-        planetRotationSpeed = Math.abs(val) / 400;
-        planetRotationDirection = val >= 0 ? 1 : -1;
-        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
-        planetValue.textContent = `${dir} ${planetRotationSpeed.toFixed(2)}`;
-    });
-
-    moonSlider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value);
-        moonOrbitSpeed = Math.abs(val) / 200;
-        moonOrbitDirection = val >= 0 ? 1 : -1;
-        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
-        moonValue.textContent = `${dir} ${moonOrbitSpeed.toFixed(2)}`;
-    });
-
-    shipOrbitSlider.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value);
-        shipOrbitSpeed = Math.abs(val) / 200;
-        shipOrbitDirection = val >= 0 ? 1 : -1;
-        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
-        shipOrbitValue.textContent = `${dir} ${shipOrbitSpeed.toFixed(2)}`;
-    });
-
-    // Toggle settings panel
-    let settingsPanelOpen = false;
-    hamburgerBtn.addEventListener('click', () => {
-        settingsPanelOpen = !settingsPanelOpen;
-        settingsPanel.style.display = settingsPanelOpen ? 'flex' : 'none';
-    });
-
-    // Close panel when clicking outside
-    document.addEventListener('click', (e) => {
-        if (settingsPanelOpen && !settingsPanel.contains(e.target) && !hamburgerBtn.contains(e.target)) {
-            settingsPanelOpen = false;
-            settingsPanel.style.display = 'none';
-        }
-    });
-
-    document.body.appendChild(settingsPanel);
-    document.body.appendChild(hamburgerBtn);
-
-    // === TOUCH HINTS OVERLAY ===
-    const touchHintsOverlay = document.createElement('div');
-    touchHintsOverlay.id = 'touchHintsOverlay';
-    touchHintsOverlay.style.cssText = `
-        position: fixed;
-        bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: none;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-        z-index: 999;
-        pointer-events: none;
-        font-family: 'Courier New', monospace;
-    `;
-
-    // Add CSS animation styles
-    if (!document.getElementById('touchHintsStyle')) {
-        const style = document.createElement('style');
-        style.id = 'touchHintsStyle';
-        style.textContent = `
-            @keyframes touchHintPulse {
-                0%, 100% { opacity: 0.9; transform: translateX(-50%) scale(1); }
-                50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
-            }
-            @keyframes fingerDrag {
-                0%, 100% { transform: translate(0, 0); }
-                50% { transform: translate(30px, -20px); }
-            }
-            @keyframes arrowBounce {
-                0%, 100% { opacity: 0.6; }
-                50% { opacity: 1; }
-            }
-        `;
-        document.head.appendChild(style);
-    }
-
-    touchHintsOverlay.innerHTML = `
-        <div style="
-            background: rgba(0, 40, 80, 0.9);
-            border: 2px solid #44aaff;
-            border-radius: 12px;
-            padding: 15px 25px;
-            box-shadow: 0 0 20px rgba(68, 170, 255, 0.4);
-            animation: touchHintPulse 2s ease-in-out infinite;
-        ">
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="font-size: 32px; animation: fingerDrag 1.5s ease-in-out infinite;">👆</div>
-                <div style="display: flex; flex-direction: column; align-items: flex-start;">
-                    <div style="color: #44aaff; font-size: 14px; font-weight: bold;">TOUCH & DRAG</div>
-                    <div style="color: #ffffff; font-size: 12px;">to aim at asteroids</div>
-                </div>
-                <div style="font-size: 20px; color: #44ff88; animation: arrowBounce 1s ease-in-out infinite;">↗</div>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(touchHintsOverlay);
-
-    // Assign global functions for touch hints
-    updateTouchHintsOverlay = () => {
-        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-        if (showTouchHints && isTouchDevice && !touchHintsShownThisSession && gameActive) {
-            touchHintsOverlay.style.display = 'flex';
-        } else {
-            touchHintsOverlay.style.display = 'none';
-        }
-    };
-
-    // Hide hints on first touch
-    hideTouchHints = () => {
-        if (!touchHintsShownThisSession) {
-            touchHintsShownThisSession = true;
-            touchHintsOverlay.style.display = 'none';
-        }
-    };
-
-    // === SHIP CONTROL PAD (D-pad style) ===
+function createShipControlPad() {
     const shipControlPad = document.createElement('div');
     shipControlPad.id = 'shipControlPad';
     shipControlPad.style.cssText = `
@@ -3514,12 +3161,9 @@ function createControlUI() {
             shipInput[direction] = false;
         };
 
-        // Mouse events
         btn.addEventListener('mousedown', activate);
         btn.addEventListener('mouseup', deactivate);
         btn.addEventListener('mouseleave', deactivate);
-
-        // Touch events
         btn.addEventListener('touchstart', (e) => {
             e.preventDefault();
             activate();
@@ -3530,10 +3174,10 @@ function createControlUI() {
         return btn;
     };
 
-    const upBtn = createDpadButton('pitchUp', '&#9650;'); // ▲
-    const downBtn = createDpadButton('pitchDown', '&#9660;'); // ▼
-    const leftBtn = createDpadButton('yawLeft', '&#9664;'); // ◀
-    const rightBtn = createDpadButton('yawRight', '&#9654;'); // ▶
+    const upBtn = createDpadButton('pitchUp', '&#9650;');
+    const downBtn = createDpadButton('pitchDown', '&#9660;');
+    const leftBtn = createDpadButton('yawLeft', '&#9664;');
+    const rightBtn = createDpadButton('yawRight', '&#9654;');
 
     const topRow = document.createElement('div');
     topRow.appendChild(upBtn);
@@ -3552,10 +3196,9 @@ function createControlUI() {
 
     document.body.appendChild(shipControlPad);
 
-    // === KEYBOARD CONTROLS FOR SHIP ===
+    // Add keyboard controls
     window.addEventListener('keydown', (e) => {
         if (controlMode !== 'ship') return;
-
         switch (e.code) {
             case 'ArrowUp':
             case 'KeyW':
@@ -3601,10 +3244,404 @@ function createControlUI() {
         }
     });
 
-    // Initialize mode toggle state
-    setTimeout(updateModeToggle, 0);
+    return shipControlPad;
+}
 
-    // === GAME STATUS PANEL (top left) ===
+function createHamburgerMenuAndSettings(updateModeToggle) {
+    const hamburgerBtn = document.createElement('button');
+    hamburgerBtn.innerHTML = '☰';
+    hamburgerBtn.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(20, 20, 30, 0.95);
+        border: 1px solid #888;
+        border-radius: 8px;
+        color: #fff;
+        cursor: pointer;
+        font-size: 24px;
+        padding: 8px 12px;
+        z-index: 1001;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        transition: all 0.2s;
+    `;
+    hamburgerBtn.addEventListener('mouseenter', () => {
+        hamburgerBtn.style.background = 'rgba(40, 40, 50, 0.95)';
+    });
+    hamburgerBtn.addEventListener('mouseleave', () => {
+        hamburgerBtn.style.background = 'rgba(20, 20, 30, 0.95)';
+    });
+
+    const settingsPanel = document.createElement('div');
+    settingsPanel.style.cssText = `
+        position: fixed;
+        top: 60px;
+        right: 10px;
+        background: rgba(20, 20, 30, 0.98);
+        border: 1px solid #888;
+        border-radius: 8px;
+        padding: 12px;
+        z-index: 1000;
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+        max-height: 70vh;
+        overflow-y: auto;
+    `;
+
+    // Sound toggle
+    const soundToggle = document.createElement('div');
+    soundToggle.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 6px;
+        transition: all 0.2s;
+        user-select: none;
+    `;
+
+    function updateSoundToggle() {
+        soundToggle.textContent = soundEnabled ? '🔊' : '🔇';
+        soundToggle.title = soundEnabled ? 'Sound On (click to mute)' : 'Sound Off (click to unmute)';
+    }
+
+    soundToggle.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        localStorage.setItem('soundEnabled', soundEnabled);
+        updateSoundToggle();
+    });
+
+    settingsPanel.appendChild(soundToggle);
+    updateSoundToggle();
+
+    // D-pad toggle
+    const dpadSetting = document.createElement('div');
+    dpadSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+    dpadSetting.innerHTML = `
+        <div style="font-size: 16px;">🎮</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px;">D-Pad</div>
+    `;
+
+    const dpadToggleBtn = document.createElement('button');
+    dpadToggleBtn.textContent = 'ON';
+    dpadToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44ff88;
+        border-radius: 6px;
+        background: rgba(68, 255, 136, 0.2);
+        color: #44ff88;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.2s;
+        min-width: 60px;
+    `;
+
+    function updateDpadToggle() {
+        if (showDpadControls) {
+            dpadToggleBtn.textContent = 'OFF';
+            dpadToggleBtn.style.background = '#44ff88';
+            dpadToggleBtn.style.color = '#000';
+        } else {
+            dpadToggleBtn.textContent = 'ON';
+            dpadToggleBtn.style.background = 'rgba(68, 255, 136, 0.2)';
+            dpadToggleBtn.style.color = '#44ff88';
+        }
+    }
+
+    dpadToggleBtn.addEventListener('click', () => {
+        showDpadControls = !showDpadControls;
+        updateDpadToggle();
+        updateModeToggle();
+    });
+
+    dpadSetting.appendChild(dpadToggleBtn);
+    settingsPanel.appendChild(dpadSetting);
+    updateDpadToggle();
+
+    // Touch hints toggle
+    const hintsSetting = document.createElement('div');
+    hintsSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+    hintsSetting.innerHTML = `
+        <div style="font-size: 16px;">💡</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px;">Touch Hints</div>
+    `;
+
+    const hintsToggleBtn = document.createElement('button');
+    hintsToggleBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44aaff;
+        border-radius: 6px;
+        background: rgba(68, 170, 255, 0.2);
+        color: #44aaff;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.2s;
+        min-width: 60px;
+    `;
+
+    function updateHintsToggle() {
+        if (showTouchHints) {
+            hintsToggleBtn.textContent = 'OFF';
+            hintsToggleBtn.style.background = '#44aaff';
+            hintsToggleBtn.style.color = '#000';
+        } else {
+            hintsToggleBtn.textContent = 'ON';
+            hintsToggleBtn.style.background = 'rgba(68, 170, 255, 0.2)';
+            hintsToggleBtn.style.color = '#44aaff';
+        }
+    }
+
+    hintsToggleBtn.addEventListener('click', () => {
+        showTouchHints = !showTouchHints;
+        localStorage.setItem('showTouchHints', showTouchHints);
+        updateHintsToggle();
+        updateTouchHintsOverlay();
+    });
+
+    hintsSetting.appendChild(hintsToggleBtn);
+    settingsPanel.appendChild(hintsSetting);
+    updateHintsToggle();
+
+    // Quit button in menu
+    const quitSetting = document.createElement('div');
+    quitSetting.style.cssText = 'display: flex; align-items: center; justify-content: center; padding-top: 8px; border-top: 1px solid #444;';
+
+    const quitBtn = document.createElement('button');
+    quitBtn.textContent = 'QUIT GAME';
+    quitBtn.style.cssText = `
+        padding: 12px 20px;
+        border: 2px solid #ff6666;
+        border-radius: 6px;
+        background: rgba(255, 100, 100, 0.2);
+        color: #ff6666;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        transition: all 0.2s;
+        width: 100%;
+        box-shadow: 0 0 10px rgba(255, 100, 100, 0.2);
+    `;
+
+    quitBtn.addEventListener('mouseenter', () => {
+        quitBtn.style.background = 'rgba(255, 100, 100, 0.4)';
+        quitBtn.style.boxShadow = '0 0 15px rgba(255, 100, 100, 0.4)';
+    });
+    quitBtn.addEventListener('mouseleave', () => {
+        quitBtn.style.background = 'rgba(255, 100, 100, 0.2)';
+        quitBtn.style.boxShadow = '0 0 10px rgba(255, 100, 100, 0.2)';
+    });
+    quitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showQuitDialog();
+    });
+    quitBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        quitBtn.style.transform = 'scale(0.95)';
+    });
+    quitBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        quitBtn.style.transform = 'scale(1)';
+    });
+
+    quitSetting.appendChild(quitBtn);
+    settingsPanel.appendChild(quitSetting);
+
+    // Orbit controls
+    addOrbitControlsToSettings(settingsPanel);
+
+    // Toggle panel
+    let settingsPanelOpen = false;
+    hamburgerBtn.addEventListener('click', () => {
+        settingsPanelOpen = !settingsPanelOpen;
+        settingsPanel.style.display = settingsPanelOpen ? 'flex' : 'none';
+    });
+
+    document.addEventListener('click', (e) => {
+        if (settingsPanelOpen && !settingsPanel.contains(e.target) && !hamburgerBtn.contains(e.target)) {
+            settingsPanelOpen = false;
+            settingsPanel.style.display = 'none';
+        }
+    });
+
+    document.body.appendChild(settingsPanel);
+    document.body.appendChild(hamburgerBtn);
+}
+
+function addOrbitControlsToSettings(settingsPanel) {
+    // Planet rotation
+    const planetSetting = document.createElement('div');
+    planetSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
+    const planetHeader = document.createElement('div');
+    planetHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
+    planetHeader.textContent = '🌍 PLANET ROTATION';
+    const planetSlider = document.createElement('input');
+    planetSlider.type = 'range';
+    planetSlider.min = '-100';
+    planetSlider.max = '100';
+    planetSlider.value = '25';
+    planetSlider.style.cssText = 'width: 100%; cursor: pointer;';
+    const planetValue = document.createElement('div');
+    planetValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
+    planetValue.textContent = 'CW 0.12';
+    planetSetting.appendChild(planetHeader);
+    planetSetting.appendChild(planetSlider);
+    planetSetting.appendChild(planetValue);
+    settingsPanel.appendChild(planetSetting);
+
+    planetSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        planetRotationSpeed = Math.abs(val) / 400;
+        planetRotationDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        planetValue.textContent = `${dir} ${planetRotationSpeed.toFixed(2)}`;
+    });
+
+    // Moon orbit
+    const moonSetting = document.createElement('div');
+    moonSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
+    const moonHeader = document.createElement('div');
+    moonHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
+    moonHeader.textContent = '🌙 MOON ORBIT';
+    const moonSlider = document.createElement('input');
+    moonSlider.type = 'range';
+    moonSlider.min = '-100';
+    moonSlider.max = '100';
+    moonSlider.value = '30';
+    moonSlider.style.cssText = 'width: 100%; cursor: pointer;';
+    const moonValue = document.createElement('div');
+    moonValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
+    moonValue.textContent = 'CW 0.15';
+    moonSetting.appendChild(moonHeader);
+    moonSetting.appendChild(moonSlider);
+    moonSetting.appendChild(moonValue);
+    settingsPanel.appendChild(moonSetting);
+
+    moonSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        moonOrbitSpeed = Math.abs(val) / 200;
+        moonOrbitDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        moonValue.textContent = `${dir} ${moonOrbitSpeed.toFixed(2)}`;
+    });
+
+    // Ship orbit
+    const shipOrbitSetting = document.createElement('div');
+    shipOrbitSetting.style.cssText = 'display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid #444;';
+    const shipHeader = document.createElement('div');
+    shipHeader.style.cssText = 'color: #fff; font-family: monospace; font-size: 11px; opacity: 0.8;';
+    shipHeader.textContent = '🚀 SHIP ORBIT';
+    const shipOrbitSlider = document.createElement('input');
+    shipOrbitSlider.type = 'range';
+    shipOrbitSlider.min = '-100';
+    shipOrbitSlider.max = '100';
+    shipOrbitSlider.value = '50';
+    shipOrbitSlider.style.cssText = 'width: 100%; cursor: pointer;';
+    const shipOrbitValue = document.createElement('div');
+    shipOrbitValue.style.cssText = 'font-size: 9px; color: #888; text-align: center;';
+    shipOrbitValue.textContent = 'CW 0.25';
+    shipOrbitSetting.appendChild(shipHeader);
+    shipOrbitSetting.appendChild(shipOrbitSlider);
+    shipOrbitSetting.appendChild(shipOrbitValue);
+    settingsPanel.appendChild(shipOrbitSetting);
+
+    shipOrbitSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        shipOrbitSpeed = Math.abs(val) / 200;
+        shipOrbitDirection = val >= 0 ? 1 : -1;
+        const dir = val === 0 ? 'STOP' : (val > 0 ? 'CW' : 'CCW');
+        shipOrbitValue.textContent = `${dir} ${shipOrbitSpeed.toFixed(2)}`;
+    });
+}
+
+function createTouchHintsOverlay() {
+    const touchHintsOverlay = document.createElement('div');
+    touchHintsOverlay.id = 'touchHintsOverlay';
+    touchHintsOverlay.style.cssText = `
+        position: fixed;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        z-index: 999;
+        pointer-events: none;
+        font-family: 'Courier New', monospace;
+    `;
+
+    if (!document.getElementById('touchHintsStyle')) {
+        const style = document.createElement('style');
+        style.id = 'touchHintsStyle';
+        style.textContent = `
+            @keyframes touchHintPulse {
+                0%, 100% { opacity: 0.9; transform: translateX(-50%) scale(1); }
+                50% { opacity: 1; transform: translateX(-50%) scale(1.05); }
+            }
+            @keyframes fingerDrag {
+                0%, 100% { transform: translate(0, 0); }
+                50% { transform: translate(30px, -20px); }
+            }
+            @keyframes arrowBounce {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    touchHintsOverlay.innerHTML = `
+        <div style="
+            background: rgba(0, 40, 80, 0.9);
+            border: 2px solid #44aaff;
+            border-radius: 12px;
+            padding: 15px 25px;
+            box-shadow: 0 0 20px rgba(68, 170, 255, 0.4);
+            animation: touchHintPulse 2s ease-in-out infinite;
+        ">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div style="font-size: 32px; animation: fingerDrag 1.5s ease-in-out infinite;">👆</div>
+                <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                    <div style="color: #44aaff; font-size: 14px; font-weight: bold;">TOUCH & DRAG</div>
+                    <div style="color: #ffffff; font-size: 12px;">to aim at asteroids</div>
+                </div>
+                <div style="font-size: 20px; color: #44ff88; animation: arrowBounce 1s ease-in-out infinite;">↗</div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(touchHintsOverlay);
+
+    // Assign global functions
+    updateTouchHintsOverlay = () => {
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (showTouchHints && isTouchDevice && !touchHintsShownThisSession && gameActive) {
+            touchHintsOverlay.style.display = 'flex';
+        } else {
+            touchHintsOverlay.style.display = 'none';
+        }
+    };
+
+    hideTouchHints = () => {
+        if (!touchHintsShownThisSession) {
+            touchHintsShownThisSession = true;
+            touchHintsOverlay.style.display = 'none';
+        }
+    };
+}
+
+function createGameStatusPanel() {
     const gamePanel = document.createElement('div');
     gamePanel.id = 'gamePanel';
     gamePanel.style.cssText = `
@@ -3627,7 +3664,6 @@ function createControlUI() {
         transition: all 0.3s;
     `;
 
-    // Dashboard icon (shown by default)
     const dashboardIcon = document.createElement('div');
     dashboardIcon.id = 'dashboardIcon';
     dashboardIcon.innerHTML = '📊';
@@ -3640,7 +3676,6 @@ function createControlUI() {
         height: 40px;
     `;
 
-    // Dashboard content container (hidden by default)
     const dashboardContent = document.createElement('div');
     dashboardContent.id = 'dashboardContent';
     dashboardContent.style.cssText = `
@@ -3649,13 +3684,44 @@ function createControlUI() {
         gap: 6px;
     `;
 
-    // Header row with info button
+    // Create all dashboard content
+    createDashboardContent(dashboardContent);
+
+    gamePanel.appendChild(dashboardIcon);
+    gamePanel.appendChild(dashboardContent);
+
+    // Toggle functionality
+    let dashboardExpanded = false;
+    gamePanel.addEventListener('click', (e) => {
+        if (e.target.closest('#infoBtn') || e.target.closest('input') || e.target.closest('button')) {
+            return;
+        }
+        dashboardExpanded = !dashboardExpanded;
+        if (dashboardExpanded) {
+            dashboardIcon.style.display = 'none';
+            dashboardContent.style.display = 'flex';
+            gamePanel.style.minWidth = '140px';
+        } else {
+            dashboardIcon.style.display = 'flex';
+            dashboardContent.style.display = 'none';
+            gamePanel.style.minWidth = 'auto';
+        }
+    });
+
+    document.body.appendChild(gamePanel);
+
+    // Create orientation indicator
+    const orientationContainer = document.getElementById('orientationIndicator');
+    if (orientationContainer) {
+        createOrientationIndicator(orientationContainer);
+    }
+}
+
+function createDashboardContent(dashboardContent) {
+    // Header with info button
     const headerRow = document.createElement('div');
     headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding-bottom: 4px; border-bottom: 1px solid rgba(68, 170, 255, 0.3); margin-bottom: 2px;';
-
-    const titleLabel = document.createElement('div');
-    titleLabel.textContent = 'EARTH DEFENDER';
-    titleLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; font-weight: bold; color: #44ff88;';
+    headerRow.innerHTML = '<div style="font-size: 10px; letter-spacing: 2px; font-weight: bold; color: #44ff88;">EARTH DEFENDER</div>';
 
     const infoBtn = document.createElement('button');
     infoBtn.textContent = '?';
@@ -3670,9 +3736,6 @@ function createControlUI() {
         font-size: 12px;
         font-weight: bold;
         cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         transition: all 0.2s;
     `;
     infoBtn.addEventListener('mouseenter', () => {
@@ -3684,98 +3747,35 @@ function createControlUI() {
         infoBtn.style.boxShadow = 'none';
     });
     infoBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); // Prevent dashboard toggle when clicking info button
+        e.stopPropagation();
         showInstructions(true);
     });
-
-    headerRow.appendChild(titleLabel);
     headerRow.appendChild(infoBtn);
     dashboardContent.appendChild(headerRow);
 
-    // Level indicator - simple display
+    // Level indicator
     const levelDiv = document.createElement('div');
     levelDiv.style.cssText = 'display: flex; align-items: center; justify-content: center; gap: 8px; padding: 4px 0;';
-
-    const levelLabel = document.createElement('div');
-    levelLabel.style.cssText = 'font-size: 10px; letter-spacing: 2px; opacity: 0.8;';
-    levelLabel.textContent = 'LEVEL';
-
-    const levelValue = document.createElement('div');
-    levelValue.id = 'levelValue';
-    levelValue.textContent = '1';
-    levelValue.style.cssText = 'font-size: 22px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff;';
-
-    levelDiv.appendChild(levelLabel);
-    levelDiv.appendChild(levelValue);
+    levelDiv.innerHTML = `
+        <div style="font-size: 10px; letter-spacing: 2px; opacity: 0.8;">LEVEL</div>
+        <div id="levelValue" style="font-size: 22px; font-weight: bold; color: #44aaff; text-shadow: 0 0 10px #44aaff;">1</div>
+    `;
     dashboardContent.appendChild(levelDiv);
 
-    // Pause button in dashboard
-    const pauseDiv = document.createElement('div');
-    pauseDiv.style.cssText = 'display: flex; justify-content: center; padding: 4px 0;';
-
-    const pauseBtn = document.createElement('button');
-    pauseBtn.id = 'pauseBtn';
-    pauseBtn.textContent = 'PAUSE';
-    pauseBtn.style.cssText = `
-        padding: 6px 16px;
-        font-size: 11px;
-        background: rgba(68, 170, 255, 0.2);
-        color: #44aaff;
-        border: 1px solid #44aaff;
-        border-radius: 4px;
-        cursor: pointer;
-        font-family: 'Courier New', monospace;
-        font-weight: bold;
-        letter-spacing: 1px;
-        transition: all 0.2s;
-    `;
-
-    pauseBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        togglePause();
-    });
-
-    pauseDiv.appendChild(pauseBtn);
-    dashboardContent.appendChild(pauseDiv);
-
-    // Earth health bar - more compact
+    // Health bar
     const healthDiv = document.createElement('div');
-    healthDiv.innerHTML = '<div style="font-size: 8px; letter-spacing: 1px; opacity: 0.6; margin-bottom: 3px;">HEALTH</div>';
-
-    const healthBarContainer = document.createElement('div');
-    healthBarContainer.style.cssText = `
-        width: 100%;
-        height: 14px;
-        background: rgba(0, 0, 0, 0.5);
-        border-radius: 7px;
-        overflow: hidden;
-        border: 1px solid #44ff88;
+    healthDiv.innerHTML = `
+        <div style="font-size: 8px; letter-spacing: 1px; opacity: 0.6; margin-bottom: 3px;">HEALTH</div>
+        <div style="width: 100%; height: 14px; background: rgba(0, 0, 0, 0.5); border-radius: 7px; overflow: hidden; border: 1px solid #44ff88;">
+            <div id="healthBar" style="width: 100%; height: 100%; background: #44ff88; transition: width 0.3s, background 0.3s;"></div>
+        </div>
+        <div id="healthText" style="font-size: 11px; text-align: center; margin-top: 2px; color: #44ff88;">100</div>
     `;
-
-    const healthBar = document.createElement('div');
-    healthBar.id = 'healthBar';
-    healthBar.style.cssText = `
-        width: 100%;
-        height: 100%;
-        background: #44ff88;
-        transition: width 0.3s, background 0.3s;
-    `;
-    healthBarContainer.appendChild(healthBar);
-
-    const healthText = document.createElement('div');
-    healthText.id = 'healthText';
-    healthText.textContent = '100';
-    healthText.style.cssText = 'font-size: 11px; text-align: center; margin-top: 2px; color: #44ff88;';
-
-    healthDiv.appendChild(healthBarContainer);
-    healthDiv.appendChild(healthText);
     dashboardContent.appendChild(healthDiv);
 
-    // Stats row - score/best/threats/kills/ammo in compact format
+    // Stats
     const statsRow = document.createElement('div');
     statsRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 3px; padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3); font-size: 9px;';
-
     statsRow.innerHTML = `
         <div style="text-align: center;">
             <div style="opacity: 0.6; font-size: 6px; letter-spacing: 1px;">SCORE</div>
@@ -3800,7 +3800,7 @@ function createControlUI() {
     `;
     dashboardContent.appendChild(statsRow);
 
-    // === LEADERBOARD SECTION ===
+    // Leaderboard
     const leaderboardDiv = document.createElement('div');
     leaderboardDiv.style.cssText = 'padding-top: 6px; border-top: 1px solid rgba(68, 170, 255, 0.3);';
     leaderboardDiv.innerHTML = `
@@ -3812,10 +3812,9 @@ function createControlUI() {
     `;
     dashboardContent.appendChild(leaderboardDiv);
 
-    // Initialize leaderboard display
     setTimeout(updateLeaderboardDisplay, 100);
 
-    // === ORIENTATION INDICATOR (3D human figure) - inside dashboard ===
+    // Orientation indicator container
     const orientationDiv = document.createElement('div');
     orientationDiv.style.cssText = `
         display: flex;
@@ -3824,47 +3823,20 @@ function createControlUI() {
         padding-top: 6px;
         border-top: 1px solid rgba(68, 170, 255, 0.3);
     `;
-
-    const orientationContainer = document.createElement('div');
-    orientationContainer.id = 'orientationIndicator';
-    orientationContainer.style.cssText = `
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        background: rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(68, 170, 255, 0.5);
-        overflow: hidden;
+    orientationDiv.innerHTML = `
+        <div id="orientationIndicator" style="
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(68, 170, 255, 0.5);
+            overflow: hidden;
+        "></div>
     `;
-    orientationDiv.appendChild(orientationContainer);
     dashboardContent.appendChild(orientationDiv);
+}
 
-    // Add icon and content to gamePanel
-    gamePanel.appendChild(dashboardIcon);
-    gamePanel.appendChild(dashboardContent);
-
-    // Toggle dashboard functionality
-    let dashboardExpanded = false;
-    gamePanel.addEventListener('click', (e) => {
-        // Don't toggle if clicking on interactive elements inside dashboard
-        if (e.target.closest('#infoBtn') || e.target.closest('input') || e.target.closest('button')) {
-            return;
-        }
-
-        dashboardExpanded = !dashboardExpanded;
-        if (dashboardExpanded) {
-            dashboardIcon.style.display = 'none';
-            dashboardContent.style.display = 'flex';
-            gamePanel.style.minWidth = '140px';
-        } else {
-            dashboardIcon.style.display = 'flex';
-            dashboardContent.style.display = 'none';
-            gamePanel.style.minWidth = 'auto';
-        }
-    });
-
-    document.body.appendChild(gamePanel);
-
-    // Create mini scene for orientation
+function createOrientationIndicator(container) {
     window.orientationScene = new THREE.Scene();
     window.orientationCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
     window.orientationCamera.position.set(0, 0, 3.5);
@@ -3873,50 +3845,43 @@ function createControlUI() {
     window.orientationRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     window.orientationRenderer.setSize(60, 60);
     window.orientationRenderer.setClearColor(0x000000, 0);
-    orientationContainer.appendChild(window.orientationRenderer.domElement);
+    container.appendChild(window.orientationRenderer.domElement);
 
-    // Create simple human figure
     const humanGroup = new THREE.Group();
     const humanMaterial = new THREE.MeshBasicMaterial({ color: 0x44aaff });
 
     // Head
-    const headGeom = new THREE.SphereGeometry(0.2, 16, 16);
-    const head = new THREE.Mesh(headGeom, humanMaterial);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), humanMaterial);
     head.position.y = 0.75;
     humanGroup.add(head);
 
-    // Body (torso)
-    const bodyGeom = new THREE.CylinderGeometry(0.12, 0.16, 0.5, 8);
-    const body = new THREE.Mesh(bodyGeom, humanMaterial);
+    // Body
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.5, 8), humanMaterial);
     body.position.y = 0.35;
     humanGroup.add(body);
 
     // Arms
-    const armGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8);
-    const leftArm = new THREE.Mesh(armGeom, humanMaterial);
+    const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8), humanMaterial);
     leftArm.position.set(-0.25, 0.4, 0);
     leftArm.rotation.z = Math.PI / 4;
     humanGroup.add(leftArm);
 
-    const rightArm = new THREE.Mesh(armGeom, humanMaterial);
+    const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 8), humanMaterial);
     rightArm.position.set(0.25, 0.4, 0);
     rightArm.rotation.z = -Math.PI / 4;
     humanGroup.add(rightArm);
 
     // Legs
-    const legGeom = new THREE.CylinderGeometry(0.06, 0.05, 0.5, 8);
-    const leftLeg = new THREE.Mesh(legGeom, humanMaterial);
+    const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.5, 8), humanMaterial);
     leftLeg.position.set(-0.1, -0.15, 0);
     humanGroup.add(leftLeg);
 
-    const rightLeg = new THREE.Mesh(legGeom, humanMaterial);
+    const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.5, 8), humanMaterial);
     rightLeg.position.set(0.1, -0.15, 0);
     humanGroup.add(rightLeg);
 
-    // Add direction indicator (nose/front marker)
-    const noseGeom = new THREE.ConeGeometry(0.06, 0.12, 8);
-    const noseMaterial = new THREE.MeshBasicMaterial({ color: 0xff4444 });
-    const nose = new THREE.Mesh(noseGeom, noseMaterial);
+    // Nose (direction indicator)
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.12, 8), new THREE.MeshBasicMaterial({ color: 0xff4444 }));
     nose.position.set(0, 0.75, 0.25);
     nose.rotation.x = Math.PI / 2;
     humanGroup.add(nose);
@@ -3924,11 +3889,11 @@ function createControlUI() {
     window.orientationScene.add(humanGroup);
     window.orientationHuman = humanGroup;
 
-    // Add subtle lighting
     const orientLight = new THREE.AmbientLight(0xffffff, 0.5);
     window.orientationScene.add(orientLight);
+}
 
-    // Slider styling and threat animation
+function createUIStyles() {
     const style = document.createElement('style');
     style.textContent = `
         @keyframes threatPulse {
@@ -4026,6 +3991,77 @@ function createControlUI() {
         }
     `;
     document.head.appendChild(style);
+}
+
+// Main UI orchestrator - now much simpler with extracted helper functions!
+function createControlUI() {
+    // Create basic UI components
+    createLaserButton();
+    const shipControlPad = createShipControlPad();
+
+    // Mode toggle needs inline implementation for closure over shipControlPad
+    const modeToggleBtn = document.createElement('button');
+    modeToggleBtn.textContent = 'CAM';
+    modeToggleBtn.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        background: #44ff88;
+        border: 2px solid #44ff88;
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-family: 'Courier New', monospace;
+        color: #000;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        box-shadow: 0 0 15px rgba(68, 255, 136, 0.3);
+        z-index: 1000;
+        transition: all 0.2s;
+        min-width: 80px;
+        text-align: center;
+    `;
+
+    function updateModeToggle() {
+        if (controlMode === 'camera') {
+            modeToggleBtn.textContent = 'SHIP';
+            shipControlPad.style.display = 'none';
+        } else {
+            modeToggleBtn.textContent = 'CAM';
+            shipControlPad.style.display = showDpadControls ? 'flex' : 'none';
+        }
+    }
+
+    modeToggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        controlMode = controlMode === 'camera' ? 'ship' : 'camera';
+        updateModeToggle();
+    });
+
+    modeToggleBtn.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        modeToggleBtn.style.transform = 'scale(0.95)';
+    });
+
+    modeToggleBtn.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        modeToggleBtn.style.transform = 'scale(1)';
+    });
+
+    document.body.appendChild(modeToggleBtn);
+
+    // Create remaining UI components using helper functions
+    createPauseButton();
+    createQuitButtonBottomLeft();
+    createHamburgerMenuAndSettings(updateModeToggle);
+    createTouchHintsOverlay();
+    createGameStatusPanel();
+    createUIStyles();
+
+    // Initialize mode toggle state
+    setTimeout(updateModeToggle, 0);
 }
 
 createControlUI();
@@ -4462,10 +4498,6 @@ function animate() {
     if (cameraChanged) {
         updateCameraFromOrbit();
     }
-
-    // === PAUSE ALL GAME WORLD ANIMATIONS WHEN PAUSED ===
-    // Camera controls above still work so player can look around while paused
-    if (gameActive) {
 
     // Rotate Earth
     earth.rotation.y += planetRotationSpeed * planetRotationDirection * delta;
@@ -4951,8 +4983,6 @@ function animate() {
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
-
-    } // End of gameActive check - animations paused when game is paused
 
     // Update orientation indicator (human figure matches camera view direction)
     if (window.orientationHuman && window.orientationRenderer) {
