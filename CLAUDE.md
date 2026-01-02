@@ -56,6 +56,17 @@ Jest for unit/integration tests with jsdom environment and canvas mocking for Th
 
 Deploys to Vercel automatically on merge to main. `vercel.json` routes `/api/*` to serverless functions. No build step - static files served directly.
 
+### IMPORTANT: Vercel Deployment Considerations
+
+When making changes, always keep in mind this app deploys to Vercel:
+
+1. **No local-only files**: Don't commit `.npmrc` or config files with local paths (e.g., `/home/username/...`) - these break Vercel builds
+2. **package.json scripts**: Ensure all npm scripts referenced in CI workflows exist in package.json (`test:unit`, `test:integration`, `test:coverage`, `test:e2e`, `test:visual`)
+3. **Static files only**: The `public/` folder is served as static files - no server-side rendering
+4. **vercel.json**: Don't modify unless necessary; it configures routes for API and static files
+5. **Jest config**: Use `jest.config.cjs` (CommonJS) since package.json has `"type": "module"`
+6. **Test before pushing**: Run `npm run test:unit` locally to catch issues before CI
+
 ## Git Workflow
 
 - Cannot push directly to `main`
