@@ -3410,6 +3410,40 @@ function createHamburgerMenuAndSettings(updateModeToggle) {
     settingsPanel.appendChild(hintsSetting);
     updateHintsToggle();
 
+    // Pause button in menu
+    const pauseSetting = document.createElement('div');
+    pauseSetting.style.cssText = 'display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid #444;';
+    pauseSetting.innerHTML = `
+        <div style="font-size: 16px;">⏸️</div>
+        <div style="color: #fff; font-family: monospace; font-size: 12px;">Pause</div>
+    `;
+
+    const pauseBtn = document.createElement('button');
+    pauseBtn.id = 'pauseBtn';
+    pauseBtn.textContent = 'PAUSE';
+    pauseBtn.style.cssText = `
+        padding: 8px 16px;
+        border: 2px solid #44aaff;
+        border-radius: 6px;
+        background: rgba(68, 170, 255, 0.2);
+        color: #44aaff;
+        cursor: pointer;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.2s;
+        min-width: 80px;
+    `;
+
+    pauseBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePause();
+    });
+
+    pauseSetting.appendChild(pauseBtn);
+    settingsPanel.appendChild(pauseSetting);
+
     // Quit button in menu
     const quitSetting = document.createElement('div');
     quitSetting.style.cssText = 'display: flex; align-items: center; justify-content: center; padding-top: 8px; border-top: 1px solid #444;';
@@ -4001,34 +4035,55 @@ function createControlUI() {
 
     // Mode toggle needs inline implementation for closure over shipControlPad
     const modeToggleBtn = document.createElement('button');
-    modeToggleBtn.textContent = 'CAM';
     modeToggleBtn.style.cssText = `
         position: fixed;
         bottom: 10px;
         left: 10px;
-        background: #44ff88;
-        border: 2px solid #44ff88;
-        border-radius: 8px;
-        padding: 12px 20px;
-        font-family: 'Courier New', monospace;
-        color: #000;
+        background: rgba(20, 20, 30, 0.9);
+        border: 2px solid #44aaff;
+        border-radius: 12px;
+        padding: 10px;
         cursor: pointer;
-        font-size: 16px;
-        font-weight: bold;
-        letter-spacing: 2px;
-        box-shadow: 0 0 15px rgba(68, 255, 136, 0.3);
+        box-shadow: 0 0 15px rgba(68, 170, 255, 0.3);
         z-index: 1000;
         transition: all 0.2s;
-        min-width: 80px;
-        text-align: center;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     `;
+
+    // SVG icons for camera orbit and ship rotation modes
+    const cameraOrbitIcon = `
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#44aaff" stroke-width="2">
+            <circle cx="14" cy="14" r="10" stroke-dasharray="4 2" opacity="0.5"/>
+            <circle cx="14" cy="14" r="4" fill="#44aaff"/>
+            <path d="M 24 14 A 10 10 0 0 1 14 24" stroke="#44aaff" stroke-width="2" fill="none"/>
+            <path d="M 14 24 L 16 21 M 14 24 L 11 22" stroke="#44aaff" stroke-width="2"/>
+        </svg>`;
+
+    const shipRotateIcon = `
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" stroke="#44ff88" stroke-width="2">
+            <path d="M 14 4 L 22 22 L 14 18 L 6 22 Z" fill="rgba(68, 255, 136, 0.3)" stroke="#44ff88"/>
+            <path d="M 4 10 A 12 12 0 0 1 10 4" stroke="#44ff88" stroke-width="1.5" fill="none"/>
+            <path d="M 10 4 L 8 6 M 10 4 L 12 6" stroke="#44ff88" stroke-width="1.5"/>
+            <path d="M 24 18 A 12 12 0 0 1 18 24" stroke="#44ff88" stroke-width="1.5" fill="none"/>
+            <path d="M 18 24 L 20 22 M 18 24 L 16 22" stroke="#44ff88" stroke-width="1.5"/>
+        </svg>`;
 
     function updateModeToggle() {
         if (controlMode === 'camera') {
-            modeToggleBtn.textContent = 'SHIP';
+            // In camera mode - show camera orbit icon
+            modeToggleBtn.innerHTML = cameraOrbitIcon;
+            modeToggleBtn.style.borderColor = '#44aaff';
+            modeToggleBtn.title = 'Camera Orbit Mode (tap for Ship Mode)';
             shipControlPad.style.display = 'none';
         } else {
-            modeToggleBtn.textContent = 'CAM';
+            // In ship mode - show ship rotation icon
+            modeToggleBtn.innerHTML = shipRotateIcon;
+            modeToggleBtn.style.borderColor = '#44ff88';
+            modeToggleBtn.title = 'Ship Rotation Mode (tap for Camera Mode)';
             shipControlPad.style.display = showDpadControls ? 'flex' : 'none';
         }
     }
@@ -4053,8 +4108,7 @@ function createControlUI() {
     document.body.appendChild(modeToggleBtn);
 
     // Create remaining UI components using helper functions
-    createPauseButton();
-    createQuitButtonBottomLeft();
+    // Note: Pause and Quit buttons are now in the hamburger menu
     createHamburgerMenuAndSettings(updateModeToggle);
     createTouchHintsOverlay();
     createGameStatusPanel();
