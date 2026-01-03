@@ -3366,11 +3366,8 @@ const orbitY = 1.5;
 let shipPhase = 'orbit'; // Start directly in orbit for smooth experience
 let orbitAngle = Math.PI * 1.5; // Starting angle
 
-// Ship orientation - TARGET-BASED SYSTEM
-// Instead of an offset quaternion, we store a world-space target point
-// The ship's nose always points at this target, regardless of orbital position
-let laserTargetWorld = new THREE.Vector3(0, 0, 0);  // World-space point the laser aims at (starts at Earth/origin)
-let laserTargetDistance = 15;  // Distance from ship to target point (controls how far out the target is)
+// Ship orientation (quaternion-based for gimbal-lock-free rotation)
+let shipOrientationQuat = new THREE.Quaternion();  // Cumulative rotation offset from base orientation
 
 // Ship control input state
 const shipInput = {
@@ -3381,67 +3378,20 @@ const shipInput = {
 };
 const SHIP_ROTATION_SPEED = 1.5; // Radians per second
 
-// Initialize target based on ship's starting position
-function initializeLaserTarget() {
-    // Point toward Earth (origin) initially
-    const toEarth = new THREE.Vector3(0, 0, 0).sub(spaceShip.position).normalize();
-    laserTargetWorld.copy(spaceShip.position).addScaledVector(toEarth, laserTargetDistance);
-}
-
-// Orient ship so its nose (-Z axis) points at the target
-function orientShipToTarget() {
-    // Direction from ship to target
-    const toTarget = laserTargetWorld.clone().sub(spaceShip.position).normalize();
-
-    // Create a quaternion that rotates -Z to point at target
-    // Ship's forward is -Z, so we need to align -Z with toTarget
-    const forward = new THREE.Vector3(0, 0, -1);
-
-    // We need an "up" reference to avoid roll ambiguity
-    // Use a world-relative up, but handle edge cases near poles
-    let worldUp = new THREE.Vector3(0, 1, 0);
-
-    // If looking straight up or down, use a different reference
-    const dotUp = Math.abs(toTarget.dot(worldUp));
-    if (dotUp > 0.99) {
-        worldUp.set(0, 0, 1);
-    }
-
-    // Calculate right vector (perpendicular to forward and up)
-    const right = new THREE.Vector3().crossVectors(worldUp, toTarget).normalize();
-
-    // Recalculate up to be perpendicular to both forward and right
-    const up = new THREE.Vector3().crossVectors(toTarget, right).normalize();
-
-    // Build rotation matrix from these axes
-    const rotMatrix = new THREE.Matrix4();
-    rotMatrix.makeBasis(right, up, toTarget.negate());  // -Z points at target, so negate
-
-    // Extract quaternion from matrix
-    spaceShip.quaternion.setFromRotationMatrix(rotMatrix);
-}
-
-// Move the target in screen-relative directions (for mouse/touch input)
+// Apply incremental rotation to ship orientation quaternion
 function applyShipRotation(deltaYaw, deltaPitch) {
-    // Get camera's view plane axes for screen-relative movement
-    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    // Get the ship's current local axes from the quaternion
+    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(shipOrientationQuat);
+    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(shipOrientationQuat);
 
-    // Calculate how much to move the target based on its distance from ship
-    // Further targets need more movement for same angular change
-    const targetDist = laserTargetWorld.distanceTo(spaceShip.position);
-    const movementScale = targetDist * 0.5;  // Sensitivity factor
+    // Create rotation quaternions for yaw (around local up) and pitch (around local right)
+    const yawQuat = new THREE.Quaternion().setFromAxisAngle(localUp, -deltaYaw);
+    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(localRight, -deltaPitch);
 
-    // Move target in screen-relative directions
-    // Horizontal drag (deltaYaw) moves target left/right in camera space
-    // Vertical drag (deltaPitch) moves target up/down in camera space
-    laserTargetWorld.addScaledVector(cameraRight, -deltaYaw * movementScale);
-    laserTargetWorld.addScaledVector(cameraUp, -deltaPitch * movementScale);
-
-    // Maintain consistent distance from ship (keeps target on a sphere around ship)
-    const toTarget = laserTargetWorld.clone().sub(spaceShip.position);
-    toTarget.normalize().multiplyScalar(laserTargetDistance);
-    laserTargetWorld.copy(spaceShip.position).add(toTarget);
+    // Apply rotations: first yaw, then pitch
+    shipOrientationQuat.premultiply(yawQuat);
+    shipOrientationQuat.premultiply(pitchQuat);
+    shipOrientationQuat.normalize();
 }
 
 spaceShip.position.set(
@@ -3449,9 +3399,6 @@ spaceShip.position.set(
     orbitY,
     Math.sin(orbitAngle) * shipOrbitRadius
 );
-
-// Initialize laser target to point at Earth
-initializeLaserTarget();
 
 // Camera control variables
 const cameraTarget = new THREE.Vector3(0, 0, 0); // The point the camera looks at
@@ -5402,7 +5349,20 @@ function animate() {
     spaceShip.position.z = flatZ * Math.cos(incRad);
     spaceShip.position.y = orbitY + flatZ * Math.sin(incRad);
 
-    // Update ship rotation from keyboard input (only in ship mode)
+    // Ship orientation - face direction of travel
+    const tangentX = Math.sin(orbitAngle) * shipOrbitDirection;
+    const tangentZ = -Math.cos(orbitAngle) * shipOrbitDirection * Math.cos(incRad);
+    const tangentY = -Math.cos(orbitAngle) * shipOrbitDirection * Math.sin(incRad);
+
+    const forward = new THREE.Vector3(
+        spaceShip.position.x + tangentX,
+        spaceShip.position.y + tangentY,
+        spaceShip.position.z + tangentZ
+    );
+    spaceShip.lookAt(forward);
+    spaceShip.rotateY(Math.PI);
+
+    // Update ship rotation from input (only in ship mode)
     if (controlMode === 'ship') {
         let deltaYaw = 0, deltaPitch = 0;
         if (shipInput.pitchUp) deltaPitch -= SHIP_ROTATION_SPEED * delta;
@@ -5415,9 +5375,10 @@ function animate() {
         }
     }
 
-    // TARGET-BASED ORIENTATION: Ship nose always points at laserTargetWorld
-    // This ensures the laser aim stays locked on target regardless of orbital position
-    orientShipToTarget();
+    // Apply quaternion-based orientation offset (gimbal-lock free)
+    // Store the base orientation from lookAt, then multiply by our offset quaternion
+    const baseQuat = spaceShip.quaternion.clone();
+    spaceShip.quaternion.copy(baseQuat.multiply(shipOrientationQuat));
 
     // Animate thrusters
     for (let i = 1; i <= 5; i++) {
