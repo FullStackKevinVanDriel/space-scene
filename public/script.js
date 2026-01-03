@@ -51,6 +51,29 @@ const pitchQuat = new THREE.Quaternion();
 const cameraRight = new THREE.Vector3();
 const cameraUp = new THREE.Vector3();
 
+// === PERFORMANCE: Reusable vectors to avoid per-frame allocations ===
+const _tempVec1 = new THREE.Vector3();
+const _tempVec2 = new THREE.Vector3();
+const _tempVec3 = new THREE.Vector3();
+const _tempVec4 = new THREE.Vector3();
+const _asteroidDir = new THREE.Vector3();
+const _asteroidMovement = new THREE.Vector3();
+const _boltMovement = new THREE.Vector3();
+const _sunDir = new THREE.Vector3();
+const _moonDir = new THREE.Vector3();
+
+// === PERFORMANCE: Cached DOM element references ===
+const _domCache = {
+    asteroidCount: null,
+    gameTimer: null,
+    get(id) {
+        if (!this[id]) {
+            this[id] = document.getElementById(id);
+        }
+        return this[id];
+    }
+};
+
 // === SUN AND LIGHTING ===
 // Sun position - far enough to feel distant but visible
 const SUN_DISTANCE = 80;
@@ -2838,7 +2861,7 @@ function updateTargetingHUD() {
     const occludingObjects = [earth, moon, spaceShip].filter(obj => obj && obj.matrixWorld);
     if (typeof window._hudFrameCount === 'undefined') window._hudFrameCount = 0;
     window._hudFrameCount++;
-    const HUD_OCCLUSION_EVERY_N_FRAMES = 5;
+    const HUD_OCCLUSION_EVERY_N_FRAMES = 15; // Reduced frequency for performance
     if (!window._asteroidOcclusionState) window._asteroidOcclusionState = new Map();
 
     // Reuse existing reticles from pool; only grow pool when needed
@@ -5527,10 +5550,11 @@ function animate() {
 
     // === LUNAR ECLIPSE DETECTION ===
     // Check if moon is in Earth's shadow (opposite side from sun)
-    const sunDir = SUN_POSITION.clone().normalize();
-    const moonDir = moon.position.clone().normalize();
+    // Using pooled vectors to avoid per-frame allocation
+    _sunDir.copy(SUN_POSITION).normalize();
+    _moonDir.copy(moon.position).normalize();
     // Dot product: -1 means moon is directly behind Earth from sun's view
-    const sunMoonDot = sunDir.dot(moonDir);
+    const sunMoonDot = _sunDir.dot(_moonDir);
 
     // Calculate how close moon is to being perfectly aligned for lunar eclipse
     // Umbra cone angle depends on relative sizes - simplified for visual effect
@@ -5646,8 +5670,11 @@ if (controlMode === 'camera') {
         navGreen.visible = greenBlink === 1;
     }
 
-    // Update CubeCamera for canopy reflections (every few frames for performance)
-    if (Math.floor(clock.getElapsedTime() * 10) % 3 === 0) {
+    // Update CubeCamera for canopy reflections (every 60 frames for performance)
+    // CubeCamera renders the scene 6 times, so minimize update frequency
+    if (typeof window._cubeFrameCount === 'undefined') window._cubeFrameCount = 0;
+    window._cubeFrameCount++;
+    if (window._cubeFrameCount % 60 === 0) {
         const canopy = spaceShip.getObjectByName('cockpitCanopy');
         if (canopy) {
             canopy.visible = false; // Hide canopy while rendering cubemap
@@ -5725,18 +5752,14 @@ if (controlMode === 'camera') {
         const asteroid = asteroids[i];
 
         // Always recalculate direction toward Earth to prevent asteroids from drifting away
-        const directionToEarth = new THREE.Vector3(0, 0, 0).sub(asteroid.position).normalize();
+        // Using pooled vector to avoid per-frame allocation
+        _asteroidDir.set(0, 0, 0).sub(asteroid.position).normalize();
         const speed = asteroid.userData.velocity.length(); // Preserve original speed
-        asteroid.userData.velocity.copy(directionToEarth.multiplyScalar(speed));
+        asteroid.userData.velocity.copy(_asteroidDir.multiplyScalar(speed));
 
-        // Move asteroid toward Earth
-        const movement = asteroid.userData.velocity.clone().multiplyScalar(delta);
-        asteroid.position.add(movement);
-
-        // Debug: occasional log for asteroid movement
-        if (Math.random() < 0.004) {
-            try { console.debug('[DEBUG] Asteroid move', { idx: i, pos: asteroid.position.toArray(), vel: asteroid.userData.velocity.toArray() }); } catch(e) {}
-        }
+        // Move asteroid toward Earth (using pooled vector to avoid allocation)
+        _asteroidMovement.copy(asteroid.userData.velocity).multiplyScalar(delta);
+        asteroid.position.add(_asteroidMovement);
 
         // Rotate asteroid
         const rotSpeed = asteroid.userData.rotationSpeed;
@@ -5829,10 +5852,10 @@ if (controlMode === 'camera') {
     for (let i = laserBolts.length - 1; i >= 0; i--) {
         const bolt = laserBolts[i];
 
-        // Move bolt
-        const movement = bolt.userData.velocity.clone().multiplyScalar(delta);
-        bolt.position.add(movement);
-        bolt.userData.distanceTraveled += movement.length();
+        // Move bolt (using pooled vector to avoid allocation)
+        _boltMovement.copy(bolt.userData.velocity).multiplyScalar(delta);
+        bolt.position.add(_boltMovement);
+        bolt.userData.distanceTraveled += _boltMovement.length();
 
         // Check collision with asteroids
         let hitAsteroid = false;
@@ -5983,8 +6006,8 @@ if (controlMode === 'camera') {
     // === SPAWN ASTEROIDS ===
     spawnAsteroids();
 
-    // Update asteroid count display
-    const asteroidCountEl = document.getElementById('asteroidCount');
+    // Update asteroid count display (using cached DOM reference)
+    const asteroidCountEl = _domCache.get('asteroidCount');
     if (asteroidCountEl) {
         asteroidCountEl.textContent = asteroids.length;
         // Make threats pulse/glow when there are active threats
@@ -5999,10 +6022,10 @@ if (controlMode === 'camera') {
     updateTargetingHUD();
     updateThreatIndicator();
 
-    // === UPDATE GAME TIMER ===
+    // === UPDATE GAME TIMER === (using cached DOM reference)
     if (gameStartTime && gameActive) {
         gameElapsedTime = Math.floor((Date.now() - gameStartTime) / 1000);
-        const timerEl = document.getElementById('gameTimer');
+        const timerEl = _domCache.get('gameTimer');
         if (timerEl) {
             timerEl.textContent = formatTime(gameElapsedTime);
         }
@@ -6019,10 +6042,11 @@ if (controlMode === 'camera') {
             scene.remove(explosion);
             explosions.splice(i, 1);
         } else {
-            // Animate explosion particles
+            // Animate explosion particles (using pooled vector to avoid allocation)
             explosion.children.forEach(child => {
                 if (child.userData.velocity) {
-                    child.position.add(child.userData.velocity.clone().multiplyScalar(delta));
+                    _tempVec1.copy(child.userData.velocity).multiplyScalar(delta);
+                    child.position.add(_tempVec1);
                     if (child.material && child.material.opacity !== undefined) {
                         child.material.opacity = 1 - progress;
                     }
@@ -6050,24 +6074,26 @@ if (controlMode === 'camera') {
 
     } // End of gameActive check - animations paused when game is paused
 
-    // Update orientation indicators (human figures match camera orientation including roll)
-    // The human figure shows the camera's orientation - when camera rolls, figure rolls
-    if (window.orientationHuman && window.orientationRenderer) {
-        // Use the full camera quaternion to capture yaw, pitch, AND roll
-        // Apply inverse because we want to show "which way is up" from camera's view
-        const indicatorQuat = cameraOrbitQuaternion.clone();
-        window.orientationHuman.quaternion.copy(indicatorQuat);
-        // Rotate 180° on Y because human faces +Z but we view from +Z
-        window.orientationHuman.rotateY(Math.PI);
-        window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
-    }
+    // Update orientation indicators (throttled to every 3 frames for performance)
+    // These require separate render() calls so we minimize their frequency
+    if (typeof window._orientFrameCount === 'undefined') window._orientFrameCount = 0;
+    window._orientFrameCount++;
+    if (window._orientFrameCount % 3 === 0) {
+        // Main orientation indicator
+        if (window.orientationHuman && window.orientationRenderer) {
+            // Use the full camera quaternion to capture yaw, pitch, AND roll
+            window.orientationHuman.quaternion.copy(cameraOrbitQuaternion);
+            // Rotate 180° on Y because human faces +Z but we view from +Z
+            window.orientationHuman.rotateY(Math.PI);
+            window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
+        }
 
-    // Mini orientation indicator (shown when dashboard is collapsed)
-    if (window.miniOrientationHuman && window.miniOrientationRenderer) {
-        const indicatorQuat = cameraOrbitQuaternion.clone();
-        window.miniOrientationHuman.quaternion.copy(indicatorQuat);
-        window.miniOrientationHuman.rotateY(Math.PI);
-        window.miniOrientationRenderer.render(window.miniOrientationScene, window.miniOrientationCamera);
+        // Mini orientation indicator (shown when dashboard is collapsed)
+        if (window.miniOrientationHuman && window.miniOrientationRenderer) {
+            window.miniOrientationHuman.quaternion.copy(cameraOrbitQuaternion);
+            window.miniOrientationHuman.rotateY(Math.PI);
+            window.miniOrientationRenderer.render(window.miniOrientationScene, window.miniOrientationCamera);
+        }
     }
 
     if (composer) {
