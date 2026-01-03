@@ -3000,9 +3000,10 @@ function updateAlignmentLine(shipDirection) {
     const farPoint = spaceShip.position.clone().add(shipDirection.clone().multiplyScalar(200));
     const farScreen = projectToScreen(farPoint);
 
-    // Check if aiming at Earth (friendly fire warning)
+    // Check if aiming at Earth or Moon (friendly fire warning)
     const aimingAtEarth = checkAimingAtEarth(shipDirection);
-    updateFriendlyFireWarning(aimingAtEarth);
+    const aimingAtMoon = checkAimingAtMoon(shipDirection);
+    updateFriendlyFireWarning(aimingAtEarth, aimingAtMoon);
 
     // Only show if ship is on screen - use fallback for far point if behind camera
     if (shipScreen.z < 1 && shipScreen.z > -1) {
@@ -3065,12 +3066,39 @@ function checkAimingAtEarth(shipDirection) {
     return false;
 }
 
+// Check if ship is aiming at Moon
+function checkAimingAtMoon(shipDirection) {
+    // Vector from ship to Moon center
+    const toMoon = moon.position.clone().sub(spaceShip.position).normalize();
+    const distanceToMoon = spaceShip.position.distanceTo(moon.position);
+
+    // Check alignment with Moon
+    const alignment = shipDirection.dot(toMoon);
+
+    // Calculate if the aim line would hit Moon's sphere
+    // Using ray-sphere intersection concept
+    if (alignment > 0) {
+        // Ship is facing toward Moon direction
+        const shipToMoon = moon.position.clone().sub(spaceShip.position);
+        const projectionLength = shipToMoon.dot(shipDirection);
+        const closestPoint = spaceShip.position.clone().add(
+            shipDirection.clone().multiplyScalar(projectionLength)
+        );
+        const missDistance = closestPoint.distanceTo(moon.position);
+
+        // If closest approach is within Moon radius, we're aiming at Moon
+        return missDistance < MOON_RADIUS + 0.3;
+    }
+    return false;
+}
+
 // Update friendly fire warning UI
-function updateFriendlyFireWarning(isAiming) {
+function updateFriendlyFireWarning(isAimingAtEarth, isAimingAtMoon) {
     let warning = document.getElementById('friendlyFireWarning');
     let earthHighlight = document.getElementById('earthHighlight');
+    let moonHighlight = document.getElementById('moonHighlight');
 
-    if (isAiming) {
+    if (isAimingAtEarth || isAimingAtMoon) {
         // Create warning if it doesn't exist
         if (!warning) {
             warning = document.createElement('div');
@@ -3092,7 +3120,6 @@ function updateFriendlyFireWarning(isAiming) {
                 box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
                 animation: warningPulse 0.5s ease-in-out infinite alternate;
             `;
-            warning.innerHTML = '⚠ FRIENDLY FIRE WARNING - AIMING AT EARTH ⚠';
             document.body.appendChild(warning);
 
             // Add pulse animation style if not exists
@@ -3108,51 +3135,111 @@ function updateFriendlyFireWarning(isAiming) {
                 document.head.appendChild(style);
             }
         }
+
+        // Update warning message based on what we're aiming at
+        if (isAimingAtEarth && isAimingAtMoon) {
+            warning.innerHTML = '⚠ FRIENDLY FIRE WARNING - AIMING AT EARTH & MOON ⚠';
+        } else if (isAimingAtEarth) {
+            warning.innerHTML = '⚠ FRIENDLY FIRE WARNING - AIMING AT EARTH ⚠';
+        } else {
+            warning.innerHTML = '⚠ FRIENDLY FIRE WARNING - AIMING AT MOON ⚠';
+        }
         warning.style.display = 'block';
 
-        // Create Earth highlight ring if it doesn't exist
-        if (!earthHighlight) {
-            earthHighlight = document.createElement('div');
-            earthHighlight.id = 'earthHighlight';
-            earthHighlight.style.cssText = `
-                position: fixed;
-                pointer-events: none;
-                border: 3px solid #ff4444;
-                border-radius: 50%;
-                box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3);
-                z-index: 8999;
-                animation: earthWarningPulse 0.3s ease-in-out infinite alternate;
-            `;
-            document.body.appendChild(earthHighlight);
-
-            // Add Earth pulse animation
-            if (!document.getElementById('earthWarningPulseStyle')) {
-                const style = document.createElement('style');
-                style.id = 'earthWarningPulseStyle';
-                style.textContent = `
-                    @keyframes earthWarningPulse {
-                        from { box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3); }
-                        to { box-shadow: 0 0 50px #ff0000, inset 0 0 50px rgba(255, 0, 0, 0.5); }
-                    }
+        // Handle Earth highlight
+        if (isAimingAtEarth) {
+            // Create Earth highlight ring if it doesn't exist
+            if (!earthHighlight) {
+                earthHighlight = document.createElement('div');
+                earthHighlight.id = 'earthHighlight';
+                earthHighlight.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    border: 3px solid #ff4444;
+                    border-radius: 50%;
+                    box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3);
+                    z-index: 8999;
+                    animation: earthWarningPulse 0.3s ease-in-out infinite alternate;
                 `;
-                document.head.appendChild(style);
+                document.body.appendChild(earthHighlight);
+
+                // Add Earth pulse animation
+                if (!document.getElementById('earthWarningPulseStyle')) {
+                    const style = document.createElement('style');
+                    style.id = 'earthWarningPulseStyle';
+                    style.textContent = `
+                        @keyframes earthWarningPulse {
+                            from { box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3); }
+                            to { box-shadow: 0 0 50px #ff0000, inset 0 0 50px rgba(255, 0, 0, 0.5); }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
             }
+
+            // Position highlight over Earth
+            const earthScreen = projectToScreen(earth.position);
+            const distanceToEarth = camera.position.distanceTo(earth.position);
+            const apparentSize = (EARTH_RADIUS * 2 * window.innerHeight) / (distanceToEarth * 2);
+
+            earthHighlight.style.width = apparentSize + 'px';
+            earthHighlight.style.height = apparentSize + 'px';
+            earthHighlight.style.left = (earthScreen.x - apparentSize / 2) + 'px';
+            earthHighlight.style.top = (earthScreen.y - apparentSize / 2) + 'px';
+            earthHighlight.style.display = 'block';
+        } else {
+            if (earthHighlight) earthHighlight.style.display = 'none';
         }
 
-        // Position highlight over Earth
-        const earthScreen = projectToScreen(earth.position);
-        const distanceToEarth = camera.position.distanceTo(earth.position);
-        const apparentSize = (EARTH_RADIUS * 2 * window.innerHeight) / (distanceToEarth * 2);
+        // Handle Moon highlight
+        if (isAimingAtMoon) {
+            // Create Moon highlight ring if it doesn't exist
+            if (!moonHighlight) {
+                moonHighlight = document.createElement('div');
+                moonHighlight.id = 'moonHighlight';
+                moonHighlight.style.cssText = `
+                    position: fixed;
+                    pointer-events: none;
+                    border: 3px solid #ff4444;
+                    border-radius: 50%;
+                    box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3);
+                    z-index: 8999;
+                    animation: moonWarningPulse 0.3s ease-in-out infinite alternate;
+                `;
+                document.body.appendChild(moonHighlight);
 
-        earthHighlight.style.width = apparentSize + 'px';
-        earthHighlight.style.height = apparentSize + 'px';
-        earthHighlight.style.left = (earthScreen.x - apparentSize / 2) + 'px';
-        earthHighlight.style.top = (earthScreen.y - apparentSize / 2) + 'px';
-        earthHighlight.style.display = 'block';
+                // Add Moon pulse animation
+                if (!document.getElementById('moonWarningPulseStyle')) {
+                    const style = document.createElement('style');
+                    style.id = 'moonWarningPulseStyle';
+                    style.textContent = `
+                        @keyframes moonWarningPulse {
+                            from { box-shadow: 0 0 30px #ff0000, inset 0 0 30px rgba(255, 0, 0, 0.3); }
+                            to { box-shadow: 0 0 50px #ff0000, inset 0 0 50px rgba(255, 0, 0, 0.5); }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+            }
+
+            // Position highlight over Moon
+            const moonScreen = projectToScreen(moon.position);
+            const distanceToMoon = camera.position.distanceTo(moon.position);
+            const apparentSize = (MOON_RADIUS * 2 * window.innerHeight) / (distanceToMoon * 2);
+
+            moonHighlight.style.width = apparentSize + 'px';
+            moonHighlight.style.height = apparentSize + 'px';
+            moonHighlight.style.left = (moonScreen.x - apparentSize / 2) + 'px';
+            moonHighlight.style.top = (moonScreen.y - apparentSize / 2) + 'px';
+            moonHighlight.style.display = 'block';
+        } else {
+            if (moonHighlight) moonHighlight.style.display = 'none';
+        }
 
     } else {
         if (warning) warning.style.display = 'none';
         if (earthHighlight) earthHighlight.style.display = 'none';
+        if (moonHighlight) moonHighlight.style.display = 'none';
     }
 }
 
@@ -5423,11 +5510,13 @@ function animate() {
         if (distanceToEarth < hitRadius) {
             // Check if this is an angel asteroid
             if (asteroid.userData.isAngel) {
-                // Angel hit Earth - restore health!
+                // Angel hit Earth - restore health to both!
                 earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                moonHealth = Math.min(maxMoonHealth, moonHealth + 25);
                 updateHealthDisplay();
+                updateMoonHealthDisplay();
                 createAngelExplosion(asteroid.position.clone());
-                showNotification('+25 HEALTH!', '#88ffaa');
+                showNotification('+25 HEALTH (EARTH & MOON)!', '#88ffaa');
             } else {
                 // Regular asteroid hit Earth - damage!
                 const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
@@ -5445,6 +5534,46 @@ function animate() {
 
             // Check game over
             if (earthHealth <= 0) {
+                earthHealth = 0;
+                gameActive = false;
+                showGameOver();
+            }
+            continue; // Skip Moon check if already hit Earth
+        }
+
+        // Check collision with Moon
+        const distanceToMoon = asteroid.position.distanceTo(moon.position);
+        const moonHitRadius = MOON_RADIUS + asteroid.userData.size * 0.5;
+
+        if (distanceToMoon < moonHitRadius) {
+            // Check if this is an angel asteroid
+            if (asteroid.userData.isAngel) {
+                // Angel hit Moon - restore health to both!
+                earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                moonHealth = Math.min(maxMoonHealth, moonHealth + 25);
+                updateHealthDisplay();
+                updateMoonHealthDisplay();
+                createAngelExplosion(asteroid.position.clone());
+                showNotification('+25 HEALTH (EARTH & MOON)!', '#88ffaa');
+            } else {
+                // Regular asteroid hit Moon - damage!
+                const damage = Math.ceil(asteroid.userData.size * 5);
+                moonHealth -= damage;
+                updateMoonHealthDisplay();
+                // Create explosion at impact point
+                createExplosion(asteroid.position.clone(), asteroid.userData.size);
+            }
+
+            // Remove asteroid
+            scene.remove(asteroid);
+            asteroids.splice(i, 1);
+            // Clean up occlusion state to prevent memory leak
+            window._asteroidOcclusionState?.delete(asteroid.uuid);
+
+            // Check if Moon is destroyed
+            if (moonHealth <= 0) {
+                moonHealth = 0;
+                // Critical: Moon destruction also destroys Earth!
                 earthHealth = 0;
                 gameActive = false;
                 showGameOver();
@@ -5490,9 +5619,11 @@ function animate() {
                 if (asteroid.userData.health <= 0) {
                     // Check if this is an angel asteroid
                     if (asteroid.userData.isAngel) {
-                        // Angel destroyed - restore health!
+                        // Angel destroyed - restore health to both!
                         earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
+                        moonHealth = Math.min(maxMoonHealth, moonHealth + 25);
                         updateHealthDisplay();
+                        updateMoonHealthDisplay();
                         createAngelExplosion(asteroid.position.clone());
                     } else {
                         // Regular asteroid destroyed!
@@ -5520,8 +5651,8 @@ function animate() {
                         // Decrement level asteroid counter
                         levelAsteroidsRemaining--;
 
-                        // Every 3 kills, spawn an angel asteroid (only if not at full health)
-                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0 && earthHealth < maxEarthHealth) {
+                        // Every 3 kills, spawn an angel asteroid (only if Earth or Moon is damaged)
+                        if (asteroidsDestroyed % ANGEL_SPAWN_INTERVAL === 0 && (earthHealth < maxEarthHealth || moonHealth < maxMoonHealth)) {
                             spawnAngelAsteroid();
                         }
 
@@ -5566,6 +5697,34 @@ function animate() {
 
                 // Check game over
                 if (earthHealth <= 0) {
+                    earthHealth = 0;
+                    gameActive = false;
+                    showGameOver();
+                }
+            }
+        }
+
+        // Check collision with Moon (friendly fire!)
+        if (!hitAsteroid) {
+            const distanceToMoon = bolt.position.distanceTo(moon.position);
+            if (distanceToMoon < MOON_RADIUS + 0.3) {
+                // Laser hit Moon!
+                const damage = 2; // Small damage per laser hit
+                moonHealth -= damage;
+                updateMoonHealthDisplay();
+
+                // Create small impact explosion on Moon
+                createExplosion(bolt.position.clone(), 0.3);
+
+                // Remove bolt
+                scene.remove(bolt);
+                laserBolts.splice(i, 1);
+                hitAsteroid = true; // Prevent further checks
+
+                // Check if Moon is destroyed
+                if (moonHealth <= 0) {
+                    moonHealth = 0;
+                    // Critical: Moon destruction also destroys Earth!
                     earthHealth = 0;
                     gameActive = false;
                     showGameOver();
