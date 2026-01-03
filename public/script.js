@@ -3336,12 +3336,21 @@ function fireLasers() {
     updateAmmoDisplay();
 }
 
-// Spacebar listener for firing
+// Keyboard listener for firing and pause
 let canFire = true;
 const FIRE_COOLDOWN = 150; // ms between shots
 
 window.addEventListener('keydown', (e) => {
+    // Space bar for pause
     if (e.code === 'Space') {
+        e.preventDefault();
+        e.stopPropagation();
+        togglePause();
+        return;
+    }
+
+    // 'F' key for firing lasers
+    if (e.code === 'KeyF') {
         e.preventDefault();
         e.stopPropagation();
         if (canFire) {
@@ -3379,14 +3388,26 @@ const shipInput = {
 const SHIP_ROTATION_SPEED = 1.5; // Radians per second
 
 // Apply incremental rotation to ship orientation quaternion
+// Using screen-space axes for intuitive aiming regardless of camera angle
 function applyShipRotation(deltaYaw, deltaPitch) {
-    // Get the ship's current local axes from the quaternion
-    const localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(shipOrientationQuat);
-    const localRight = new THREE.Vector3(1, 0, 0).applyQuaternion(shipOrientationQuat);
+    // Get camera's view direction
+    const cameraDirection = new THREE.Vector3();
+    camera.getWorldDirection(cameraDirection);
 
-    // Create rotation quaternions for yaw (around local up) and pitch (around local right)
-    const yawQuat = new THREE.Quaternion().setFromAxisAngle(localUp, -deltaYaw);
-    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(localRight, -deltaPitch);
+    // Get screen-aligned right vector (horizontal on screen)
+    // This is perpendicular to both camera direction and world up
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const screenRight = new THREE.Vector3().crossVectors(worldUp, cameraDirection).normalize();
+
+    // Get screen-aligned up vector (vertical on screen)
+    // This is perpendicular to camera direction and screen right
+    const screenUp = new THREE.Vector3().crossVectors(cameraDirection, screenRight).normalize();
+
+    // Create rotation quaternions using screen-space axes
+    // deltaYaw (horizontal drag) rotates around screen up axis
+    // deltaPitch (vertical drag) rotates around screen right axis
+    const yawQuat = new THREE.Quaternion().setFromAxisAngle(screenUp, deltaYaw);
+    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(screenRight, deltaPitch);
 
     // Apply rotations: first yaw, then pitch
     shipOrientationQuat.premultiply(yawQuat);
@@ -5897,7 +5918,8 @@ function showInstructions(isResume = false) {
                 <p style="margin: 5px 0;">• <strong>Mouse/Touch:</strong> Aim and rotate ship or camera</p>
                 <p style="margin: 5px 0;">• <strong>Click/Tap:</strong> Fire lasers</p>
                 <p style="margin: 5px 0;">• <strong>Arrow Keys:</strong> Rotate ship (WASD also works)</p>
-                <p style="margin: 5px 0;">• <strong>Spacebar:</strong> Fire lasers</p>
+                <p style="margin: 5px 0;">• <strong>F Key:</strong> Fire lasers</p>
+                <p style="margin: 5px 0;">• <strong>Spacebar:</strong> Pause/Resume game</p>
                 <p style="margin: 5px 0;">• <strong>Ship/Camera Toggle:</strong> Switch control modes</p>
 
                 <p style="margin-top: 15px;"><strong style="color: #ffff44;">SPECIAL:</strong></p>
