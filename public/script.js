@@ -25,6 +25,32 @@ renderer.domElement.style.touchAction = 'none';
 // Clock for frame-rate independent animation
 const clock = new THREE.Clock();
 
+// Add these globals right after const clock = new THREE.Clock();
+
+const raycaster = new THREE.Raycaster();
+const aimNDC = new THREE.Vector2();
+const shipTargetDir = new THREE.Vector3();
+const shipForwardLocal = new THREE.Vector3(0, 0, 1); // Nose points +Z
+const shipUpLocal = new THREE.Vector3(0, 1, 0);
+
+// Persistent aiming state for relative drag rotation
+let shipYaw = 0;   // Accumulated yaw in radians
+let shipPitch = 0; // Accumulated pitch in radians (clamped to avoid flip)
+const ROT_SENSITIVITY = 0.005; // Tune feel
+const PITCH_LIMIT = Math.PI / 2 - 0.1; // Prevent gimbal flip
+
+// Drag delta sensitivity (tune for feel)
+const rotationSensitivity = 0.005;
+
+// Previous NDC for relative drag
+const prevDragNDC = new THREE.Vector2();
+
+// Temp quats for relative rotation
+const yawQuat = new THREE.Quaternion();
+const pitchQuat = new THREE.Quaternion();
+const cameraRight = new THREE.Vector3();
+const cameraUp = new THREE.Vector3();
+
 // === SUN AND LIGHTING ===
 // Sun position - far enough to feel distant but visible
 const SUN_DISTANCE = 80;
@@ -3369,6 +3395,16 @@ let orbitAngle = Math.PI * 1.5; // Starting angle
 // Ship orientation (quaternion-based for gimbal-lock-free rotation)
 let shipOrientationQuat = new THREE.Quaternion();  // Cumulative rotation offset from base orientation
 
+// === RAYCAST SLEW CONFIGURATION ===
+const SHIP_SLERP_SPEED = 8.0;        // How fast ship rotates toward target (higher = snappier)
+const SHIP_ROLL_CORRECTION = 3.0;    // How fast roll aligns to camera up when not aiming
+const AIM_DEADZONE = 0.02;           // NDC distance from center before rotation starts
+
+// Raycast slew state
+let shipTargetQuat = new THREE.Quaternion();       // Target orientation from raycast
+let isAiming = false;                              // True when pointer is actively dragging in ship mode
+const aimRaycaster = new THREE.Raycaster();        // For screen-to-world ray casting
+
 // Ship control input state
 const shipInput = {
     pitchUp: false,
@@ -3392,6 +3428,150 @@ function applyShipRotation(deltaYaw, deltaPitch) {
     shipOrientationQuat.premultiply(yawQuat);
     shipOrientationQuat.premultiply(pitchQuat);
     shipOrientationQuat.normalize();
+}
+
+/**
+ * Compute target quaternion from screen position using raycast
+ * @param {number} ndcX - Normalized device coord X (-1 to 1)
+ * @param {number} ndcY - Normalized device coord Y (-1 to 1)
+ * @returns {THREE.Quaternion} Target orientation for ship
+ */
+function computeAimQuaternion(ndcX, ndcY) {
+    // Cast ray from camera through pointer position
+    aimRaycaster.setFromCamera({ x: ndcX, y: ndcY }, camera);
+
+    // Get the ray direction in world space
+    const aimDirection = aimRaycaster.ray.direction.clone().normalize();
+
+    // Build orthonormal basis for target orientation
+    // Forward = aim direction (ship nose points this way)
+    const forward = aimDirection.clone();
+
+    // Use camera's up as reference for roll alignment
+    const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+
+    // Right = forward × up (handle parallel case)
+    let right = new THREE.Vector3().crossVectors(forward, cameraUp);
+    if (right.lengthSq() < 0.001) {
+        // Forward is nearly parallel to up, use camera right instead
+        right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    }
+    right.normalize();
+
+    // Recalculate up to ensure orthonormal
+    const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+
+    // Build rotation matrix from basis vectors
+    // Ship model faces -Z, so forward should be negated for proper orientation
+    const rotMatrix = new THREE.Matrix4().makeBasis(right, up, forward.clone().negate());
+
+    // Convert to quaternion
+    const targetQuat = new THREE.Quaternion().setFromRotationMatrix(rotMatrix);
+
+    // Apply 180° Y rotation to account for ship model orientation
+    const yFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+    targetQuat.multiply(yFlip);
+
+    return targetQuat;
+}
+
+/**
+ * Start aiming - called on pointerdown/touchstart in ship mode
+ */
+function startAiming() {
+    aimActive = true;
+    // Start delta from current position - no jump
+    prevDragNDC.set(aimNDC.x, aimNDC.y);
+}
+
+/**
+ * Update aim target from pointer position - called on pointermove/touchmove
+ * @param {number} ndcX - Normalized device coord X
+ * @param {number} ndcY - Normalized device coord Y
+ */
+// In updateAimTarget function - keep using existing shipTargetQuat
+function updateAimTarget(ndcX, ndcY) {
+    // Cast ray from camera through NDC point
+    aimNDC.set(ndcX, ndcY);
+    raycaster.setFromCamera(aimNDC, camera);
+    
+    // Intersect with a large far sphere to get direction even when nothing hit
+    const farSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(1000, 8, 8),
+        new THREE.MeshBasicMaterial() // invisible
+    );
+    farSphere.position.copy(camera.position);
+    const intersects = raycaster.intersectObject(farSphere);
+    
+    if (intersects.length > 0) {
+        const targetPoint = intersects[0].point;
+        
+        // Direction from ship to target point
+        shipTargetDir.subVectors(targetPoint, spaceShip.position).normalize();
+        
+        // Compute target rotation: look at target, keep up aligned
+        spaceShip.matrix.lookAt(spaceShip.position, targetPoint, shipUpLocal);
+        spaceShip.quaternion.setFromRotationMatrix(spaceShip.matrix);
+    }
+}
+
+/**
+ * Stop aiming - called on pointerup/touchend
+ */
+function stopAiming() {
+    isAiming = false;
+}
+
+/**
+ * Per-frame ship orientation update with slerp
+ * @param {number} delta - Time since last frame in seconds
+ * @param {THREE.Quaternion} baseQuat - The base orientation from lookAt
+ */
+function updateShipOrientation(delta, baseQuat) {
+    if (controlMode !== 'ship') return;
+
+    if (isAiming) {
+        // Convert target world quaternion to local offset quaternion
+        // targetWorld = baseQuat * targetLocal
+        // targetLocal = inverse(baseQuat) * targetWorld
+        const baseInverse = baseQuat.clone().invert();
+        const targetLocal = baseInverse.clone().multiply(shipTargetQuat);
+
+        // Exponential interpolation for smooth, framerate-independent rotation
+        const t = 1 - Math.exp(-SHIP_SLERP_SPEED * delta);
+
+        // Slerp current orientation toward target
+        shipOrientationQuat.slerp(targetLocal, t);
+        shipOrientationQuat.normalize();
+    } else {
+        // When not aiming, gradually correct roll toward neutral
+        // This prevents accumulated roll from making controls feel weird
+        const currentForward = new THREE.Vector3(0, 0, -1).applyQuaternion(shipOrientationQuat);
+        const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(shipOrientationQuat);
+
+        // Target up should align with world up projected perpendicular to forward
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        const targetUp = worldUp.clone().sub(currentForward.clone().multiplyScalar(currentForward.dot(worldUp))).normalize();
+
+        if (targetUp.lengthSq() > 0.001) {
+            // Calculate roll angle between current up and target up
+            const rollAngle = Math.atan2(
+                currentUp.clone().cross(targetUp).dot(currentForward),
+                currentUp.dot(targetUp)
+            );
+
+            if (Math.abs(rollAngle) > 0.01) {
+                // Apply gradual roll correction
+                const rollCorrection = rollAngle * Math.min(1, SHIP_ROLL_CORRECTION * delta);
+                const rollQuat = new THREE.Quaternion().setFromAxisAngle(
+                    new THREE.Vector3(0, 0, 1),
+                    rollCorrection
+                );
+                shipOrientationQuat.multiply(rollQuat);
+                shipOrientationQuat.normalize();
+            }
+        }
+    }
 }
 
 spaceShip.position.set(
@@ -4279,13 +4459,15 @@ function createGameStatusPanel() {
     dashboardIcon.id = 'dashboardIcon';
     dashboardIcon.innerHTML = `
         <div style="display: flex; align-items: center; gap: 6px;">
-            <div id="miniOrientationIndicator" style="
+            <div id="miniOrientationIndicator" title="Click to reset orientation" style="
                 width: 36px;
                 height: 36px;
                 border-radius: 50%;
                 background: rgba(0, 0, 0, 0.4);
                 border: 1px solid rgba(68, 170, 255, 0.5);
                 overflow: hidden;
+                cursor: pointer;
+                transition: border-color 0.2s, box-shadow 0.2s;
             "></div>
             <div style="display: flex; flex-direction: column; align-items: center;">
                 <div id="dashboardThreatCount" style="
@@ -4372,6 +4554,19 @@ function createGameStatusPanel() {
     const miniOrientationContainer = document.getElementById('miniOrientationIndicator');
     if (miniOrientationContainer) {
         createOrientationIndicator(miniOrientationContainer, 36, true);
+        // Add click handler to reset orientation
+        miniOrientationContainer.addEventListener('click', (e) => {
+            e.stopPropagation(); // Don't toggle dashboard
+            resetCameraOrientation();
+        });
+        miniOrientationContainer.addEventListener('mouseenter', () => {
+            miniOrientationContainer.style.borderColor = 'rgba(68, 170, 255, 0.9)';
+            miniOrientationContainer.style.boxShadow = '0 0 8px rgba(68, 170, 255, 0.5)';
+        });
+        miniOrientationContainer.addEventListener('mouseleave', () => {
+            miniOrientationContainer.style.borderColor = 'rgba(68, 170, 255, 0.5)';
+            miniOrientationContainer.style.boxShadow = 'none';
+        });
     }
 }
 
@@ -4498,16 +4693,32 @@ function createDashboardContent(dashboardContent) {
         border-top: 1px solid rgba(68, 170, 255, 0.3);
     `;
     orientationDiv.innerHTML = `
-        <div id="orientationIndicator" style="
+        <div id="orientationIndicator" title="Click to reset orientation" style="
             width: 60px;
             height: 60px;
             border-radius: 50%;
             background: rgba(0, 0, 0, 0.4);
             border: 1px solid rgba(68, 170, 255, 0.5);
             overflow: hidden;
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s;
         "></div>
     `;
     dashboardContent.appendChild(orientationDiv);
+
+    // Add click handler to reset orientation
+    const orientationIndicator = document.getElementById('orientationIndicator');
+    if (orientationIndicator) {
+        orientationIndicator.addEventListener('click', resetCameraOrientation);
+        orientationIndicator.addEventListener('mouseenter', () => {
+            orientationIndicator.style.borderColor = 'rgba(68, 170, 255, 0.9)';
+            orientationIndicator.style.boxShadow = '0 0 8px rgba(68, 170, 255, 0.5)';
+        });
+        orientationIndicator.addEventListener('mouseleave', () => {
+            orientationIndicator.style.borderColor = 'rgba(68, 170, 255, 0.5)';
+            orientationIndicator.style.boxShadow = 'none';
+        });
+    }
 }
 
 function createOrientationIndicator(container, size = 60, isMini = false) {
@@ -4837,6 +5048,34 @@ function applyOrbitRotation(deltaTheta, deltaPhi) {
     updateCameraFromOrbit();
 }
 
+// Reset camera to upright orientation (remove roll) while keeping view direction
+function resetCameraOrientation() {
+    // Get current camera direction
+    const cameraDir = new THREE.Vector3(0, 0, 1).applyQuaternion(cameraOrbitQuaternion);
+
+    // Rebuild quaternion from direction with world up (no roll)
+    // This keeps where we're looking but removes any accumulated roll
+    const worldUp = new THREE.Vector3(0, 1, 0);
+
+    // Handle edge case: looking straight up or down
+    const dotUp = cameraDir.dot(worldUp);
+    let cameraRight;
+    if (Math.abs(dotUp) > 0.99) {
+        // Looking nearly straight up or down - use world forward as reference
+        cameraRight = new THREE.Vector3(1, 0, 0);
+    } else {
+        cameraRight = new THREE.Vector3().crossVectors(worldUp, cameraDir).normalize();
+    }
+    const cameraUp = new THREE.Vector3().crossVectors(cameraDir, cameraRight).normalize();
+
+    // Build rotation matrix and convert to quaternion
+    const rotMatrix = new THREE.Matrix4().makeBasis(cameraRight, cameraUp, cameraDir);
+    cameraOrbitQuaternion.setFromRotationMatrix(rotMatrix);
+    cameraOrbitQuaternion.normalize();
+
+    updateCameraFromOrbit();
+}
+
 // === POINTER EVENTS UNIFIED INPUT ===
 // Use pointer events to handle mouse, touch, and stylus uniformly. Behavior:
 // - Single pointer: orbit (left-drag) by default. If Shift held => pan, Ctrl held => vertical drag zoom.
@@ -4861,6 +5100,8 @@ renderer.domElement.addEventListener('pointerdown', (ev) => {
     pointerState.pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, type: ev.pointerType, button: ev.button, buttons: ev.buttons });
     if (pointerState.pointers.size === 1) {
         pointerState.prevSingle = { x: ev.clientX, y: ev.clientY };
+        // Start raycast aiming in ship mode
+        if (controlMode === 'ship') startAiming();
     } else if (pointerState.pointers.size === 2) {
         const pts = Array.from(pointerState.pointers.values());
         const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
@@ -4965,9 +5206,10 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
     // Single pointer drag
     if (pointerState.prevSingle) {
         if (controlMode === 'ship') {
-            // Ship mode: drag to aim the ship using quaternion rotation
-            const aimSensitivity = 0.005;
-            applyShipRotation(deltaX * aimSensitivity, deltaY * aimSensitivity);
+            // Relative drag rotation - accumulate yaw/pitch from delta
+            shipYaw   -= deltaX * ROT_SENSITIVITY;
+            shipPitch -= deltaY * ROT_SENSITIVITY;
+            shipPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, shipPitch));
         } else {
             // Camera mode: orbit around scene using quaternion rotation
             applyOrbitRotation(deltaX * rotationSpeed, deltaY * rotationSpeed);
@@ -4986,6 +5228,8 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
         pointerState.prevSingle = null;
         pointerState.prevMidpoint = null;
         pointerState.prevDistance = null;
+        // Stop raycast aiming when no pointers active
+        stopAiming();
     } else if (pointerState.pointers.size === 1) {
         const remaining = Array.from(pointerState.pointers.values())[0];
         pointerState.prevSingle = { x: remaining.x, y: remaining.y };
@@ -5014,6 +5258,8 @@ renderer.domElement.addEventListener('touchstart', (event) => {
             x: touchState.pointers[0].clientX,
             y: touchState.pointers[0].clientY,
         };
+        // Start raycast aiming in ship mode
+        if (controlMode === 'ship') startAiming();
     } else if (touchState.pointers.length === 2) {
         const t1 = touchState.pointers[0];
         const t2 = touchState.pointers[1];
@@ -5035,9 +5281,10 @@ renderer.domElement.addEventListener('touchmove', (event) => {
         const deltaY = touches[0].clientY - touchState.prevPosition.y;
 
         if (controlMode === 'ship') {
-            // Ship mode: drag to aim the ship using quaternion rotation
-            const aimSensitivity = 0.005;
-            applyShipRotation(deltaX * aimSensitivity, deltaY * aimSensitivity);
+            // Relative drag rotation - accumulate yaw/pitch from delta
+            shipYaw   -= deltaX * ROT_SENSITIVITY;
+            shipPitch -= deltaY * ROT_SENSITIVITY;
+            shipPitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, shipPitch));
         } else {
             // Camera mode: orbit around scene using quaternion rotation
             applyOrbitRotation(deltaX * rotationSpeed, deltaY * rotationSpeed);
@@ -5090,6 +5337,8 @@ renderer.domElement.addEventListener('touchend', (event) => {
         touchState.prevMidpoint = null;
         touchState.prevDistance = null;
         touchHandlersActive = false;
+        // Stop raycast aiming when no touches active
+        stopAiming();
     } else if (touchState.pointers.length === 1) {
         touchState.prevPosition = {
             x: touchState.pointers[0].clientX,
@@ -5330,55 +5579,47 @@ function animate() {
         }
     }
 
-    // Ship orbit with elliptical path and inclination
-    orbitAngle -= shipOrbitSpeed * shipOrbitDirection * delta;
+    // Ship orbital position (keeps orbiting Earth normally)
+orbitAngle -= shipOrbitSpeed * shipOrbitDirection * delta;
 
-    // Calculate elliptical orbit radius based on perigee and apogee
-    // Using simplified ellipse: r = (perigee + apogee) / 2 + (apogee - perigee) / 2 * cos(angle)
-    const semiMajor = (orbitPerigee + orbitApogee) / 2;
-    const eccentricityOffset = (orbitApogee - orbitPerigee) / 2;
-    const currentRadius = semiMajor + eccentricityOffset * Math.cos(orbitAngle);
+const semiMajor = (orbitPerigee + orbitApogee) / 2;
+const eccentricityOffset = (orbitApogee - orbitPerigee) / 2;
+const currentRadius = semiMajor + eccentricityOffset * Math.cos(orbitAngle);
 
-    // Apply orbital inclination (tilt the orbital plane)
-    const incRad = orbitInclination * Math.PI / 180;
-    const flatX = Math.cos(orbitAngle) * currentRadius;
-    const flatZ = Math.sin(orbitAngle) * currentRadius;
+const incRad = orbitInclination * Math.PI / 180;
+const flatX = Math.cos(orbitAngle) * currentRadius;
+const flatZ = Math.sin(orbitAngle) * currentRadius;
 
-    // Rotate orbital plane around X axis for inclination
-    spaceShip.position.x = flatX;
-    spaceShip.position.z = flatZ * Math.cos(incRad);
-    spaceShip.position.y = orbitY + flatZ * Math.sin(incRad);
+spaceShip.position.x = flatX;
+spaceShip.position.z = flatZ * Math.cos(incRad);
+spaceShip.position.y = orbitY + flatZ * Math.sin(incRad);
 
-    // Ship orientation - face direction of travel
+// Ship orientation - different per mode
+if (controlMode === 'camera') {
+    // Auto face direction of travel
     const tangentX = Math.sin(orbitAngle) * shipOrbitDirection;
     const tangentZ = -Math.cos(orbitAngle) * shipOrbitDirection * Math.cos(incRad);
     const tangentY = -Math.cos(orbitAngle) * shipOrbitDirection * Math.sin(incRad);
 
     const forward = new THREE.Vector3(
-        spaceShip.position.x + tangentX,
-        spaceShip.position.y + tangentY,
-        spaceShip.position.z + tangentZ
+        spaceShip.position.x + tangentX * 0.1,
+        spaceShip.position.y + tangentY * 0.1,
+        spaceShip.position.z + tangentZ * 0.1
     );
     spaceShip.lookAt(forward);
     spaceShip.rotateY(Math.PI);
-
-    // Update ship rotation from input (only in ship mode)
-    if (controlMode === 'ship') {
-        let deltaYaw = 0, deltaPitch = 0;
-        if (shipInput.pitchUp) deltaPitch -= SHIP_ROTATION_SPEED * delta;
-        if (shipInput.pitchDown) deltaPitch += SHIP_ROTATION_SPEED * delta;
-        if (shipInput.yawLeft) deltaYaw -= SHIP_ROTATION_SPEED * delta;
-        if (shipInput.yawRight) deltaYaw += SHIP_ROTATION_SPEED * delta;
-
-        if (deltaYaw !== 0 || deltaPitch !== 0) {
-            applyShipRotation(deltaYaw, deltaPitch);
+}             else {
+            // Relative rotation mode - accumulate angles from drag
+            if (pointerState.prevSingle || touchState.prevPosition) {
+                // Calculate delta from previous position (already handled in pointer/touch move)
+                // Here we just apply accumulated rotation
+            }
+            
+            // Build quaternion from accumulated yaw and pitch
+            yawQuat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), shipYaw);
+            pitchQuat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), shipPitch);
+            spaceShip.quaternion.copy(yawQuat).multiply(pitchQuat);
         }
-    }
-
-    // Apply quaternion-based orientation offset (gimbal-lock free)
-    // Store the base orientation from lookAt, then multiply by our offset quaternion
-    const baseQuat = spaceShip.quaternion.clone();
-    spaceShip.quaternion.copy(baseQuat.multiply(shipOrientationQuat));
 
     // Animate thrusters
     for (let i = 1; i <= 5; i++) {
@@ -5809,21 +6050,23 @@ function animate() {
 
     } // End of gameActive check - animations paused when game is paused
 
-    // Update orientation indicators (human figures match camera view direction)
-    // Main orientation indicator (shown when dashboard is expanded)
+    // Update orientation indicators (human figures match camera orientation including roll)
+    // The human figure shows the camera's orientation - when camera rolls, figure rolls
     if (window.orientationHuman && window.orientationRenderer) {
-        // Use persistent orbit angles for smooth continuous rotation display
-        window.orientationHuman.rotation.set(0, 0, 0);
-        window.orientationHuman.rotation.y = -orbitTheta + Math.PI;
-        window.orientationHuman.rotation.x = orbitPhi - Math.PI / 2;
+        // Use the full camera quaternion to capture yaw, pitch, AND roll
+        // Apply inverse because we want to show "which way is up" from camera's view
+        const indicatorQuat = cameraOrbitQuaternion.clone();
+        window.orientationHuman.quaternion.copy(indicatorQuat);
+        // Rotate 180° on Y because human faces +Z but we view from +Z
+        window.orientationHuman.rotateY(Math.PI);
         window.orientationRenderer.render(window.orientationScene, window.orientationCamera);
     }
 
     // Mini orientation indicator (shown when dashboard is collapsed)
     if (window.miniOrientationHuman && window.miniOrientationRenderer) {
-        window.miniOrientationHuman.rotation.set(0, 0, 0);
-        window.miniOrientationHuman.rotation.y = -orbitTheta + Math.PI;
-        window.miniOrientationHuman.rotation.x = orbitPhi - Math.PI / 2;
+        const indicatorQuat = cameraOrbitQuaternion.clone();
+        window.miniOrientationHuman.quaternion.copy(indicatorQuat);
+        window.miniOrientationHuman.rotateY(Math.PI);
         window.miniOrientationRenderer.render(window.miniOrientationScene, window.miniOrientationCamera);
     }
 
