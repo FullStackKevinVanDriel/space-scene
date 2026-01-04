@@ -228,6 +228,12 @@ const PhysicsWorker = {
         const asteroid = uuid ? this.findAsteroidByUuid(uuid) : null;
 
         if (collision.type === 'asteroid_earth') {
+            console.log('[WORKER] asteroid_earth collision received', {
+                pos: collision.position,
+                size: collision.size,
+                isAngel: collision.isAngel,
+                asteroidId: collision.asteroidId
+            });
             if (collision.isAngel) {
                 // Angel hit Earth - restore health to both
                 earthHealth = Math.min(maxEarthHealth, earthHealth + 25);
@@ -244,10 +250,18 @@ const PhysicsWorker = {
                 const rawPos = new THREE.Vector3(collision.position.x, collision.position.y, collision.position.z);
                 const normal = rawPos.lengthSq() > 0.0001 ? rawPos.clone().normalize() : new THREE.Vector3(0, 1, 0);
                 const earthR = (typeof EARTH_RADIUS !== 'undefined' ? EARTH_RADIUS : 2);
-                const surfaceOffset = earthR + collision.size * 1.0 + 0.8;
+                // Keep effects on the surface with minimal lift
+                const surfaceOffset = earthR + collision.size * 0.2 + 0.05;
                 const impactPos = normal.clone().multiplyScalar(surfaceOffset);
+                console.log('[WORKER] Spawning Earth impact effects at', impactPos.toArray());
                 createExplosion(impactPos, collision.size);
                 createEarthImpactSparks(impactPos, collision.size);
+                if (typeof ENABLE_IMPACT_DEBUG_VIS !== 'undefined' && ENABLE_IMPACT_DEBUG_VIS) {
+                    createEarthImpactDebugPoints(impactPos, normal);
+                    createEarthImpactDebugCloud(impactPos, normal);
+                }
+                // Hide asteroid immediately (worker path)
+                if (asteroid) asteroid.visible = false;
             }
 
             // Remove asteroid from scene and array

@@ -1825,6 +1825,15 @@ const DEBRIS_POOL_INITIAL_SIZE = 200;  // Supports multiple hit sparks (5 debris
 const explosionLightPool = [];
 const LIGHT_POOL_INITIAL_SIZE = 50;  // Lights for explosions and laser bolts
 
+// Testing flag: when true, spawn test asteroids that will impact Earth on a timer
+const TEST_EARTH_IMPACT_WAVE = true;
+// Toggle static debug point/ring visualizers (set true only when debugging impact positions)
+const ENABLE_IMPACT_DEBUG_VIS = false;
+
+// Disable debug rings/points functions completely
+function createEarthImpactDebugPoints() { return; }
+function createEarthImpactDebugCloud() { return; }
+
 const pooledSphereGeos = {
     small: new THREE.SphereGeometry(1, 6, 6),
     medium: new THREE.SphereGeometry(1, 8, 8)
@@ -2043,7 +2052,7 @@ function releaseAllPooledObjects() {
 // Pre-allocated InstancedMesh for optimal GPU batch rendering of explosion particles and debris.
 // This eliminates per-explosion object creation overhead and reduces draw calls significantly.
 
-const INSTANCED_PARTICLE_MAX = 1500; // Max sphere particles (explosions + sparks)
+const INSTANCED_PARTICLE_MAX = 4000; // Max particles (explosions + sparks) for dense impacts
 const INSTANCED_DEBRIS_MAX = 500;    // Max tetrahedron debris chunks
 
 // Particle data arrays - store state for each active instance
@@ -2079,11 +2088,11 @@ const INSTANCED_LIGHT_MAX = 30;
 
 // Pre-allocated color palette as THREE.Color objects for fast lookup
 const particleColorPalette = [
-    new THREE.Color(0xff4400), // explosion orange-red
-    new THREE.Color(0xff8800), // explosion orange
-    new THREE.Color(0xffcc00), // explosion yellow
-    new THREE.Color(0xffffff), // white
-    new THREE.Color(0xffff00), // spark yellow
+    new THREE.Color(0xffaa55), // warm core
+    new THREE.Color(0xffdd99), // soft amber
+    new THREE.Color(0xffffdd), // warm white
+    new THREE.Color(0xffffff), // pure white
+    new THREE.Color(0xfff6cc), // pale yellow-white for sparks
     new THREE.Color(0x88ffaa), // angel green
     new THREE.Color(0xaaffcc), // angel light green
     new THREE.Color(0xffdd88)  // angel gold
@@ -2124,39 +2133,41 @@ function sampleDirectionInCone(baseDir, coneAngleRad) {
  * Call this once during game startup, before any explosions can occur.
  */
 function initInstancedParticleSystem() {
-    // Create sphere geometry for particles (shared by all instances)
-    const particleGeometry = new THREE.SphereGeometry(1, 8, 8);
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(INSTANCED_PARTICLE_MAX * 3);
+    const colors = new Float32Array(INSTANCED_PARTICLE_MAX * 3);
+    particleGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    particleGeometry.setDrawRange(0, 0);
 
-    // Material with vertex colors for per-instance coloring
-    const particleMaterial = new THREE.MeshBasicMaterial({
+    // Create circular texture for round particles
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 32, 32);
+    const circleTexture = new THREE.CanvasTexture(canvas);
+
+    const particleMaterial = new THREE.PointsMaterial({
+        size: 0.12,
+        sizeAttenuation: true,
+        vertexColors: true,
         transparent: true,
-        opacity: 0.7, // Slightly translucent to reduce opacity while staying bright
-        depthWrite: false, // Allow proper transparent blending
-        depthTest: false, // Render on top so surface impacts aren’t z-occluded
-        vertexColors: true, // CRITICAL: Enable per-instance colors via setColorAt
-        blending: THREE.AdditiveBlending, // Additive for glowing effect
-        side: THREE.DoubleSide // Ensure visible from all angles
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        map: circleTexture
     });
 
-    // Create the InstancedMesh with maximum capacity
-    instancedParticleMesh = new THREE.InstancedMesh(
-        particleGeometry,
-        particleMaterial,
-        INSTANCED_PARTICLE_MAX
-    );
-    instancedParticleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    instancedParticleMesh.frustumCulled = false; // Particles can be anywhere
-    instancedParticleMesh.count = 0; // Start with no visible instances
-    instancedParticleMesh.visible = true; // Mesh is visible, but count=0 means nothing renders
-    instancedParticleMesh.name = 'InstancedParticles';
-
-    // Initialize instance colors buffer
-    instancedParticleMesh.instanceColor = new THREE.InstancedBufferAttribute(
-        new Float32Array(INSTANCED_PARTICLE_MAX * 3),
-        3
-    );
-    instancedParticleMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-
+    // Create Points object
+    instancedParticleMesh = new THREE.Points(particleGeometry, particleMaterial);
+    instancedParticleMesh.frustumCulled = false;
+    instancedParticleMesh.name = 'ParticlePoints';
     scene.add(instancedParticleMesh);
 
     // Create tetrahedron geometry for debris
@@ -2267,23 +2278,33 @@ function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion',
     const direction = hasDirection ? opts.direction.clone().normalize() : null;
     const coneAngle = opts.coneAngle !== undefined ? opts.coneAngle : Math.PI / 4;
     const velocityScale = opts.velocityScale !== undefined ? opts.velocityScale : 1;
+    const durationOverride = opts.durationOverride;
+    const positionJitterFn = opts.positionJitterFn;
+    const velocityDirectionFn = opts.velocityDirectionFn;
+    const sizeScale = opts.sizeScale !== undefined ? opts.sizeScale : 1;
 
     // Use performance.now() so timestamps stay in a Float32-friendly range
     const now = performance.now();
     const scaleFactor = Math.max(0.5, asteroidSize);
-    const particleCount = type === 'spark' ? 20 : Math.floor(6 + asteroidSize * 4);
+    const particleCount = opts.particleCountOverride !== undefined
+        ? opts.particleCountOverride
+        : (type === 'spark' ? 20 : Math.floor(6 + asteroidSize * 4));
     // Extended lifetimes so trails can linger 20–40s and drift toward the camera
-    const duration = type === 'spark'
-        ? 24000
-        : (28000 + asteroidSize * 1400);
-    console.log('[EXPLOSION] Spawning', particleCount, 'particles at', position, 'type:', type, 'duration:', duration, 'now:', now);
+    const duration = durationOverride !== undefined
+        ? durationOverride
+        : (type === 'spark'
+            ? 24000
+            : (28000 + asteroidSize * 1400));
+    if (type === 'spark' || type === 'ember') {
+        console.log('[EXPLOSION] Spawning', particleCount, 'particles at', position.toArray ? position.toArray() : position, 'type:', type, 'duration:', duration, 'now:', now, 'opts:', opts);
+    }
 
     // Select color palette based on type
     let colorStart, colorCount;
     if (type === 'angel') {
         colorStart = 5; // angel colors start at index 5
         colorCount = 3;
-    } else if (type === 'spark') {
+    } else if (type === 'spark' || type === 'ember') {
         colorStart = 0; // sparks use explosion + spark colors
         colorCount = 5;
     } else {
@@ -2296,18 +2317,32 @@ function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion',
         const idx = allocateParticleInstance();
         if (idx < 0) continue;
 
-        // Bigger starting size to keep particles clearly visible in space
-        const size = (1.6 + Math.random() * 1.6) * scaleFactor;
+        // Starting size (scaled if requested); sparks/embers are small but visible
+        const baseSize = (type === 'spark' || type === 'ember') ? 0.3 : (1.4 + Math.random() * 1.4);
+        const size = baseSize * scaleFactor * sizeScale;
         const i3 = idx * 3;
 
-        // Position with random offset (directly overwrite old data)
-        instancedParticleData.positions[i3] = position.x + (Math.random() - 0.5) * scaleFactor;
-        instancedParticleData.positions[i3 + 1] = position.y + (Math.random() - 0.5) * scaleFactor;
-        instancedParticleData.positions[i3 + 2] = position.z + (Math.random() - 0.5) * scaleFactor;
+        // Position with optional custom jitter (for rim/ring emissions)
+        if (positionJitterFn) {
+            const jitter = positionJitterFn(i, particleCount, scaleFactor);
+            instancedParticleData.positions[i3] = position.x + jitter.x;
+            instancedParticleData.positions[i3 + 1] = position.y + jitter.y;
+            instancedParticleData.positions[i3 + 2] = position.z + jitter.z;
+        } else {
+            instancedParticleData.positions[i3] = position.x + (Math.random() - 0.5) * scaleFactor;
+            instancedParticleData.positions[i3 + 1] = position.y + (Math.random() - 0.5) * scaleFactor;
+            instancedParticleData.positions[i3 + 2] = position.z + (Math.random() - 0.5) * scaleFactor;
+        }
 
         // Velocity (directly overwrite old data)
-        const velocityMult = (type === 'spark' ? 35 : 12) * velocityScale;
-        if (hasDirection) {
+        const velocityMult = (type === 'spark' ? 1.5 : 2.5) * velocityScale; // faster spread
+        if (velocityDirectionFn) {
+            const dir = velocityDirectionFn(i, particleCount);
+            dir.multiplyScalar(velocityMult * scaleFactor);
+            instancedParticleData.velocities[i3] = dir.x;
+            instancedParticleData.velocities[i3 + 1] = dir.y;
+            instancedParticleData.velocities[i3 + 2] = dir.z;
+        } else if (hasDirection) {
             const dir = sampleDirectionInCone(direction, coneAngle);
             dir.multiplyScalar(velocityMult * scaleFactor);
             instancedParticleData.velocities[i3] = dir.x;
@@ -2374,15 +2409,17 @@ function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion',
         }
     }
 
-    // Add explosion light
-    const light = getInstancedExplosionLight();
-    if (light) {
-        light.position.copy(position);
-        light.intensity = 3 * scaleFactor;
-        light.distance = 20 * scaleFactor;
-        light.color.setHex(type === 'angel' ? 0x88ffaa : 0xff8800);
-        light.userData.createdAt = now;
-        light.userData.duration = duration;
+    // Skip explosion lights for impact effects to avoid yellow reflections
+    if (type !== 'spark' && type !== 'ember') {
+        const light = getInstancedExplosionLight();
+        if (light) {
+            light.position.copy(position);
+            light.intensity = 3 * scaleFactor;
+            light.distance = 20 * scaleFactor;
+            light.color.setHex(type === 'angel' ? 0x88ffaa : 0xff8800);
+            light.userData.createdAt = now;
+            light.userData.duration = duration;
+        }
     }
 }
 
@@ -2441,26 +2478,26 @@ function updateInstancedParticles(delta) {
         const clampedProgress = Math.min(progress, 1);
         pData.scales[i] = pData.initialScales[i] * (1 + clampedProgress * 1.6);
 
-        // Build transformation matrix
-        _instanceDummy.position.set(
-            pData.positions[i3],
-            pData.positions[i3 + 1],
-            pData.positions[i3 + 2]
-        );
-        _instanceDummy.scale.setScalar(pData.scales[i]);
-        _instanceDummy.updateMatrix();
-
-        // Set matrix at the ACTIVE index (compact rendering)
-        instancedParticleMesh.setMatrixAt(activeParticleCount, _instanceDummy.matrix);
-
-        // Set color (full brightness - opacity handled by material)
-        const colorIdx = pData.colorIndices[i];
-        _instanceColor.copy(particleColorPalette[colorIdx]);
-        _instanceColor.multiplyScalar(1.35); // Push brightness
-        _instanceColor.r = Math.min(1, _instanceColor.r);
-        _instanceColor.g = Math.min(1, _instanceColor.g);
-        _instanceColor.b = Math.min(1, _instanceColor.b);
-        instancedParticleMesh.setColorAt(activeParticleCount, _instanceColor);
+        // Update position in buffer
+        const posAttr = instancedParticleMesh.geometry.attributes.position;
+        const colAttr = instancedParticleMesh.geometry.attributes.color;
+        const idx3 = activeParticleCount * 3;
+        
+        posAttr.array[idx3] = pData.positions[i3];
+        posAttr.array[idx3 + 1] = pData.positions[i3 + 1];
+        posAttr.array[idx3 + 2] = pData.positions[i3 + 2];
+        
+        // Fire colors (orange to yellow)
+        const fireColors = [
+            [1.0, 0.3, 0.0],  // Orange-red
+            [1.0, 0.5, 0.0],  // Orange
+            [1.0, 0.7, 0.1],  // Yellow-orange
+            [1.0, 0.9, 0.3]   // Yellow
+        ];
+        const colorChoice = fireColors[Math.floor(Math.random() * fireColors.length)];
+        colAttr.array[idx3] = colorChoice[0];
+        colAttr.array[idx3 + 1] = colorChoice[1];
+        colAttr.array[idx3 + 2] = colorChoice[2];
 
         activeParticleCount++;
     }
@@ -2525,13 +2562,11 @@ function updateInstancedParticles(delta) {
         }
     }
 
-    // Update instance counts and mark matrices for GPU upload
-    instancedParticleMesh.count = activeParticleCount;
+    // Update buffer and draw range
+    instancedParticleMesh.geometry.setDrawRange(0, activeParticleCount);
     if (activeParticleCount > 0) {
-        instancedParticleMesh.instanceMatrix.needsUpdate = true;
-        if (instancedParticleMesh.instanceColor) {
-            instancedParticleMesh.instanceColor.needsUpdate = true;
-        }
+        instancedParticleMesh.geometry.attributes.position.needsUpdate = true;
+        instancedParticleMesh.geometry.attributes.color.needsUpdate = true;
     }
 
     // Log particle stats when there are expirations
@@ -2593,6 +2628,31 @@ function clearInstancedParticles() {
 
 // Initialize the instanced particle system immediately
 initInstancedParticleSystem();
+
+// Optional: spawn a couple of asteroids aimed at Earth with timed impacts (test only)
+function triggerTestEarthImpactWave() {
+    // Force main-thread physics for test impacts so positions/velocities are honored
+    if (typeof PhysicsWorker !== 'undefined') {
+        PhysicsWorker.enabled = false;
+    }
+    const impactTimes = [5, 10]; // seconds until impact (faster for testing)
+    const dirs = [new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)]; // deterministic, in front/behind camera
+    for (let t = 0; t < impactTimes.length; t++) {
+        const asteroid = createAsteroid();
+        if (!asteroid) continue;
+        const speed = asteroid.userData.velocity.length();
+        const dir = dirs[t % dirs.length].clone().normalize();
+        const distance = speed * impactTimes[t];
+        asteroid.position.copy(dir.clone().multiplyScalar(distance));
+        // Aim velocity at Earth with preserved speed
+        asteroid.userData.velocity.copy(dir.clone().multiplyScalar(-speed));
+        try { console.log('[TEST] Spawned test asteroid', t, 'dist', distance, 'speed', speed, 'pos', asteroid.position.toArray()); } catch(e) {}
+    }
+}
+
+if (TEST_EARTH_IMPACT_WAVE) {
+    setTimeout(triggerTestEarthImpactWave, 1000);
+}
 
 // === END INSTANCED MESH PARTICLE SYSTEM ===
 
@@ -2723,12 +2783,235 @@ function createExplosion(position, asteroidSize = 1) {
 
 function createEarthImpactSparks(position, asteroidSize = 1) {
     const normal = position.lengthSq() > 0.0001 ? position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    // Build tangent basis for rim placement
+    const ortho = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tangent = new THREE.Vector3().crossVectors(normal, ortho).normalize();
+    const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const craterRadius = Math.max(0.6, asteroidSize * 1.5);
     // Directional sparks that spray outward from the impact point, like a crater funnel
+    console.log('[IMPACT] createEarthImpactSparks at', position.toArray ? position.toArray() : position, 'size', asteroidSize);
     spawnInstancedExplosion(position, asteroidSize, 'spark', {
         direction: normal,
-        coneAngle: Math.PI / 6, // tight cone for funnel effect
-        velocityScale: 2.2 // push sparks outward with more energy
+        coneAngle: Math.PI / 3,
+        velocityScale: 0.6,
+        particleCountOverride: 2000,
+        sizeScale: 1.2,
+        durationOverride: 20000,
+        positionJitterFn: (i, count) => {
+            // Start in tight cluster (small circle)
+            const theta = Math.random() * Math.PI * 2;
+            const r = Math.random() * 0.15;
+            return new THREE.Vector3()
+                .addScaledVector(tangent, Math.cos(theta) * r)
+                .addScaledVector(bitangent, Math.sin(theta) * r)
+                .addScaledVector(normal, 0.02);
+        },
+        velocityDirectionFn: (i, count) => {
+            // Create inverted dome - curves inward like gap between two balls
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * (Math.PI / 3);
+            
+            // Base direction away from Earth
+            const coneDir = new THREE.Vector3()
+                .addScaledVector(tangent, Math.sin(phi) * Math.cos(theta))
+                .addScaledVector(bitangent, Math.sin(phi) * Math.sin(theta))
+                .addScaledVector(normal, Math.cos(phi))
+                .normalize();
+            
+            // Invert the curvature: pull side particles inward toward center axis
+            const radialComponent = Math.sqrt(
+                Math.pow(coneDir.dot(tangent), 2) + 
+                Math.pow(coneDir.dot(bitangent), 2)
+            );
+            const invertedDir = new THREE.Vector3()
+                .addScaledVector(coneDir, 1.0)
+                .addScaledVector(normal, radialComponent * 0.5)
+                .normalize();
+            
+            // Add randomness for scattering
+            const randomOffset = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.3,
+                (Math.random() - 0.5) * 0.3,
+                (Math.random() - 0.5) * 0.3
+            );
+            
+            return invertedDir.add(randomOffset).normalize();
+        }
     });
+}
+
+function createEarthImpactEmbers(position, asteroidSize = 1) {
+    const normal = position.lengthSq() > 0.0001 ? position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    // Build tangent basis for rim placement
+    const ortho = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tangent = new THREE.Vector3().crossVectors(normal, ortho).normalize();
+    const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const craterRadius = Math.max(0.6, asteroidSize * 1.5);
+    // Embers: small, slow, glowing points lifting gently off the rim
+    console.log('[IMPACT] createEarthImpactEmbers at', position.toArray ? position.toArray() : position, 'size', asteroidSize);
+    spawnInstancedExplosion(position, asteroidSize, 'ember', {
+        direction: normal,
+        coneAngle: Math.PI / 8,
+        velocityScale: 0.15,
+        particleCountOverride: 350,
+        sizeScale: 1.0,
+        durationOverride: 4000,
+        positionJitterFn: (i, count) => {
+            // Place in circular ring
+            const theta = (i / count) * Math.PI * 2;
+            const radius = craterRadius * 0.6;
+            return new THREE.Vector3()
+                .addScaledVector(tangent, Math.cos(theta) * radius)
+                .addScaledVector(bitangent, Math.sin(theta) * radius)
+                .addScaledVector(normal, 0.08);
+        },
+        velocityDirectionFn: () => {
+            return new THREE.Vector3()
+                .addScaledVector(normal, 1)
+                .normalize();
+        }
+    });
+}
+
+function createEarthImpactEjectaPlume(position, normal, asteroidSize = 1) {
+    console.log('[IMPACT] createEarthImpactEjectaPlume at', position.toArray ? position.toArray() : position, 'size', asteroidSize);
+    const ortho = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tangent = new THREE.Vector3().crossVectors(normal, ortho).normalize();
+    const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const plumeRadius = Math.max(0.2, asteroidSize * 0.35);
+    spawnInstancedExplosion(position, asteroidSize, 'spark', {
+        direction: normal,
+        coneAngle: Math.PI / 7,
+        velocityScale: 0.25,
+        particleCountOverride: 650,
+        sizeScale: 1.1,
+        durationOverride: 4000,
+        positionJitterFn: () => {
+            // Place in circular area
+            const theta = Math.random() * Math.PI * 2;
+            const r = plumeRadius * (0.3 + Math.random() * 0.7);
+            return new THREE.Vector3()
+                .addScaledVector(tangent, Math.cos(theta) * r)
+                .addScaledVector(bitangent, Math.sin(theta) * r)
+                .addScaledVector(normal, 0.05);
+        },
+        velocityDirectionFn: () => {
+            const wobble = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.6,
+                (Math.random() - 0.5) * 0.6,
+                (Math.random() - 0.5) * 0.6
+            );
+            return new THREE.Vector3().copy(normal).add(wobble).normalize();
+        }
+    });
+}
+
+function createEarthImpactCraterDecal(position, normal, asteroidSize = 1) {
+    console.log('[IMPACT] createEarthImpactCraterDecal at', position.toArray ? position.toArray() : position, 'size', asteroidSize);
+    const outerRadius = Math.max(0.9, asteroidSize * 1.6);
+    const innerRadius = outerRadius * 0.45;
+    const geom = new THREE.RingGeometry(innerRadius, outerRadius, 48);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0x1a0f08,
+        transparent: true,
+        opacity: 0.65,
+        blending: THREE.MultiplyBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    const ring = new THREE.Mesh(geom, mat);
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    ring.quaternion.copy(quat);
+    ring.position.copy(position).addScaledVector(normal, 0.02);
+    ring.frustumCulled = false;
+    ring.renderOrder = 2;
+    scene.add(ring);
+
+    setTimeout(() => { mat.opacity = 0.4; }, 900);
+    setTimeout(() => { mat.opacity = 0.18; }, 1600);
+    setTimeout(() => {
+        scene.remove(ring);
+        geom.dispose();
+        mat.dispose();
+    }, 2400);
+}
+
+// Guaranteed-visible debug burst using THREE.Points so impacts are always seen
+function createEarthImpactDebugPoints(position, normal, count = 300) {
+    console.log('[IMPACT] createEarthImpactDebugPoints at', position.toArray ? position.toArray() : position, 'count', count);
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const color = new THREE.Color(0xffaa33);
+    const ortho = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tangent = new THREE.Vector3().crossVectors(normal, ortho).normalize();
+    const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const radius = 1.8;
+    for (let i = 0; i < count; i++) {
+        const theta = (i / count) * Math.PI * 2;
+        const rim = new THREE.Vector3()
+            .addScaledVector(tangent, Math.cos(theta) * radius)
+            .addScaledVector(bitangent, Math.sin(theta) * radius)
+            .addScaledVector(normal, 0.05);
+        const p = new THREE.Vector3().copy(position).add(rim);
+        positions[i * 3] = p.x;
+        positions[i * 3 + 1] = p.y;
+        positions[i * 3 + 2] = p.z;
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({ size: 0.25, vertexColors: true, transparent: true, opacity: 1, depthTest: false });
+    const points = new THREE.Points(geom, mat);
+    points.frustumCulled = false;
+    scene.add(points);
+    setTimeout(() => {
+        scene.remove(points);
+        geom.dispose();
+        mat.dispose();
+    }, 1800);
+}
+
+// Additional guaranteed-visible cloud using THREE.Points, scattered upward
+function createEarthImpactDebugCloud(position, normal, count = 600) {
+    console.log('[IMPACT] createEarthImpactDebugCloud at', position.toArray ? position.toArray() : position, 'count', count);
+    const geom = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const color = new THREE.Color(0xff6633);
+    const ortho = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tangent = new THREE.Vector3().crossVectors(normal, ortho).normalize();
+    const bitangent = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const radius = 1.4;
+    for (let i = 0; i < count; i++) {
+        const theta = (i / count) * Math.PI * 2;
+        const r = radius * (0.5 + Math.random() * 0.5);
+        const up = 0.2 + Math.random() * 0.8;
+        const offset = new THREE.Vector3()
+            .addScaledVector(tangent, Math.cos(theta) * r)
+            .addScaledVector(bitangent, Math.sin(theta) * r)
+            .addScaledVector(normal, up);
+        const p = new THREE.Vector3().copy(position).add(offset);
+        positions[i * 3] = p.x;
+        positions[i * 3 + 1] = p.y;
+        positions[i * 3 + 2] = p.z;
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({ size: 0.35, vertexColors: true, transparent: true, opacity: 1, depthTest: false });
+    const points = new THREE.Points(geom, mat);
+    points.frustumCulled = false;
+    scene.add(points);
+    setTimeout(() => {
+        scene.remove(points);
+        geom.dispose();
+        mat.dispose();
+    }, 2000);
 }
 
 // Create dramatic hit spark when laser damages asteroid - USES OBJECT POOLING
@@ -6200,17 +6483,18 @@ function animate() {
         updateCameraFromOrbit();
     }
 
+    // Always tick instanced particles so test impacts animate even when gameInactive
+    updateInstancedParticles(delta);
+
+    // Periodic stats logging (every 120 frames ~2s at 60fps)
+    if (Math.floor(Date.now() / 1000) % 2 === 0 && Date.now() % 1000 < 50) {
+        const activeCount = instancedParticleData.active.reduce((sum, val) => sum + val, 0);
+        console.log('[STATS] Particles:', activeCount, '/', INSTANCED_PARTICLE_MAX);
+    }
+
     // === PAUSE ALL GAME WORLD ANIMATIONS WHEN PAUSED ===
     // Camera controls above still work so player can look around while paused
     if (gameActive) {
-        // Update instanced particle system (explosions, sparks, etc.)
-        updateInstancedParticles(delta);
-
-        // Periodic stats logging (every 120 frames ~2s at 60fps)
-        if (Math.floor(Date.now() / 1000) % 2 === 0 && Date.now() % 1000 < 50) {
-            const activeCount = instancedParticleData.active.reduce((sum, val) => sum + val, 0);
-            console.log('[STATS] Particles:', activeCount, '/', INSTANCED_PARTICLE_MAX);
-        }
 
         // Update physics worker (offloaded collision detection)
         if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
@@ -6507,11 +6791,17 @@ if (controlMode === 'camera') {
                 // Create explosion at impact point, nudged above surface so it renders clearly
                 const rawPos = asteroid.position.clone();
                 const normal = rawPos.lengthSq() > 0.0001 ? rawPos.clone().normalize() : new THREE.Vector3(0, 1, 0);
-                const surfaceOffset = EARTH_RADIUS + asteroid.userData.size * 1.0 + 0.8;
+                // Keep effects on the surface with minimal lift
+                const surfaceOffset = EARTH_RADIUS + asteroid.userData.size * 0.2 + 0.05;
                 const impactPos = normal.multiplyScalar(surfaceOffset);
                 console.log('[DEBUG] Creating explosion at', impactPos, 'size', asteroid.userData.size);
                 createExplosion(impactPos, asteroid.userData.size);
                 createEarthImpactSparks(impactPos, asteroid.userData.size);
+                if (ENABLE_IMPACT_DEBUG_VIS) {
+                    createEarthImpactDebugPoints(impactPos, normal);
+                    createEarthImpactDebugCloud(impactPos, normal);
+                }
+                asteroid.visible = false; // hide immediately so only effects are seen
             }
 
             // Remove asteroid
