@@ -26,7 +26,7 @@ npx jest tests/unit/gameLogic.test.js
 ## Architecture
 
 ### Frontend (public/)
-- `script.js` - Monolithic Three.js application (~5700+ lines) containing all game logic
+- `script.js` - Monolithic Three.js application (~6200 lines) containing all game logic
 - `index.html` - Entry point, loads Three.js from CDN
 - No build step required; runs directly in browser
 

@@ -74,6 +74,226 @@ const _domCache = {
     }
 };
 
+
+// === SPATIAL_PARTITIONING: 3D Spatial Hash for efficient collision detection ===
+// Replaces O(n*m) collision checks with O(n+m) average case by partitioning 3D space into cells
+// Objects are inserted into grid cells based on position; queries only check nearby cells
+
+class SpatialHash {
+    constructor(cellSize = 10) {
+        this.cellSize = cellSize;
+        this.inverseCellSize = 1 / cellSize;
+        this.buckets = new Map();
+        // Reusable array for query results to avoid allocations
+        this._queryResults = [];
+        // Reusable set to track already-checked objects in radius queries
+        this._checkedSet = new Set();
+    }
+
+    // Get the cell key for a 3D position
+    // Returns a string key "x,y,z" for the cell containing this position
+    _getKey(x, y, z) {
+        const cx = Math.floor(x * this.inverseCellSize);
+        const cy = Math.floor(y * this.inverseCellSize);
+        const cz = Math.floor(z * this.inverseCellSize);
+        return `${cx},${cy},${cz}`;
+    }
+
+    // Get cell coordinates (integers) for a position
+    _getCellCoords(x, y, z) {
+        return {
+            cx: Math.floor(x * this.inverseCellSize),
+            cy: Math.floor(y * this.inverseCellSize),
+            cz: Math.floor(z * this.inverseCellSize)
+        };
+    }
+
+    // Insert an object into the spatial hash
+    // Object must have a position property (THREE.Vector3)
+    insert(object) {
+        if (!object || !object.position) return;
+        const key = this._getKey(object.position.x, object.position.y, object.position.z);
+        if (!this.buckets.has(key)) {
+            this.buckets.set(key, []);
+        }
+        this.buckets.get(key).push(object);
+        // Store the key on the object for fast removal
+        object._spatialHashKey = key;
+    }
+
+    // Insert an object that may span multiple cells (for larger objects)
+    // radius is the object's bounding sphere radius
+    insertWithRadius(object, radius) {
+        if (!object || !object.position) return;
+        const pos = object.position;
+        const cellSpan = Math.ceil(radius * this.inverseCellSize);
+        const baseCx = Math.floor(pos.x * this.inverseCellSize);
+        const baseCy = Math.floor(pos.y * this.inverseCellSize);
+        const baseCz = Math.floor(pos.z * this.inverseCellSize);
+
+        // Track which cells this object is in
+        object._spatialHashKeys = [];
+
+        for (let dx = -cellSpan; dx <= cellSpan; dx++) {
+            for (let dy = -cellSpan; dy <= cellSpan; dy++) {
+                for (let dz = -cellSpan; dz <= cellSpan; dz++) {
+                    const key = `${baseCx + dx},${baseCy + dy},${baseCz + dz}`;
+                    if (!this.buckets.has(key)) {
+                        this.buckets.set(key, []);
+                    }
+                    this.buckets.get(key).push(object);
+                    object._spatialHashKeys.push(key);
+                }
+            }
+        }
+    }
+
+    // Remove an object from the spatial hash
+    remove(object) {
+        if (!object) return;
+
+        // Handle objects inserted with radius (multiple cells)
+        if (object._spatialHashKeys) {
+            for (const key of object._spatialHashKeys) {
+                const bucket = this.buckets.get(key);
+                if (bucket) {
+                    const idx = bucket.indexOf(object);
+                    if (idx !== -1) {
+                        bucket.splice(idx, 1);
+                    }
+                    if (bucket.length === 0) {
+                        this.buckets.delete(key);
+                    }
+                }
+            }
+            delete object._spatialHashKeys;
+            return;
+        }
+
+        // Handle single-cell objects
+        if (object._spatialHashKey) {
+            const bucket = this.buckets.get(object._spatialHashKey);
+            if (bucket) {
+                const idx = bucket.indexOf(object);
+                if (idx !== -1) {
+                    bucket.splice(idx, 1);
+                }
+                if (bucket.length === 0) {
+                    this.buckets.delete(object._spatialHashKey);
+                }
+            }
+            delete object._spatialHashKey;
+        }
+    }
+
+    // Query for all objects near a position within a given radius
+    // Returns array of candidate objects (caller must do precise distance check)
+    queryRadius(x, y, z, radius) {
+        this._queryResults.length = 0;
+        this._checkedSet.clear();
+
+        const cellSpan = Math.ceil(radius * this.inverseCellSize);
+        const baseCx = Math.floor(x * this.inverseCellSize);
+        const baseCy = Math.floor(y * this.inverseCellSize);
+        const baseCz = Math.floor(z * this.inverseCellSize);
+
+        for (let dx = -cellSpan; dx <= cellSpan; dx++) {
+            for (let dy = -cellSpan; dy <= cellSpan; dy++) {
+                for (let dz = -cellSpan; dz <= cellSpan; dz++) {
+                    const key = `${baseCx + dx},${baseCy + dy},${baseCz + dz}`;
+                    const bucket = this.buckets.get(key);
+                    if (bucket) {
+                        for (let i = 0; i < bucket.length; i++) {
+                            const obj = bucket[i];
+                            // Avoid duplicates (object may be in multiple cells)
+                            if (!this._checkedSet.has(obj)) {
+                                this._checkedSet.add(obj);
+                                this._queryResults.push(obj);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return this._queryResults;
+    }
+
+    // Query objects in a single cell (fast path for small objects)
+    queryCell(x, y, z) {
+        const key = this._getKey(x, y, z);
+        return this.buckets.get(key) || [];
+    }
+
+    // Clear all objects from the spatial hash
+    clear() {
+        this.buckets.clear();
+    }
+
+    // Get statistics for debugging
+    getStats() {
+        let totalObjects = 0;
+        let maxBucketSize = 0;
+        for (const bucket of this.buckets.values()) {
+            totalObjects += bucket.length;
+            maxBucketSize = Math.max(maxBucketSize, bucket.length);
+        }
+        return {
+            bucketCount: this.buckets.size,
+            totalObjects,
+            maxBucketSize,
+            avgBucketSize: this.buckets.size > 0 ? totalObjects / this.buckets.size : 0
+        };
+    }
+}
+
+// Create spatial hash instances for collision detection
+// Cell size of 10 units works well for:
+// - Asteroids: 0.5-2.0 size, spawn at 120-180 units from Earth
+// - Lasers: small, fast-moving projectiles
+// - Larger cell size = fewer cells to check, but more objects per cell
+const asteroidSpatialHash = new SpatialHash(10);
+const laserSpatialHash = new SpatialHash(10);
+
+// Helper function to rebuild spatial hash from arrays
+// Call this at the start of each frame for simplicity
+// (Could be optimized to incremental updates if needed)
+function rebuildSpatialHashes() {
+    asteroidSpatialHash.clear();
+    laserSpatialHash.clear();
+
+    // Insert all asteroids with their bounding radius
+    for (let i = 0; i < asteroids.length; i++) {
+        const asteroid = asteroids[i];
+        // Use asteroid size as radius for broad phase
+        const radius = asteroid.userData.size || 1;
+        asteroidSpatialHash.insertWithRadius(asteroid, radius);
+    }
+
+    // Insert all laser bolts (small, so single cell is fine)
+    for (let i = 0; i < laserBolts.length; i++) {
+        laserSpatialHash.insert(laserBolts[i]);
+    }
+}
+
+// Query asteroids near a position (for laser collision checks)
+function queryNearbyAsteroids(position, maxRadius) {
+    return asteroidSpatialHash.queryRadius(
+        position.x, position.y, position.z,
+        maxRadius
+    );
+}
+
+// Query lasers near a position (for asteroid collision checks, if needed)
+function queryNearbyLasers(position, maxRadius) {
+    return laserSpatialHash.queryRadius(
+        position.x, position.y, position.z,
+        maxRadius
+    );
+}
+
+// === END SPATIAL_PARTITIONING ===
+
 // === SUN AND LIGHTING ===
 // Sun position - far enough to feel distant but visible
 const SUN_DISTANCE = 80;
@@ -1586,14 +1806,15 @@ const laserGlowMat = new THREE.MeshBasicMaterial({
 const laserGlowGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.9, 8);
 
 // === OBJECT POOLING SYSTEM ===
+// Pool sizes generous enough for intense combat
 const laserPool = [];
-const LASER_POOL_INITIAL_SIZE = 20;
+const LASER_POOL_INITIAL_SIZE = 100;  // Supports rapid fire with 2 bolts per shot
 const explosionParticlePool = [];
-const EXPLOSION_POOL_INITIAL_SIZE = 100;
+const EXPLOSION_POOL_INITIAL_SIZE = 500;  // Supports multiple simultaneous explosions (30+ particles each)
 const debrisPool = [];
-const DEBRIS_POOL_INITIAL_SIZE = 30;
+const DEBRIS_POOL_INITIAL_SIZE = 200;  // Supports multiple hit sparks (5 debris each)
 const explosionLightPool = [];
-const LIGHT_POOL_INITIAL_SIZE = 15;
+const LIGHT_POOL_INITIAL_SIZE = 50;  // Lights for explosions and laser bolts
 
 const pooledSphereGeos = {
     small: new THREE.SphereGeometry(1, 6, 6),
@@ -1786,6 +2007,492 @@ function cleanupExplosionGroup(explosionGroup) {
     explosionGroup.children.length = 0;
 }
 
+// Release all active pooled objects back to pools (for level transitions/game reset)
+function releaseAllPooledObjects() {
+    // Return all active laser bolts to pool
+    for (let i = laserBolts.length - 1; i >= 0; i--) {
+        const bolt = laserBolts[i];
+        returnLaserToPool(bolt);
+    }
+    laserBolts.length = 0;
+
+    // Return all active explosion particles/debris/lights to pools
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        const explosion = explosions[i];
+        cleanupExplosionGroup(explosion);
+        scene.remove(explosion);
+    }
+    explosions.length = 0;
+
+    console.log('[POOLS] All pooled objects released');
+}
+
+// === INSTANCED MESH PARTICLE SYSTEM ===
+// Pre-allocated InstancedMesh for optimal GPU batch rendering of explosion particles and debris.
+// This eliminates per-explosion object creation overhead and reduces draw calls significantly.
+
+const INSTANCED_PARTICLE_MAX = 1500; // Max sphere particles (explosions + sparks)
+const INSTANCED_DEBRIS_MAX = 500;    // Max tetrahedron debris chunks
+
+// Particle data arrays - store state for each active instance
+// Using typed arrays for better performance and memory layout
+const instancedParticleData = {
+    positions: new Float32Array(INSTANCED_PARTICLE_MAX * 3),     // x, y, z world position
+    velocities: new Float32Array(INSTANCED_PARTICLE_MAX * 3),    // velocity vector
+    scales: new Float32Array(INSTANCED_PARTICLE_MAX),            // current scale
+    initialScales: new Float32Array(INSTANCED_PARTICLE_MAX),     // scale at spawn (for growth animation)
+    createdAt: new Float32Array(INSTANCED_PARTICLE_MAX),         // timestamp when spawned
+    durations: new Float32Array(INSTANCED_PARTICLE_MAX),         // lifespan in ms
+    colorIndices: new Uint8Array(INSTANCED_PARTICLE_MAX),        // index into color palette
+    active: new Uint8Array(INSTANCED_PARTICLE_MAX),              // 1 = active, 0 = available
+    count: 0                                                      // current active count
+};
+
+const instancedDebrisData = {
+    positions: new Float32Array(INSTANCED_DEBRIS_MAX * 3),
+    velocities: new Float32Array(INSTANCED_DEBRIS_MAX * 3),
+    rotations: new Float32Array(INSTANCED_DEBRIS_MAX * 3),       // current rotation euler
+    rotationSpeeds: new Float32Array(INSTANCED_DEBRIS_MAX * 3),  // rotation speed per axis
+    scales: new Float32Array(INSTANCED_DEBRIS_MAX),
+    initialScales: new Float32Array(INSTANCED_DEBRIS_MAX),
+    createdAt: new Float32Array(INSTANCED_DEBRIS_MAX),
+    durations: new Float32Array(INSTANCED_DEBRIS_MAX),
+    active: new Uint8Array(INSTANCED_DEBRIS_MAX),
+    count: 0
+};
+
+// Track explosion lights separately (can't be instanced, but can be pooled)
+const instancedExplosionLights = [];
+const INSTANCED_LIGHT_MAX = 30;
+
+// Pre-allocated color palette as THREE.Color objects for fast lookup
+const particleColorPalette = [
+    new THREE.Color(0xff4400), // explosion orange-red
+    new THREE.Color(0xff8800), // explosion orange
+    new THREE.Color(0xffcc00), // explosion yellow
+    new THREE.Color(0xffffff), // white
+    new THREE.Color(0xffff00), // spark yellow
+    new THREE.Color(0x88ffaa), // angel green
+    new THREE.Color(0xaaffcc), // angel light green
+    new THREE.Color(0xffdd88)  // angel gold
+];
+const debrisColorInstance = new THREE.Color(0x6b5b4d);
+
+// Reusable Object3D for matrix calculations (shared across all instances)
+const _instanceDummy = new THREE.Object3D();
+const _instanceMatrix = new THREE.Matrix4();
+const _instanceColor = new THREE.Color();
+
+// The InstancedMesh objects - created once, reused forever
+let instancedParticleMesh = null;
+let instancedDebrisMesh = null;
+
+/**
+ * Initialize the instanced mesh particle system.
+ * Call this once during game startup, before any explosions can occur.
+ */
+function initInstancedParticleSystem() {
+    // Create sphere geometry for particles (shared by all instances)
+    const particleGeometry = new THREE.SphereGeometry(1, 8, 8);
+
+    // Material with vertex colors for per-instance coloring
+    const particleMaterial = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 1,
+        vertexColors: false // We'll update color via setColorAt
+    });
+
+    // Create the InstancedMesh with maximum capacity
+    instancedParticleMesh = new THREE.InstancedMesh(
+        particleGeometry,
+        particleMaterial,
+        INSTANCED_PARTICLE_MAX
+    );
+    instancedParticleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedParticleMesh.frustumCulled = false; // Particles can be anywhere
+    instancedParticleMesh.count = 0; // Start with no visible instances
+    instancedParticleMesh.name = 'InstancedParticles';
+
+    // Initialize instance colors buffer
+    instancedParticleMesh.instanceColor = new THREE.InstancedBufferAttribute(
+        new Float32Array(INSTANCED_PARTICLE_MAX * 3),
+        3
+    );
+    instancedParticleMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+
+    scene.add(instancedParticleMesh);
+
+    // Create tetrahedron geometry for debris
+    const debrisGeometry = new THREE.TetrahedronGeometry(1);
+    const debrisMaterial = new THREE.MeshBasicMaterial({
+        color: 0x6b5b4d,
+        transparent: true,
+        opacity: 1
+    });
+
+    instancedDebrisMesh = new THREE.InstancedMesh(
+        debrisGeometry,
+        debrisMaterial,
+        INSTANCED_DEBRIS_MAX
+    );
+    instancedDebrisMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instancedDebrisMesh.frustumCulled = false;
+    instancedDebrisMesh.count = 0;
+    instancedDebrisMesh.name = 'InstancedDebris';
+
+    scene.add(instancedDebrisMesh);
+
+    // Pre-create pooled lights for explosions
+    for (let i = 0; i < INSTANCED_LIGHT_MAX; i++) {
+        const light = new THREE.PointLight(0xff8800, 0, 20);
+        light.visible = false;
+        light.userData = { inUse: false, createdAt: 0, duration: 0 };
+        scene.add(light);
+        instancedExplosionLights.push(light);
+    }
+
+    console.log('[InstancedParticles] Initialized with', INSTANCED_PARTICLE_MAX, 'particles,', INSTANCED_DEBRIS_MAX, 'debris');
+}
+
+/**
+ * Allocate a particle instance from the pool.
+ * Returns the index of the allocated instance, or -1 if pool is exhausted.
+ */
+function allocateParticleInstance() {
+    const data = instancedParticleData;
+    // Find first inactive slot
+    for (let i = 0; i < INSTANCED_PARTICLE_MAX; i++) {
+        if (data.active[i] === 0) {
+            data.active[i] = 1;
+            return i;
+        }
+    }
+    // Pool exhausted - find oldest particle and reuse it
+    let oldestIdx = 0;
+    let oldestTime = data.createdAt[0];
+    for (let i = 1; i < INSTANCED_PARTICLE_MAX; i++) {
+        if (data.createdAt[i] < oldestTime) {
+            oldestTime = data.createdAt[i];
+            oldestIdx = i;
+        }
+    }
+    return oldestIdx;
+}
+
+/**
+ * Allocate a debris instance from the pool.
+ */
+function allocateDebrisInstance() {
+    const data = instancedDebrisData;
+    for (let i = 0; i < INSTANCED_DEBRIS_MAX; i++) {
+        if (data.active[i] === 0) {
+            data.active[i] = 1;
+            return i;
+        }
+    }
+    // Reuse oldest
+    let oldestIdx = 0;
+    let oldestTime = data.createdAt[0];
+    for (let i = 1; i < INSTANCED_DEBRIS_MAX; i++) {
+        if (data.createdAt[i] < oldestTime) {
+            oldestTime = data.createdAt[i];
+            oldestIdx = i;
+        }
+    }
+    return oldestIdx;
+}
+
+/**
+ * Get an explosion light from the pool.
+ */
+function getInstancedExplosionLight() {
+    for (let i = 0; i < instancedExplosionLights.length; i++) {
+        const light = instancedExplosionLights[i];
+        if (!light.userData.inUse) {
+            light.userData.inUse = true;
+            light.visible = true;
+            light.intensity = 3;
+            return light;
+        }
+    }
+    return null; // All lights in use
+}
+
+/**
+ * Spawn particles for an explosion using the instanced system.
+ * @param {THREE.Vector3} position - World position of the explosion
+ * @param {number} asteroidSize - Size multiplier for the explosion
+ * @param {string} type - 'explosion', 'spark', or 'angel'
+ */
+function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion') {
+    const now = Date.now();
+    const scaleFactor = Math.max(0.5, asteroidSize);
+    const particleCount = type === 'spark' ? 20 : Math.floor(6 + asteroidSize * 4);
+    const duration = type === 'spark' ? 400 : (600 + asteroidSize * 200);
+
+    // Select color palette based on type
+    let colorStart, colorCount;
+    if (type === 'angel') {
+        colorStart = 5; // angel colors start at index 5
+        colorCount = 3;
+    } else if (type === 'spark') {
+        colorStart = 0; // sparks use explosion + spark colors
+        colorCount = 5;
+    } else {
+        colorStart = 0; // explosion colors
+        colorCount = 4;
+    }
+
+    // Spawn particles
+    for (let i = 0; i < particleCount; i++) {
+        const idx = allocateParticleInstance();
+        if (idx < 0) continue;
+
+        const size = (0.2 + Math.random() * 0.4) * scaleFactor;
+        const i3 = idx * 3;
+
+        // Position with random offset
+        instancedParticleData.positions[i3] = position.x + (Math.random() - 0.5) * scaleFactor;
+        instancedParticleData.positions[i3 + 1] = position.y + (Math.random() - 0.5) * scaleFactor;
+        instancedParticleData.positions[i3 + 2] = position.z + (Math.random() - 0.5) * scaleFactor;
+
+        // Velocity
+        const velocityMult = type === 'spark' ? 25 : 8;
+        instancedParticleData.velocities[i3] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+        instancedParticleData.velocities[i3 + 1] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+        instancedParticleData.velocities[i3 + 2] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+
+        // Scale and timing
+        instancedParticleData.scales[idx] = size;
+        instancedParticleData.initialScales[idx] = size;
+        instancedParticleData.createdAt[idx] = now;
+        instancedParticleData.durations[idx] = duration;
+        instancedParticleData.colorIndices[idx] = colorStart + Math.floor(Math.random() * colorCount);
+        instancedParticleData.active[idx] = 1;
+    }
+
+    // Spawn debris for sparks (hit effects)
+    if (type === 'spark') {
+        for (let i = 0; i < 5; i++) {
+            const idx = allocateDebrisInstance();
+            if (idx < 0) continue;
+
+            const chunkSize = 0.15 + Math.random() * 0.2;
+            const i3 = idx * 3;
+
+            instancedDebrisData.positions[i3] = position.x;
+            instancedDebrisData.positions[i3 + 1] = position.y;
+            instancedDebrisData.positions[i3 + 2] = position.z;
+
+            instancedDebrisData.velocities[i3] = (Math.random() - 0.5) * 15;
+            instancedDebrisData.velocities[i3 + 1] = (Math.random() - 0.5) * 15;
+            instancedDebrisData.velocities[i3 + 2] = (Math.random() - 0.5) * 15;
+
+            instancedDebrisData.rotations[i3] = Math.random() * Math.PI * 2;
+            instancedDebrisData.rotations[i3 + 1] = Math.random() * Math.PI * 2;
+            instancedDebrisData.rotations[i3 + 2] = Math.random() * Math.PI * 2;
+
+            instancedDebrisData.rotationSpeeds[i3] = Math.random() * 5;
+            instancedDebrisData.rotationSpeeds[i3 + 1] = Math.random() * 5;
+            instancedDebrisData.rotationSpeeds[i3 + 2] = Math.random() * 5;
+
+            instancedDebrisData.scales[idx] = chunkSize;
+            instancedDebrisData.initialScales[idx] = chunkSize;
+            instancedDebrisData.createdAt[idx] = now;
+            instancedDebrisData.durations[idx] = duration;
+            instancedDebrisData.active[idx] = 1;
+        }
+    }
+
+    // Add explosion light
+    const light = getInstancedExplosionLight();
+    if (light) {
+        light.position.copy(position);
+        light.intensity = 3 * scaleFactor;
+        light.distance = 20 * scaleFactor;
+        light.color.setHex(type === 'angel' ? 0x88ffaa : 0xff8800);
+        light.userData.createdAt = now;
+        light.userData.duration = duration;
+    }
+}
+
+/**
+ * Update all instanced particles and debris each frame.
+ * Call this from the animation loop.
+ * @param {number} delta - Time since last frame in seconds
+ */
+function updateInstancedParticles(delta) {
+    const now = Date.now();
+    let activeParticleCount = 0;
+    let activeDebrisCount = 0;
+
+    // Update particles
+    const pData = instancedParticleData;
+    for (let i = 0; i < INSTANCED_PARTICLE_MAX; i++) {
+        if (pData.active[i] === 0) continue;
+
+        const age = now - pData.createdAt[i];
+        const progress = age / pData.durations[i];
+
+        if (progress >= 1) {
+            // Particle expired
+            pData.active[i] = 0;
+            continue;
+        }
+
+        const i3 = i * 3;
+
+        // Update position based on velocity
+        pData.positions[i3] += pData.velocities[i3] * delta;
+        pData.positions[i3 + 1] += pData.velocities[i3 + 1] * delta;
+        pData.positions[i3 + 2] += pData.velocities[i3 + 2] * delta;
+
+        // Update scale (grow over time)
+        pData.scales[i] = pData.initialScales[i] * (1 + progress * 3);
+
+        // Build transformation matrix
+        _instanceDummy.position.set(
+            pData.positions[i3],
+            pData.positions[i3 + 1],
+            pData.positions[i3 + 2]
+        );
+        _instanceDummy.scale.setScalar(pData.scales[i]);
+        _instanceDummy.updateMatrix();
+
+        // Set matrix at the ACTIVE index (compact rendering)
+        instancedParticleMesh.setMatrixAt(activeParticleCount, _instanceDummy.matrix);
+
+        // Set color with opacity baked in (fade out over time)
+        const colorIdx = pData.colorIndices[i];
+        const opacity = 1 - progress;
+        _instanceColor.copy(particleColorPalette[colorIdx]).multiplyScalar(opacity);
+        instancedParticleMesh.setColorAt(activeParticleCount, _instanceColor);
+
+        activeParticleCount++;
+    }
+
+    // Update debris
+    const dData = instancedDebrisData;
+    for (let i = 0; i < INSTANCED_DEBRIS_MAX; i++) {
+        if (dData.active[i] === 0) continue;
+
+        const age = now - dData.createdAt[i];
+        const progress = age / dData.durations[i];
+
+        if (progress >= 1) {
+            dData.active[i] = 0;
+            continue;
+        }
+
+        const i3 = i * 3;
+
+        // Update position
+        dData.positions[i3] += dData.velocities[i3] * delta;
+        dData.positions[i3 + 1] += dData.velocities[i3 + 1] * delta;
+        dData.positions[i3 + 2] += dData.velocities[i3 + 2] * delta;
+
+        // Update rotation
+        dData.rotations[i3] += dData.rotationSpeeds[i3] * delta;
+        dData.rotations[i3 + 1] += dData.rotationSpeeds[i3 + 1] * delta;
+        dData.rotations[i3 + 2] += dData.rotationSpeeds[i3 + 2] * delta;
+
+        // Build transformation matrix
+        _instanceDummy.position.set(
+            dData.positions[i3],
+            dData.positions[i3 + 1],
+            dData.positions[i3 + 2]
+        );
+        _instanceDummy.rotation.set(
+            dData.rotations[i3],
+            dData.rotations[i3 + 1],
+            dData.rotations[i3 + 2]
+        );
+        _instanceDummy.scale.setScalar(dData.scales[i]);
+        _instanceDummy.updateMatrix();
+
+        instancedDebrisMesh.setMatrixAt(activeDebrisCount, _instanceDummy.matrix);
+        activeDebrisCount++;
+    }
+
+    // Update explosion lights
+    for (let i = 0; i < instancedExplosionLights.length; i++) {
+        const light = instancedExplosionLights[i];
+        if (!light.userData.inUse) continue;
+
+        const age = now - light.userData.createdAt;
+        const progress = age / light.userData.duration;
+
+        if (progress >= 1) {
+            light.userData.inUse = false;
+            light.visible = false;
+            light.intensity = 0;
+        } else {
+            light.intensity = 3 * (1 - progress);
+        }
+    }
+
+    // Update instance counts and mark matrices for GPU upload
+    instancedParticleMesh.count = activeParticleCount;
+    if (activeParticleCount > 0) {
+        instancedParticleMesh.instanceMatrix.needsUpdate = true;
+        if (instancedParticleMesh.instanceColor) {
+            instancedParticleMesh.instanceColor.needsUpdate = true;
+        }
+    }
+
+    instancedDebrisMesh.count = activeDebrisCount;
+    if (activeDebrisCount > 0) {
+        instancedDebrisMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // Update debris material opacity based on average progress
+    // (simpler than per-instance opacity for debris)
+    if (activeDebrisCount > 0) {
+        let avgProgress = 0;
+        let count = 0;
+        for (let i = 0; i < INSTANCED_DEBRIS_MAX; i++) {
+            if (dData.active[i]) {
+                avgProgress += (now - dData.createdAt[i]) / dData.durations[i];
+                count++;
+            }
+        }
+        if (count > 0) {
+            instancedDebrisMesh.material.opacity = 1 - (avgProgress / count);
+        }
+    }
+}
+
+/**
+ * Clear all active particles (e.g., on game reset).
+ */
+function clearInstancedParticles() {
+    // Reset particle data
+    instancedParticleData.active.fill(0);
+    instancedParticleData.count = 0;
+    if (instancedParticleMesh) {
+        instancedParticleMesh.count = 0;
+    }
+
+    // Reset debris data
+    instancedDebrisData.active.fill(0);
+    instancedDebrisData.count = 0;
+    if (instancedDebrisMesh) {
+        instancedDebrisMesh.count = 0;
+    }
+
+    // Reset lights
+    for (const light of instancedExplosionLights) {
+        light.userData.inUse = false;
+        light.visible = false;
+        light.intensity = 0;
+    }
+}
+
+// Initialize the instanced particle system immediately
+initInstancedParticleSystem();
+
+// === END INSTANCED MESH PARTICLE SYSTEM ===
+
 // Create asteroid with rocky appearance
 function createAsteroid() {
     const asteroidGroup = new THREE.Group();
@@ -1895,7 +2602,7 @@ function spawnAsteroids() {
     return;
 }
 
-// Create explosion effect (size-based)
+// Create explosion effect (size-based) - USES OBJECT POOLING
 function createExplosion(position, asteroidSize = 1) {
     // Play explosion sound
     SoundManager.playExplosion(asteroidSize);
@@ -1907,17 +2614,19 @@ function createExplosion(position, asteroidSize = 1) {
     const scaleFactor = Math.max(0.5, asteroidSize);
     const particleCount = Math.floor(6 + asteroidSize * 4);
 
-    // Multiple expanding spheres for explosion
-    const colors = [0xff4400, 0xff8800, 0xffcc00, 0xffffff];
+    // Multiple expanding spheres for explosion - USE POOLED PARTICLES
     for (let i = 0; i < particleCount; i++) {
         const size = (0.2 + Math.random() * 0.4) * scaleFactor;
-        const geo = new THREE.SphereGeometry(size, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({
-            color: colors[Math.floor(Math.random() * colors.length)],
-            transparent: true,
-            opacity: 1
-        });
-        const sphere = new THREE.Mesh(geo, mat);
+
+        // Acquire particle from pool instead of creating new
+        const sphere = getParticleFromPool();
+
+        // Set material from pre-created explosion materials
+        sphere.material = explosionMaterials[Math.floor(Math.random() * explosionMaterials.length)];
+        sphere.material.opacity = 1;
+
+        // Set scale (pooled geometry has radius 1, so scale = desired size)
+        sphere.scale.set(size, size, size);
 
         // Random offset
         sphere.position.set(
@@ -1925,7 +2634,12 @@ function createExplosion(position, asteroidSize = 1) {
             (Math.random() - 0.5) * scaleFactor,
             (Math.random() - 0.5) * scaleFactor
         );
-        sphere.userData.velocity = new THREE.Vector3(
+
+        // Reuse or create velocity vector
+        if (!sphere.userData.velocity) {
+            sphere.userData.velocity = new THREE.Vector3();
+        }
+        sphere.userData.velocity.set(
             (Math.random() - 0.5) * 8 * scaleFactor,
             (Math.random() - 0.5) * 8 * scaleFactor,
             (Math.random() - 0.5) * 8 * scaleFactor
@@ -1934,8 +2648,11 @@ function createExplosion(position, asteroidSize = 1) {
         explosionGroup.add(sphere);
     }
 
-    // Bright flash
-    const flash = new THREE.PointLight(0xff8800, 3 * scaleFactor, 20 * scaleFactor);
+    // Get pooled light for flash
+    const flash = getExplosionLightFromPool();
+    flash.color.setHex(0xff8800);
+    flash.intensity = 3 * scaleFactor;
+    flash.distance = 20 * scaleFactor;
     explosionGroup.add(flash);
     explosionGroup.userData.flash = flash;
 
@@ -1947,23 +2664,30 @@ function createExplosion(position, asteroidSize = 1) {
     return explosionGroup;
 }
 
-// Create dramatic hit spark when laser damages asteroid
+// Create dramatic hit spark when laser damages asteroid - USES OBJECT POOLING
 function createHitSpark(position, asteroid) {
     const sparkGroup = new THREE.Group();
     sparkGroup.position.copy(position);
 
-    // Lots of bright sparks flying outward
-    const colors = [0xffff00, 0xff8800, 0xffffff, 0xff4400, 0xffcc00];
+    // Lots of bright sparks flying outward - USE POOLED PARTICLES
     for (let i = 0; i < 20; i++) {
         const size = 0.1 + Math.random() * 0.25;
-        const geo = new THREE.SphereGeometry(size, 6, 6);
-        const mat = new THREE.MeshBasicMaterial({
-            color: colors[Math.floor(Math.random() * colors.length)],
-            transparent: true,
-            opacity: 1
-        });
-        const spark = new THREE.Mesh(geo, mat);
-        spark.userData.velocity = new THREE.Vector3(
+
+        // Acquire particle from pool instead of creating new
+        const spark = getParticleFromPool();
+
+        // Set material from pre-created spark materials
+        spark.material = sparkMaterials[Math.floor(Math.random() * sparkMaterials.length)];
+        spark.material.opacity = 1;
+
+        // Set scale
+        spark.scale.set(size, size, size);
+
+        // Reuse or create velocity vector
+        if (!spark.userData.velocity) {
+            spark.userData.velocity = new THREE.Vector3();
+        }
+        spark.userData.velocity.set(
             (Math.random() - 0.5) * 25,
             (Math.random() - 0.5) * 25,
             (Math.random() - 0.5) * 25
@@ -1972,23 +2696,35 @@ function createHitSpark(position, asteroid) {
         sparkGroup.add(spark);
     }
 
-    // Add debris chunks
+    // Add debris chunks - USE POOLED DEBRIS
     for (let i = 0; i < 5; i++) {
         const chunkSize = 0.15 + Math.random() * 0.2;
-        const chunkGeo = new THREE.TetrahedronGeometry(chunkSize);
-        const chunkMat = new THREE.MeshBasicMaterial({
-            color: 0x6b5b4d,
-            transparent: true,
-            opacity: 1
-        });
-        const chunk = new THREE.Mesh(chunkGeo, chunkMat);
-        chunk.userData.velocity = new THREE.Vector3(
+
+        // Acquire debris from pool instead of creating new
+        const chunk = getDebrisFromPool();
+
+        // Reset debris material opacity
+        chunk.material.opacity = 1;
+
+        // Set scale
+        chunk.scale.set(chunkSize, chunkSize, chunkSize);
+
+        // Reuse or create velocity vector
+        if (!chunk.userData.velocity) {
+            chunk.userData.velocity = new THREE.Vector3();
+        }
+        chunk.userData.velocity.set(
             (Math.random() - 0.5) * 15,
             (Math.random() - 0.5) * 15,
             (Math.random() - 0.5) * 15
         );
         chunk.userData.initialScale = chunkSize;
-        chunk.userData.rotationSpeed = new THREE.Vector3(
+
+        // Reuse or create rotation speed vector
+        if (!chunk.userData.rotationSpeed) {
+            chunk.userData.rotationSpeed = new THREE.Vector3();
+        }
+        chunk.userData.rotationSpeed.set(
             Math.random() * 5,
             Math.random() * 5,
             Math.random() * 5
@@ -1996,8 +2732,11 @@ function createHitSpark(position, asteroid) {
         sparkGroup.add(chunk);
     }
 
-    // Bright flash at impact point
-    const flash = new THREE.PointLight(0xffaa00, 5, 15);
+    // Get pooled light for flash
+    const flash = getExplosionLightFromPool();
+    flash.color.setHex(0xffaa00);
+    flash.intensity = 5;
+    flash.distance = 15;
     sparkGroup.add(flash);
     sparkGroup.userData.flash = flash;
 
@@ -2142,7 +2881,7 @@ function spawnAngelAsteroid() {
     showNotification('+HEALTH INCOMING!', '#88ffaa');
 }
 
-// Special explosion for angel asteroid
+// Special explosion for angel asteroid - USES OBJECT POOLING
 function createAngelExplosion(position) {
     // Play explosion sound (medium size)
     SoundManager.playExplosion(1.5);
@@ -2150,18 +2889,25 @@ function createAngelExplosion(position) {
     const explosionGroup = new THREE.Group();
     explosionGroup.position.copy(position);
 
-    // Bright healing particles
-    const colors = [0x88ffaa, 0xffffff, 0xaaffcc, 0xffdd88];
+    // Bright healing particles - USE POOLED PARTICLES
     for (let i = 0; i < 30; i++) {
         const size = 0.2 + Math.random() * 0.4;
-        const geo = new THREE.SphereGeometry(size, 8, 8);
-        const mat = new THREE.MeshBasicMaterial({
-            color: colors[Math.floor(Math.random() * colors.length)],
-            transparent: true,
-            opacity: 1
-        });
-        const sphere = new THREE.Mesh(geo, mat);
-        sphere.userData.velocity = new THREE.Vector3(
+
+        // Acquire particle from pool instead of creating new
+        const sphere = getParticleFromPool();
+
+        // Set material from pre-created angel materials
+        sphere.material = angelMaterials[Math.floor(Math.random() * angelMaterials.length)];
+        sphere.material.opacity = 1;
+
+        // Set scale
+        sphere.scale.set(size, size, size);
+
+        // Reuse or create velocity vector
+        if (!sphere.userData.velocity) {
+            sphere.userData.velocity = new THREE.Vector3();
+        }
+        sphere.userData.velocity.set(
             (Math.random() - 0.5) * 12,
             (Math.random() - 0.5) * 12,
             (Math.random() - 0.5) * 12
@@ -2170,8 +2916,11 @@ function createAngelExplosion(position) {
         explosionGroup.add(sphere);
     }
 
-    // Bright healing flash
-    const flash = new THREE.PointLight(0x88ffaa, 8, 30);
+    // Get pooled light for flash
+    const flash = getExplosionLightFromPool();
+    flash.color.setHex(0x88ffaa);
+    flash.intensity = 8;
+    flash.distance = 30;
     explosionGroup.add(flash);
     explosionGroup.userData.flash = flash;
 
@@ -2624,6 +3373,9 @@ function startLevel(level, isRetry = false) {
     asteroids.length = 0;
     // Clear occlusion state to prevent memory leak
     window._asteroidOcclusionState?.clear();
+
+    // Release all active pooled objects (lasers, explosions) back to pools
+    releaseAllPooledObjects();
 
     // Spawn all asteroids for this level at once
     for (let i = 0; i < level; i++) {
@@ -3337,41 +4089,29 @@ function fireLasers() {
         }
     }
 
-    // CREATE LASERS IMMEDIATELY - no delay (2 cannons: left and right)
+    // CREATE LASERS IMMEDIATELY - no delay (2 cannons: left and right) - USE POOLED BOLTS
     for (let i = 0; i < 2; i++) {
         const offset = i === 0 ? { x: -0.9, y: -0.15 } : { x: 0.9, y: -0.15 };
 
-        // Create laser bolt
-        const bolt = new THREE.Group();
+        // Acquire laser bolt from pool instead of creating new
+        const bolt = getLaserFromPool();
 
-        // Core (bright red)
-        const core = new THREE.Mesh(laserGeo, laserMat);
-        core.rotation.x = Math.PI / 2;
-        bolt.add(core);
-
-        // Glow layer
-        const glow = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.04, 0.04, 0.9, 8),
-            laserGlowMat
-        );
-        glow.rotation.x = Math.PI / 2;
-        bolt.add(glow);
-
-        // Point light for illumination
-        const light = new THREE.PointLight(0xff3300, 0.8, 2);
-        bolt.add(light);
-
-        // Position at cannon tip in world space
-        const localPos = new THREE.Vector3(offset.x, offset.y, -3.5);
-        localPos.applyQuaternion(spaceShip.quaternion);
-        bolt.position.copy(spaceShip.position).add(localPos);
+        // Position at cannon tip in world space (reuse temp vector pattern)
+        _tempVec1.set(offset.x, offset.y, -3.5);
+        _tempVec1.applyQuaternion(spaceShip.quaternion);
+        bolt.position.copy(spaceShip.position).add(_tempVec1);
 
         // Store velocity and distance traveled (use aim-assisted direction)
-        bolt.userData.velocity = aimDirection.clone().multiplyScalar(LASER_SPEED);
+        // Reuse existing velocity vector if present
+        if (!bolt.userData.velocity) {
+            bolt.userData.velocity = new THREE.Vector3();
+        }
+        bolt.userData.velocity.copy(aimDirection).multiplyScalar(LASER_SPEED);
         bolt.userData.distanceTraveled = 0;
 
         // Orient bolt in direction of travel
-        bolt.lookAt(bolt.position.clone().add(aimDirection));
+        _tempVec2.copy(bolt.position).add(aimDirection);
+        bolt.lookAt(_tempVec2);
 
         scene.add(bolt);
         laserBolts.push(bolt);
@@ -5747,6 +6487,11 @@ if (controlMode === 'camera') {
         }
     });
 
+    // === SPATIAL HASH REBUILD ===
+    // Rebuild spatial hashes at the start of collision detection phase
+    // This ensures all objects are in correct cells after movement
+    rebuildSpatialHashes();
+
     // === ASTEROID MOVEMENT & ANIMATION ===
     for (let i = asteroids.length - 1; i >= 0; i--) {
         const asteroid = asteroids[i];
@@ -5857,10 +6602,17 @@ if (controlMode === 'camera') {
         bolt.position.add(_boltMovement);
         bolt.userData.distanceTraveled += _boltMovement.length();
 
-        // Check collision with asteroids
+        // Check collision with asteroids using spatial hash (broad phase)
+        // Query nearby asteroids within max possible hit radius (ASTEROID_MAX_SIZE + 0.5)
         let hitAsteroid = false;
-        for (let j = asteroids.length - 1; j >= 0; j--) {
-            const asteroid = asteroids[j];
+        const maxHitRadius = 2.5; // ASTEROID_MAX_SIZE (2.0) + 0.5 buffer
+        const nearbyAsteroids = queryNearbyAsteroids(bolt.position, maxHitRadius);
+
+        for (let j = nearbyAsteroids.length - 1; j >= 0; j--) {
+            const asteroid = nearbyAsteroids[j];
+            // Skip if asteroid was already removed from the main array
+            if (!asteroid.parent) continue;
+
             const distance = bolt.position.distanceTo(asteroid.position);
             const hitRadius = asteroid.userData.size + 0.5; // Hit radius based on size
 
@@ -5927,15 +6679,18 @@ if (controlMode === 'camera') {
                         checkLevelComplete();
                     }
 
-                    // Remove asteroid
-                    scene.remove(asteroid);
-                    asteroids.splice(j, 1);
-                    // Clean up occlusion state to prevent memory leak
-                    window._asteroidOcclusionState?.delete(asteroid.uuid);
+                    // Remove asteroid from main array (find its index since we're using spatial query results)
+                    const asteroidIndex = asteroids.indexOf(asteroid);
+                    if (asteroidIndex !== -1) {
+                        scene.remove(asteroid);
+                        asteroids.splice(asteroidIndex, 1);
+                        // Clean up occlusion state to prevent memory leak
+                        window._asteroidOcclusionState?.delete(asteroid.uuid);
+                    }
                 }
 
-                // Remove bolt
-                scene.remove(bolt);
+                // Return bolt to pool instead of destroying
+                returnLaserToPool(bolt);
                 laserBolts.splice(i, 1);
                 hitAsteroid = true;
                 break;
@@ -5954,8 +6709,8 @@ if (controlMode === 'camera') {
                 // Create small impact explosion on Earth
                 createExplosion(bolt.position.clone(), 0.3);
 
-                // Remove bolt
-                scene.remove(bolt);
+                // Return bolt to pool instead of destroying
+                returnLaserToPool(bolt);
                 laserBolts.splice(i, 1);
                 hitAsteroid = true; // Prevent further checks
 
@@ -5980,8 +6735,8 @@ if (controlMode === 'camera') {
                 // Create small impact explosion on Moon
                 createExplosion(bolt.position.clone(), 0.3);
 
-                // Remove bolt
-                scene.remove(bolt);
+                // Return bolt to pool instead of destroying
+                returnLaserToPool(bolt);
                 laserBolts.splice(i, 1);
                 hitAsteroid = true; // Prevent further checks
 
@@ -5996,9 +6751,9 @@ if (controlMode === 'camera') {
             }
         }
 
-        // Remove if traveled too far (and didn't hit anything)
+        // Return to pool if traveled too far (and didn't hit anything)
         if (!hitAsteroid && bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
-            scene.remove(bolt);
+            returnLaserToPool(bolt);
             laserBolts.splice(i, 1);
         }
     }
@@ -6038,7 +6793,8 @@ if (controlMode === 'camera') {
         const progress = age / explosion.userData.duration;
 
         if (progress >= 1) {
-            // Remove explosion
+            // Return all pooled children to their pools before removing explosion group
+            cleanupExplosionGroup(explosion);
             scene.remove(explosion);
             explosions.splice(i, 1);
         } else {
@@ -6229,6 +6985,15 @@ function showInstructions(isResume = false) {
 
 // Show instructions on first load
 showInstructions();
+
+// Initialize object pools BEFORE gameplay starts (pre-allocate all pooled objects)
+initObjectPools();
+console.log('[POOLS] Object pools initialized:', {
+    lasers: laserPool.length,
+    particles: explosionParticlePool.length,
+    debris: debrisPool.length,
+    lights: explosionLightPool.length
+});
 
 // Initialize game: start at level 1
 startLevel(1);
