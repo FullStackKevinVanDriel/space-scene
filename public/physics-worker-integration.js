@@ -36,6 +36,12 @@ const PhysicsWorker = {
 
     // Initialize the physics worker
     init() {
+        // TEMPORARILY DISABLED: Force main-thread physics for debugging
+        console.warn('[PhysicsWorker] Disabled - using main-thread physics only');
+        this.enabled = false;
+        this.ready = false;
+        return;
+        
         if (!window.Worker) {
             console.warn('Web Workers not supported, running physics on main thread');
             this.enabled = false;
@@ -78,6 +84,8 @@ const PhysicsWorker = {
 
             case 'initialized':
                 console.log('Physics worker initialized');
+                // Sync any entities that were created before worker was ready
+                this.syncState();
                 break;
 
             case 'physicsUpdate':
@@ -166,21 +174,26 @@ const PhysicsWorker = {
                 if (uuid) {
                     const explosion = this.findExplosionByUuid(uuid);
                     if (explosion) {
-                        // Update particle positions
-                        for (let i = 0; i < update.particles.length && i < explosion.children.length; i++) {
-                            const child = explosion.children[i];
+                        // FIXED: Collect velocity children in traversal order to match worker simulation order exactly.
+                        // This prevents mismatch when non-velocity children (e.g., flash light) are present, which caused:
+                        // - Lights/particles getting wrong positions/scales
+                        // - Jerky/bad animation, displaced particles
+                        // - Explosion looking unrealistic/static
+                        const velocityChildren = explosion.children.filter(
+                            child => child.userData && child.userData.velocity
+                        );
+                        for (let i = 0; i < Math.min(update.particles.length, velocityChildren.length); i++) {
+                            const child = velocityChildren[i];
                             const pUpdate = update.particles[i];
-                            if (child && pUpdate && child.userData.velocity) {
-                                child.position.set(pUpdate.position.x, pUpdate.position.y, pUpdate.position.z);
-                                if (pUpdate.rotation && child.rotation) {
-                                    child.rotation.set(pUpdate.rotation.x, pUpdate.rotation.y, pUpdate.rotation.z);
-                                }
-                                if (child.material && child.material.opacity !== undefined) {
-                                    child.material.opacity = pUpdate.opacity;
-                                }
-                                if (pUpdate.scale && child.scale) {
-                                    child.scale.set(pUpdate.scale, pUpdate.scale, pUpdate.scale);
-                                }
+                            child.position.set(pUpdate.position.x, pUpdate.position.y, pUpdate.position.z);
+                            if (pUpdate.rotation && child.rotation) {
+                                child.rotation.set(pUpdate.rotation.x, pUpdate.rotation.y, pUpdate.rotation.z);
+                            }
+                            if (child.material && child.material.opacity !== undefined) {
+                                child.material.opacity = pUpdate.opacity;
+                            }
+                            if (pUpdate.scale && child.scale) {
+                                child.scale.set(pUpdate.scale, pUpdate.scale, pUpdate.scale);
                             }
                         }
                         // Update flash intensity
@@ -228,7 +241,13 @@ const PhysicsWorker = {
                 const damage = Math.ceil(collision.size * 5);
                 earthHealth -= damage;
                 updateHealthDisplay();
-                createExplosion(new THREE.Vector3(collision.position.x, collision.position.y, collision.position.z), collision.size);
+                const rawPos = new THREE.Vector3(collision.position.x, collision.position.y, collision.position.z);
+                const normal = rawPos.lengthSq() > 0.0001 ? rawPos.clone().normalize() : new THREE.Vector3(0, 1, 0);
+                const earthR = (typeof EARTH_RADIUS !== 'undefined' ? EARTH_RADIUS : 2);
+                const surfaceOffset = earthR + collision.size * 1.0 + 0.8;
+                const impactPos = normal.clone().multiplyScalar(surfaceOffset);
+                createExplosion(impactPos, collision.size);
+                createEarthImpactSparks(impactPos, collision.size);
             }
 
             // Remove asteroid from scene and array

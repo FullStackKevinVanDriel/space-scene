@@ -9,6 +9,9 @@ renderer.domElement.id = 'gameCanvas';
 // Enable shadow mapping for solar eclipse (moon shadow on Earth)
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Set clear color to dark space (prevents yellow bleeding through after explosions)
+renderer.setClearColor(0x000011, 1.0);  // Very dark blue-black for space realism
+// Don't set scene.background here - let skybox texture set it when it loads
 // Increase pixel ratio for higher fidelity renders while capping to avoid extreme GPU load.
 const MAX_PIXEL_RATIO = 3; // safety cap
 function updatePixelRatio() {
@@ -56,6 +59,12 @@ const _tempVec1 = new THREE.Vector3();
 const _tempVec2 = new THREE.Vector3();
 const _tempVec3 = new THREE.Vector3();
 const _tempVec4 = new THREE.Vector3();
+// Additional temp vectors for aim/explosion calculations (reduces GC)
+const _aimTarget = new THREE.Vector3();
+const _predictedPos = new THREE.Vector3();
+const _toAsteroid = new THREE.Vector3();
+const _animForward = new THREE.Vector3();
+const _shipBackward = new THREE.Vector3();
 const _asteroidDir = new THREE.Vector3();
 const _asteroidMovement = new THREE.Vector3();
 const _boltMovement = new THREE.Vector3();
@@ -252,8 +261,8 @@ class SpatialHash {
 // - Asteroids: 0.5-2.0 size, spawn at 120-180 units from Earth
 // - Lasers: small, fast-moving projectiles
 // - Larger cell size = fewer cells to check, but more objects per cell
-const asteroidSpatialHash = new SpatialHash(10);
-const laserSpatialHash = new SpatialHash(10);
+const asteroidSpatialHash = new SpatialHash(15);
+const laserSpatialHash = new SpatialHash(15);
 
 // Helper function to rebuild spatial hash from arrays
 // Call this at the start of each frame for simplicity
@@ -627,9 +636,9 @@ if (typeof THREE.EffectComposer !== 'undefined') {
     const renderPass = new THREE.RenderPass(scene, camera);
     composer.addPass(renderPass);
     const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
-    bloomPass.threshold = 0.15;
-    bloomPass.strength = 1.1; // intensity
-    bloomPass.radius = 0.4;
+    bloomPass.threshold = 0.3; // Higher threshold = less blooming
+    bloomPass.strength = 0.6; // Reduced strength to prevent overwhelming glow
+    bloomPass.radius = 0.3; // Smaller radius
     composer.addPass(bloomPass);
 }
 // === SPACESHIP - Synthesis of Ornithopter + Starship + EVE Online ===
@@ -2024,6 +2033,9 @@ function releaseAllPooledObjects() {
     }
     explosions.length = 0;
 
+    // Clear all instanced particles (GPU-optimized system)
+    clearInstancedParticles();
+
     console.log('[POOLS] All pooled objects released');
 }
 
@@ -2087,6 +2099,26 @@ const _instanceColor = new THREE.Color();
 let instancedParticleMesh = null;
 let instancedDebrisMesh = null;
 
+// Sample a random unit vector within a cone around a base direction
+function sampleDirectionInCone(baseDir, coneAngleRad) {
+    const dir = baseDir.clone().normalize();
+    const ortho = Math.abs(dir.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+    const tangent = new THREE.Vector3().crossVectors(dir, ortho).normalize();
+    const bitangent = new THREE.Vector3().crossVectors(dir, tangent).normalize();
+
+    const u = Math.random();
+    const v = Math.random();
+    const cosTheta = 1 - u * (1 - Math.cos(coneAngleRad));
+    const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
+    const phi = 2 * Math.PI * v;
+
+    return new THREE.Vector3()
+        .addScaledVector(dir, cosTheta)
+        .addScaledVector(tangent, sinTheta * Math.cos(phi))
+        .addScaledVector(bitangent, sinTheta * Math.sin(phi))
+        .normalize();
+}
+
 /**
  * Initialize the instanced mesh particle system.
  * Call this once during game startup, before any explosions can occur.
@@ -2098,8 +2130,12 @@ function initInstancedParticleSystem() {
     // Material with vertex colors for per-instance coloring
     const particleMaterial = new THREE.MeshBasicMaterial({
         transparent: true,
-        opacity: 1,
-        vertexColors: false // We'll update color via setColorAt
+        opacity: 0.7, // Slightly translucent to reduce opacity while staying bright
+        depthWrite: false, // Allow proper transparent blending
+        depthTest: false, // Render on top so surface impacts aren’t z-occluded
+        vertexColors: true, // CRITICAL: Enable per-instance colors via setColorAt
+        blending: THREE.AdditiveBlending, // Additive for glowing effect
+        side: THREE.DoubleSide // Ensure visible from all angles
     });
 
     // Create the InstancedMesh with maximum capacity
@@ -2111,6 +2147,7 @@ function initInstancedParticleSystem() {
     instancedParticleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     instancedParticleMesh.frustumCulled = false; // Particles can be anywhere
     instancedParticleMesh.count = 0; // Start with no visible instances
+    instancedParticleMesh.visible = true; // Mesh is visible, but count=0 means nothing renders
     instancedParticleMesh.name = 'InstancedParticles';
 
     // Initialize instance colors buffer
@@ -2224,11 +2261,22 @@ function getInstancedExplosionLight() {
  * @param {number} asteroidSize - Size multiplier for the explosion
  * @param {string} type - 'explosion', 'spark', or 'angel'
  */
-function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion') {
-    const now = Date.now();
+function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion', options = null) {
+    const opts = options || {};
+    const hasDirection = !!opts.direction;
+    const direction = hasDirection ? opts.direction.clone().normalize() : null;
+    const coneAngle = opts.coneAngle !== undefined ? opts.coneAngle : Math.PI / 4;
+    const velocityScale = opts.velocityScale !== undefined ? opts.velocityScale : 1;
+
+    // Use performance.now() so timestamps stay in a Float32-friendly range
+    const now = performance.now();
     const scaleFactor = Math.max(0.5, asteroidSize);
     const particleCount = type === 'spark' ? 20 : Math.floor(6 + asteroidSize * 4);
-    const duration = type === 'spark' ? 400 : (600 + asteroidSize * 200);
+    // Extended lifetimes so trails can linger 20–40s and drift toward the camera
+    const duration = type === 'spark'
+        ? 24000
+        : (28000 + asteroidSize * 1400);
+    console.log('[EXPLOSION] Spawning', particleCount, 'particles at', position, 'type:', type, 'duration:', duration, 'now:', now);
 
     // Select color palette based on type
     let colorStart, colorCount;
@@ -2248,27 +2296,40 @@ function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion')
         const idx = allocateParticleInstance();
         if (idx < 0) continue;
 
-        const size = (0.2 + Math.random() * 0.4) * scaleFactor;
+        // Bigger starting size to keep particles clearly visible in space
+        const size = (1.6 + Math.random() * 1.6) * scaleFactor;
         const i3 = idx * 3;
 
-        // Position with random offset
+        // Position with random offset (directly overwrite old data)
         instancedParticleData.positions[i3] = position.x + (Math.random() - 0.5) * scaleFactor;
         instancedParticleData.positions[i3 + 1] = position.y + (Math.random() - 0.5) * scaleFactor;
         instancedParticleData.positions[i3 + 2] = position.z + (Math.random() - 0.5) * scaleFactor;
 
-        // Velocity
-        const velocityMult = type === 'spark' ? 25 : 8;
-        instancedParticleData.velocities[i3] = (Math.random() - 0.5) * velocityMult * scaleFactor;
-        instancedParticleData.velocities[i3 + 1] = (Math.random() - 0.5) * velocityMult * scaleFactor;
-        instancedParticleData.velocities[i3 + 2] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+        // Velocity (directly overwrite old data)
+        const velocityMult = (type === 'spark' ? 35 : 12) * velocityScale;
+        if (hasDirection) {
+            const dir = sampleDirectionInCone(direction, coneAngle);
+            dir.multiplyScalar(velocityMult * scaleFactor);
+            instancedParticleData.velocities[i3] = dir.x;
+            instancedParticleData.velocities[i3 + 1] = dir.y;
+            instancedParticleData.velocities[i3 + 2] = dir.z;
+        } else {
+            instancedParticleData.velocities[i3] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+            instancedParticleData.velocities[i3 + 1] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+            instancedParticleData.velocities[i3 + 2] = (Math.random() - 0.5) * velocityMult * scaleFactor;
+        }
 
-        // Scale and timing
+        // Scale and timing (ensures particle lifetime is reset)
         instancedParticleData.scales[idx] = size;
         instancedParticleData.initialScales[idx] = size;
         instancedParticleData.createdAt[idx] = now;
         instancedParticleData.durations[idx] = duration;
         instancedParticleData.colorIndices[idx] = colorStart + Math.floor(Math.random() * colorCount);
         instancedParticleData.active[idx] = 1;
+        
+        if (i === 0) {
+            console.log('[EXPLOSION] First particle allocated idx:', idx, 'createdAt:', now, 'duration:', duration, 'active:', instancedParticleData.active[idx]);
+        }
     }
 
     // Spawn debris for sparks (hit effects)
@@ -2280,13 +2341,22 @@ function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion')
             const chunkSize = 0.15 + Math.random() * 0.2;
             const i3 = idx * 3;
 
+            // Directly overwrite all data (no need to clear first)
             instancedDebrisData.positions[i3] = position.x;
             instancedDebrisData.positions[i3 + 1] = position.y;
             instancedDebrisData.positions[i3 + 2] = position.z;
 
-            instancedDebrisData.velocities[i3] = (Math.random() - 0.5) * 15;
-            instancedDebrisData.velocities[i3 + 1] = (Math.random() - 0.5) * 15;
-            instancedDebrisData.velocities[i3 + 2] = (Math.random() - 0.5) * 15;
+            if (hasDirection) {
+                const dir = sampleDirectionInCone(direction, coneAngle);
+                dir.multiplyScalar(15 * velocityScale);
+                instancedDebrisData.velocities[i3] = dir.x;
+                instancedDebrisData.velocities[i3 + 1] = dir.y;
+                instancedDebrisData.velocities[i3 + 2] = dir.z;
+            } else {
+                instancedDebrisData.velocities[i3] = (Math.random() - 0.5) * 15;
+                instancedDebrisData.velocities[i3 + 1] = (Math.random() - 0.5) * 15;
+                instancedDebrisData.velocities[i3 + 2] = (Math.random() - 0.5) * 15;
+            }
 
             instancedDebrisData.rotations[i3] = Math.random() * Math.PI * 2;
             instancedDebrisData.rotations[i3 + 1] = Math.random() * Math.PI * 2;
@@ -2322,9 +2392,11 @@ function spawnInstancedExplosion(position, asteroidSize = 1, type = 'explosion')
  * @param {number} delta - Time since last frame in seconds
  */
 function updateInstancedParticles(delta) {
-    const now = Date.now();
+    // performance.now() keeps time values small enough to avoid precision loss
+    const now = performance.now();
     let activeParticleCount = 0;
     let activeDebrisCount = 0;
+    let expiredCount = 0;
 
     // Update particles
     const pData = instancedParticleData;
@@ -2333,10 +2405,28 @@ function updateInstancedParticles(delta) {
 
         const age = now - pData.createdAt[i];
         const progress = age / pData.durations[i];
+        
+        // Check for invalid values
+        if (isNaN(progress) || !isFinite(progress)) {
+            console.error('[PARTICLES] Invalid progress for particle', i, 'age:', age, 'duration:', pData.durations[i], 'createdAt:', pData.createdAt[i], 'now:', now);
+            pData.active[i] = 0; // Free the corrupted particle
+            expiredCount++;
+            continue;
+        }
 
         if (progress >= 1) {
-            // Particle expired
+            // Particle expired - free the slot
             pData.active[i] = 0;
+            expiredCount++;
+            continue;
+        }
+
+        // Safety net: only force-expire if the particle far outlives its intended duration
+        const maxExpectedAge = Math.max(pData.durations[i] * 1.5, pData.durations[i] + 1000);
+        if (age > maxExpectedAge) {
+            console.warn('[PARTICLES] Force-expiring stuck particle', i, 'age:', age, 'ms duration:', pData.durations[i]);
+            pData.active[i] = 0;
+            expiredCount++;
             continue;
         }
 
@@ -2347,8 +2437,9 @@ function updateInstancedParticles(delta) {
         pData.positions[i3 + 1] += pData.velocities[i3 + 1] * delta;
         pData.positions[i3 + 2] += pData.velocities[i3 + 2] * delta;
 
-        // Update scale (grow over time)
-        pData.scales[i] = pData.initialScales[i] * (1 + progress * 3);
+        // Update scale (grow modestly over lifetime; clamp to avoid runaway sizes on long durations)
+        const clampedProgress = Math.min(progress, 1);
+        pData.scales[i] = pData.initialScales[i] * (1 + clampedProgress * 1.6);
 
         // Build transformation matrix
         _instanceDummy.position.set(
@@ -2362,10 +2453,13 @@ function updateInstancedParticles(delta) {
         // Set matrix at the ACTIVE index (compact rendering)
         instancedParticleMesh.setMatrixAt(activeParticleCount, _instanceDummy.matrix);
 
-        // Set color with opacity baked in (fade out over time)
+        // Set color (full brightness - opacity handled by material)
         const colorIdx = pData.colorIndices[i];
-        const opacity = 1 - progress;
-        _instanceColor.copy(particleColorPalette[colorIdx]).multiplyScalar(opacity);
+        _instanceColor.copy(particleColorPalette[colorIdx]);
+        _instanceColor.multiplyScalar(1.35); // Push brightness
+        _instanceColor.r = Math.min(1, _instanceColor.r);
+        _instanceColor.g = Math.min(1, _instanceColor.g);
+        _instanceColor.b = Math.min(1, _instanceColor.b);
         instancedParticleMesh.setColorAt(activeParticleCount, _instanceColor);
 
         activeParticleCount++;
@@ -2440,6 +2534,11 @@ function updateInstancedParticles(delta) {
         }
     }
 
+    // Log particle stats when there are expirations
+    if (expiredCount > 0 && Math.random() < 0.1) {
+        console.log('[PARTICLES] Expired:', expiredCount, 'Active:', activeParticleCount, '/', INSTANCED_PARTICLE_MAX);
+    }
+
     instancedDebrisMesh.count = activeDebrisCount;
     if (activeDebrisCount > 0) {
         instancedDebrisMesh.instanceMatrix.needsUpdate = true;
@@ -2466,8 +2565,10 @@ function updateInstancedParticles(delta) {
  * Clear all active particles (e.g., on game reset).
  */
 function clearInstancedParticles() {
-    // Reset particle data
+    // Reset particle data - clear ALL arrays to prevent stale timestamps
     instancedParticleData.active.fill(0);
+    instancedParticleData.createdAt.fill(0);
+    instancedParticleData.durations.fill(0);
     instancedParticleData.count = 0;
     if (instancedParticleMesh) {
         instancedParticleMesh.count = 0;
@@ -2475,6 +2576,8 @@ function clearInstancedParticles() {
 
     // Reset debris data
     instancedDebrisData.active.fill(0);
+    instancedDebrisData.createdAt.fill(0);
+    instancedDebrisData.durations.fill(0);
     instancedDebrisData.count = 0;
     if (instancedDebrisMesh) {
         instancedDebrisMesh.count = 0;
@@ -2592,6 +2695,12 @@ function createAsteroid() {
     asteroids.push(asteroidGroup);
     // Debug: log asteroid spawn
     try { console.debug('[DEBUG] Asteroid spawned', { position: asteroidGroup.position.toArray(), size, health }); } catch(e) {}
+
+    // Register with physics worker if available
+    if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
+        PhysicsWorker.registerAsteroid(asteroidGroup);
+    }
+
     return asteroidGroup;
 }
 
@@ -2607,154 +2716,33 @@ function createExplosion(position, asteroidSize = 1) {
     // Play explosion sound
     SoundManager.playExplosion(asteroidSize);
 
-    const explosionGroup = new THREE.Group();
-    explosionGroup.position.copy(position);
+    // Use GPU-optimized instanced particle system for better performance
+    // This reduces draw calls and eliminates per-particle object creation overhead
+    spawnInstancedExplosion(position, asteroidSize, 'explosion');
+}
 
-    // Scale explosion based on asteroid size
-    const scaleFactor = Math.max(0.5, asteroidSize);
-    const particleCount = Math.floor(6 + asteroidSize * 4);
-
-    // Multiple expanding spheres for explosion - USE POOLED PARTICLES
-    for (let i = 0; i < particleCount; i++) {
-        const size = (0.2 + Math.random() * 0.4) * scaleFactor;
-
-        // Acquire particle from pool instead of creating new
-        const sphere = getParticleFromPool();
-
-        // Set material from pre-created explosion materials
-        sphere.material = explosionMaterials[Math.floor(Math.random() * explosionMaterials.length)];
-        sphere.material.opacity = 1;
-
-        // Set scale (pooled geometry has radius 1, so scale = desired size)
-        sphere.scale.set(size, size, size);
-
-        // Random offset
-        sphere.position.set(
-            (Math.random() - 0.5) * scaleFactor,
-            (Math.random() - 0.5) * scaleFactor,
-            (Math.random() - 0.5) * scaleFactor
-        );
-
-        // Reuse or create velocity vector
-        if (!sphere.userData.velocity) {
-            sphere.userData.velocity = new THREE.Vector3();
-        }
-        sphere.userData.velocity.set(
-            (Math.random() - 0.5) * 8 * scaleFactor,
-            (Math.random() - 0.5) * 8 * scaleFactor,
-            (Math.random() - 0.5) * 8 * scaleFactor
-        );
-        sphere.userData.initialScale = size;
-        explosionGroup.add(sphere);
-    }
-
-    // Get pooled light for flash
-    const flash = getExplosionLightFromPool();
-    flash.color.setHex(0xff8800);
-    flash.intensity = 3 * scaleFactor;
-    flash.distance = 20 * scaleFactor;
-    explosionGroup.add(flash);
-    explosionGroup.userData.flash = flash;
-
-    explosionGroup.userData.createdAt = Date.now();
-    explosionGroup.userData.duration = 600 + asteroidSize * 200; // Bigger = longer explosion
-
-    scene.add(explosionGroup);
-    explosions.push(explosionGroup);
-    return explosionGroup;
+function createEarthImpactSparks(position, asteroidSize = 1) {
+    const normal = position.lengthSq() > 0.0001 ? position.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    // Directional sparks that spray outward from the impact point, like a crater funnel
+    spawnInstancedExplosion(position, asteroidSize, 'spark', {
+        direction: normal,
+        coneAngle: Math.PI / 6, // tight cone for funnel effect
+        velocityScale: 2.2 // push sparks outward with more energy
+    });
 }
 
 // Create dramatic hit spark when laser damages asteroid - USES OBJECT POOLING
 function createHitSpark(position, asteroid) {
-    const sparkGroup = new THREE.Group();
-    sparkGroup.position.copy(position);
-
-    // Lots of bright sparks flying outward - USE POOLED PARTICLES
-    for (let i = 0; i < 20; i++) {
-        const size = 0.1 + Math.random() * 0.25;
-
-        // Acquire particle from pool instead of creating new
-        const spark = getParticleFromPool();
-
-        // Set material from pre-created spark materials
-        spark.material = sparkMaterials[Math.floor(Math.random() * sparkMaterials.length)];
-        spark.material.opacity = 1;
-
-        // Set scale
-        spark.scale.set(size, size, size);
-
-        // Reuse or create velocity vector
-        if (!spark.userData.velocity) {
-            spark.userData.velocity = new THREE.Vector3();
-        }
-        spark.userData.velocity.set(
-            (Math.random() - 0.5) * 25,
-            (Math.random() - 0.5) * 25,
-            (Math.random() - 0.5) * 25
-        );
-        spark.userData.initialScale = size;
-        sparkGroup.add(spark);
-    }
-
-    // Add debris chunks - USE POOLED DEBRIS
-    for (let i = 0; i < 5; i++) {
-        const chunkSize = 0.15 + Math.random() * 0.2;
-
-        // Acquire debris from pool instead of creating new
-        const chunk = getDebrisFromPool();
-
-        // Reset debris material opacity
-        chunk.material.opacity = 1;
-
-        // Set scale
-        chunk.scale.set(chunkSize, chunkSize, chunkSize);
-
-        // Reuse or create velocity vector
-        if (!chunk.userData.velocity) {
-            chunk.userData.velocity = new THREE.Vector3();
-        }
-        chunk.userData.velocity.set(
-            (Math.random() - 0.5) * 15,
-            (Math.random() - 0.5) * 15,
-            (Math.random() - 0.5) * 15
-        );
-        chunk.userData.initialScale = chunkSize;
-
-        // Reuse or create rotation speed vector
-        if (!chunk.userData.rotationSpeed) {
-            chunk.userData.rotationSpeed = new THREE.Vector3();
-        }
-        chunk.userData.rotationSpeed.set(
-            Math.random() * 5,
-            Math.random() * 5,
-            Math.random() * 5
-        );
-        sparkGroup.add(chunk);
-    }
-
-    // Get pooled light for flash
-    const flash = getExplosionLightFromPool();
-    flash.color.setHex(0xffaa00);
-    flash.intensity = 5;
-    flash.distance = 15;
-    sparkGroup.add(flash);
-    sparkGroup.userData.flash = flash;
-
-    sparkGroup.userData.createdAt = Date.now();
-    sparkGroup.userData.duration = 400;
-
-    scene.add(sparkGroup);
-    explosions.push(sparkGroup);
+    // Use GPU-optimized instanced particle system for sparks and debris
+    spawnInstancedExplosion(position, 1, 'spark');
 
     // Visual damage to asteroid - make it glow/flash red briefly
     if (asteroid && asteroid.children[0]) {
         const mesh = asteroid.children[0];
-        const originalColor = mesh.material.color.getHex();
         mesh.material.emissive = new THREE.Color(0xff4400);
         mesh.material.emissiveIntensity = 0.8;
 
         // Shake the asteroid
-        const originalPos = asteroid.position.clone();
         const shakeAmount = 0.3;
         asteroid.position.x += (Math.random() - 0.5) * shakeAmount;
         asteroid.position.y += (Math.random() - 0.5) * shakeAmount;
@@ -2770,8 +2758,6 @@ function createHitSpark(position, asteroid) {
 
     // Screen flash effect
     flashScreen();
-
-    return sparkGroup;
 }
 
 // Brief screen flash for impact feedback
@@ -2877,6 +2863,11 @@ function spawnAngelAsteroid() {
     scene.add(angelGroup);
     asteroids.push(angelGroup);
 
+    // Register with physics worker if available
+    if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
+        PhysicsWorker.registerAsteroid(angelGroup);
+    }
+
     // Show notification
     showNotification('+HEALTH INCOMING!', '#88ffaa');
 }
@@ -2886,49 +2877,8 @@ function createAngelExplosion(position) {
     // Play explosion sound (medium size)
     SoundManager.playExplosion(1.5);
 
-    const explosionGroup = new THREE.Group();
-    explosionGroup.position.copy(position);
-
-    // Bright healing particles - USE POOLED PARTICLES
-    for (let i = 0; i < 30; i++) {
-        const size = 0.2 + Math.random() * 0.4;
-
-        // Acquire particle from pool instead of creating new
-        const sphere = getParticleFromPool();
-
-        // Set material from pre-created angel materials
-        sphere.material = angelMaterials[Math.floor(Math.random() * angelMaterials.length)];
-        sphere.material.opacity = 1;
-
-        // Set scale
-        sphere.scale.set(size, size, size);
-
-        // Reuse or create velocity vector
-        if (!sphere.userData.velocity) {
-            sphere.userData.velocity = new THREE.Vector3();
-        }
-        sphere.userData.velocity.set(
-            (Math.random() - 0.5) * 12,
-            (Math.random() - 0.5) * 12,
-            (Math.random() - 0.5) * 12
-        );
-        sphere.userData.initialScale = size;
-        explosionGroup.add(sphere);
-    }
-
-    // Get pooled light for flash
-    const flash = getExplosionLightFromPool();
-    flash.color.setHex(0x88ffaa);
-    flash.intensity = 8;
-    flash.distance = 30;
-    explosionGroup.add(flash);
-    explosionGroup.userData.flash = flash;
-
-    explosionGroup.userData.createdAt = Date.now();
-    explosionGroup.userData.duration = 1000;
-
-    scene.add(explosionGroup);
-    explosions.push(explosionGroup);
+    // Use GPU-optimized instanced particle system for angel healing effect
+    spawnInstancedExplosion(position, 1.5, 'angel');
 
     // Green screen flash for healing
     flashScreenGreen();
@@ -4115,6 +4065,11 @@ function fireLasers() {
 
         scene.add(bolt);
         laserBolts.push(bolt);
+
+        // Register with physics worker if available
+        if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
+            PhysicsWorker.registerBolt(bolt);
+        }
     }
 
     // Decrement ammo AFTER laser creation
@@ -6248,6 +6203,19 @@ function animate() {
     // === PAUSE ALL GAME WORLD ANIMATIONS WHEN PAUSED ===
     // Camera controls above still work so player can look around while paused
     if (gameActive) {
+        // Update instanced particle system (explosions, sparks, etc.)
+        updateInstancedParticles(delta);
+
+        // Periodic stats logging (every 120 frames ~2s at 60fps)
+        if (Math.floor(Date.now() / 1000) % 2 === 0 && Date.now() % 1000 < 50) {
+            const activeCount = instancedParticleData.active.reduce((sum, val) => sum + val, 0);
+            console.log('[STATS] Particles:', activeCount, '/', INSTANCED_PARTICLE_MAX);
+        }
+
+        // Update physics worker (offloaded collision detection)
+        if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
+            PhysicsWorker.update(delta, moon.position);
+        }
 
     // Rotate Earth
     earth.rotation.y += planetRotationSpeed * planetRotationDirection * delta;
@@ -6490,9 +6458,14 @@ if (controlMode === 'camera') {
     // === SPATIAL HASH REBUILD ===
     // Rebuild spatial hashes at the start of collision detection phase
     // This ensures all objects are in correct cells after movement
-    rebuildSpatialHashes();
+    // (Skip if physics worker is enabled - worker handles collisions)
+    if (typeof PhysicsWorker === 'undefined' || !PhysicsWorker.enabled || !PhysicsWorker.ready) {
+        rebuildSpatialHashes();
+    }
 
     // === ASTEROID MOVEMENT & ANIMATION ===
+    // Skip main-thread asteroid physics if worker is enabled and ready
+    if (typeof PhysicsWorker === 'undefined' || !PhysicsWorker.enabled || !PhysicsWorker.ready) {
     for (let i = asteroids.length - 1; i >= 0; i--) {
         const asteroid = asteroids[i];
 
@@ -6531,8 +6504,14 @@ if (controlMode === 'camera') {
                 const damage = Math.ceil(asteroid.userData.size * 5); // Bigger = more damage
                 earthHealth -= damage;
                 updateHealthDisplay();
-                // Create explosion at impact point
-                createExplosion(asteroid.position.clone(), asteroid.userData.size);
+                // Create explosion at impact point, nudged above surface so it renders clearly
+                const rawPos = asteroid.position.clone();
+                const normal = rawPos.lengthSq() > 0.0001 ? rawPos.clone().normalize() : new THREE.Vector3(0, 1, 0);
+                const surfaceOffset = EARTH_RADIUS + asteroid.userData.size * 1.0 + 0.8;
+                const impactPos = normal.multiplyScalar(surfaceOffset);
+                console.log('[DEBUG] Creating explosion at', impactPos, 'size', asteroid.userData.size);
+                createExplosion(impactPos, asteroid.userData.size);
+                createEarthImpactSparks(impactPos, asteroid.userData.size);
             }
 
             // Remove asteroid
@@ -6540,6 +6519,10 @@ if (controlMode === 'camera') {
             asteroids.splice(i, 1);
             // Clean up occlusion state to prevent memory leak
             window._asteroidOcclusionState?.delete(asteroid.uuid);
+            // Clean up worker mapping
+            if (typeof PhysicsWorker !== 'undefined') {
+                PhysicsWorker.asteroidIdMap.delete(asteroid.uuid);
+            }
 
             // Check game over
             if (earthHealth <= 0) {
@@ -6578,6 +6561,10 @@ if (controlMode === 'camera') {
             asteroids.splice(i, 1);
             // Clean up occlusion state to prevent memory leak
             window._asteroidOcclusionState?.delete(asteroid.uuid);
+            // Clean up worker mapping
+            if (typeof PhysicsWorker !== 'undefined') {
+                PhysicsWorker.asteroidIdMap.delete(asteroid.uuid);
+            }
 
             // Check if Moon is destroyed
             if (moonHealth <= 0) {
@@ -6589,11 +6576,14 @@ if (controlMode === 'camera') {
             }
         }
     }
+    } // End of PhysicsWorker conditional wrapper
 
     // Check if level failed (all asteroids gone but level not complete)
     checkLevelFailed();
 
     // === LASER BOLT ANIMATION & COLLISION DETECTION ===
+    // Skip main-thread bolt physics if worker is enabled and ready
+    if (typeof PhysicsWorker === 'undefined' || !PhysicsWorker.enabled || !PhysicsWorker.ready) {
     for (let i = laserBolts.length - 1; i >= 0; i--) {
         const bolt = laserBolts[i];
 
@@ -6686,12 +6676,20 @@ if (controlMode === 'camera') {
                         asteroids.splice(asteroidIndex, 1);
                         // Clean up occlusion state to prevent memory leak
                         window._asteroidOcclusionState?.delete(asteroid.uuid);
+                        // Clean up worker mapping
+                        if (typeof PhysicsWorker !== 'undefined') {
+                            PhysicsWorker.asteroidIdMap.delete(asteroid.uuid);
+                        }
                     }
                 }
 
                 // Return bolt to pool instead of destroying
                 returnLaserToPool(bolt);
                 laserBolts.splice(i, 1);
+                // Clean up worker mapping
+                if (typeof PhysicsWorker !== 'undefined') {
+                    PhysicsWorker.boltIdMap.delete(bolt.uuid);
+                }
                 hitAsteroid = true;
                 break;
             }
@@ -6712,6 +6710,10 @@ if (controlMode === 'camera') {
                 // Return bolt to pool instead of destroying
                 returnLaserToPool(bolt);
                 laserBolts.splice(i, 1);
+                // Clean up worker mapping
+                if (typeof PhysicsWorker !== 'undefined') {
+                    PhysicsWorker.boltIdMap.delete(bolt.uuid);
+                }
                 hitAsteroid = true; // Prevent further checks
 
                 // Check game over
@@ -6738,6 +6740,10 @@ if (controlMode === 'camera') {
                 // Return bolt to pool instead of destroying
                 returnLaserToPool(bolt);
                 laserBolts.splice(i, 1);
+                // Clean up worker mapping
+                if (typeof PhysicsWorker !== 'undefined') {
+                    PhysicsWorker.boltIdMap.delete(bolt.uuid);
+                }
                 hitAsteroid = true; // Prevent further checks
 
                 // Check if Moon is destroyed
@@ -6755,8 +6761,13 @@ if (controlMode === 'camera') {
         if (!hitAsteroid && bolt.userData.distanceTraveled > LASER_MAX_DISTANCE) {
             returnLaserToPool(bolt);
             laserBolts.splice(i, 1);
+            // Clean up worker mapping
+            if (typeof PhysicsWorker !== 'undefined') {
+                PhysicsWorker.boltIdMap.delete(bolt.uuid);
+            }
         }
     }
+    } // End of PhysicsWorker conditional wrapper
 
     // === SPAWN ASTEROIDS ===
     spawnAsteroids();
@@ -6787,6 +6798,8 @@ if (controlMode === 'camera') {
     }
 
     // === EXPLOSION ANIMATION ===
+    // Skip main-thread explosion physics if worker is enabled and ready
+    if (typeof PhysicsWorker === 'undefined' || !PhysicsWorker.enabled || !PhysicsWorker.ready) {
     for (let i = explosions.length - 1; i >= 0; i--) {
         const explosion = explosions[i];
         const age = Date.now() - explosion.userData.createdAt;
@@ -6824,6 +6837,7 @@ if (controlMode === 'camera') {
             }
         }
     }
+    } // End of PhysicsWorker conditional wrapper
 
     // Subtle starfield rotation
     starfield.rotation.y += 0.00005;
@@ -6851,6 +6865,10 @@ if (controlMode === 'camera') {
             window.miniOrientationRenderer.render(window.miniOrientationScene, window.miniOrientationCamera);
         }
     }
+
+    // Force black space background every frame (prevents clear color bug after explosions)
+    renderer.setClearColor(0x000011, 1.0);  // Very dark blue-black for space realism
+    // Note: scene.background is set to skybox texture, so we don't override it here
 
     if (composer) {
         composer.render();
@@ -6957,29 +6975,53 @@ function showInstructions(isResume = false) {
 
         overlay.remove();
 
-        if (!isResume) {
-            // Check for saved game before starting new
-            if (hasSavedGame()) {
-                showContinueDialog();
-                return; // Don't start new game yet - dialog will handle it
+        // Helper function to start game after checking worker readiness
+        const startGameAfterWorkerReady = () => {
+            if (!isResume) {
+                // Check for saved game before starting new
+                if (hasSavedGame()) {
+                    showContinueDialog();
+                    return; // Don't start new game yet - dialog will handle it
+                }
+
+                // Starting new game - reset timer
+                gameStartTime = Date.now();
+                gameElapsedTime = 0;
+                leaderboardChecked = false;
+                // Reset and show touch hints for new game
+                touchHintsShownThisSession = false;
+                gameActive = true;
+                if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
+                    PhysicsWorker.syncState();
+                }
             }
 
-            // Starting new game - reset timer
-            gameStartTime = Date.now();
-            gameElapsedTime = 0;
-            leaderboardChecked = false;
-            // Reset and show touch hints for new game
-            touchHintsShownThisSession = false;
-            gameActive = true;
-        }
+            // Resume game if it wasn't already paused
+            if (isResume && !wasPaused) {
+                gameActive = true;
+                if (typeof PhysicsWorker !== 'undefined' && PhysicsWorker.enabled && PhysicsWorker.ready) {
+                    PhysicsWorker.syncState();
+                }
+            }
 
-        // Resume game if it wasn't already paused
-        if (isResume && !wasPaused) {
-            gameActive = true;
-        }
+            // Show touch hints if applicable
+            updateTouchHintsOverlay();
+        };
 
-        // Show touch hints if applicable
-        updateTouchHintsOverlay();
+        // Check if physics worker is ready
+        if (typeof PhysicsWorker !== 'undefined' && !PhysicsWorker.ready && PhysicsWorker.enabled) {
+            // Wait briefly for worker to be ready
+            setTimeout(() => {
+                if (PhysicsWorker.ready) {
+                    startGameAfterWorkerReady();
+                } else {
+                    console.warn('Physics worker not ready—falling back to main thread');
+                    startGameAfterWorkerReady();
+                }
+            }, 500);
+        } else {
+            startGameAfterWorkerReady();
+        }
     });
 }
 
